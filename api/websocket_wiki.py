@@ -425,138 +425,81 @@ This file contains...
 
         prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
 
-        model_config = get_model_config(request.provider, request.model)["model_kwargs"]
+        # Get the full model configuration from config.py
+        # This will return a pre-configured client INSTANCE for vllm and ollama,
+        # and a client CLASS for openai, azure, openrouter, google.
+        model_config_dict = get_model_config(request.provider, request.model)
 
-        if request.provider == "ollama":
-            prompt += " /no_think"
+        model_client_from_config = model_config_dict["model_client"]
+        # resolved_model_kwargs contains all necessary parameters for the model call,
+        # including the specific model name, temperature, top_p, etc.
+        # For Ollama, it also includes "options" and "headers" if applicable.
+        resolved_model_kwargs = model_config_dict["model_kwargs"]
 
-            model = OllamaClient()
-            model_kwargs = {
-                "model": model_config["model"],
-                "stream": True,
-                "options": {
-                    "temperature": model_config["temperature"],
-                    "top_p": model_config["top_p"],
-                    "num_ctx": model_config["num_ctx"]
-                }
-            }
+        # This will be the actual client instance we use for the call
+        llm_client_instance: Any = None
+        # These are the kwargs to be passed to model.convert_inputs_to_api_kwargs
+        # It needs "model", "stream", and other generation params like temperature.
+        # For Ollama, it needs "options" and "headers" to be part of these kwargs.
+        api_input_construction_kwargs = resolved_model_kwargs.copy()
+        api_input_construction_kwargs["stream"] = True # Always stream for websockets
 
-            api_kwargs = model.convert_inputs_to_api_kwargs(
-                input=prompt,
-                model_kwargs=model_kwargs,
-                model_type=ModelType.LLM
-            )
+        if request.provider == "vllm":
+            logger.info(f"Using vLLM with model: {api_input_construction_kwargs.get('model')}")
+            llm_client_instance = model_client_from_config # Already an OpenAIClient instance configured for vLLM
+        elif request.provider == "ollama":
+            logger.info(f"Using Ollama with model: {api_input_construction_kwargs.get('model')}")
+            prompt += " /no_think" # Ollama specific prompt adjustment
+            llm_client_instance = model_client_from_config # Already an OllamaClient instance
+            # api_input_construction_kwargs for ollama is already correctly structured by get_model_config
         elif request.provider == "openrouter":
-            logger.info(f"Using OpenRouter with model: {request.model}")
-
-            # Check if OpenRouter API key is set
+            logger.info(f"Using OpenRouter with model: {api_input_construction_kwargs.get('model')}")
             if not OPENROUTER_API_KEY:
                 logger.warning("OPENROUTER_API_KEY not configured, but continuing with request")
-                # We'll let the OpenRouterClient handle this and return a friendly error message
-
-            model = OpenRouterClient()
-            model_kwargs = {
-                "model": request.model,
-                "stream": True,
-                "temperature": model_config["temperature"]
-            }
-            # Only add top_p if it exists in the model config
-            if "top_p" in model_config:
-                model_kwargs["top_p"] = model_config["top_p"]
-
-            api_kwargs = model.convert_inputs_to_api_kwargs(
-                input=prompt,
-                model_kwargs=model_kwargs,
-                model_type=ModelType.LLM
-            )
+            llm_client_instance = model_client_from_config() # Instantiate OpenRouterClient class
         elif request.provider == "openai":
-            logger.info(f"Using Openai protocol with model: {request.model}")
-
-            # Check if an API key is set for Openai
+            logger.info(f"Using OpenAI protocol with model: {api_input_construction_kwargs.get('model')}")
             if not OPENAI_API_KEY:
                 logger.warning("OPENAI_API_KEY not configured, but continuing with request")
-                # We'll let the OpenAIClient handle this and return an error message
-
-            # Initialize Openai client
-            model = OpenAIClient()
-            model_kwargs = {
-                "model": request.model,
-                "stream": True,
-                "temperature": model_config["temperature"]
-            }
-            # Only add top_p if it exists in the model config
-            if "top_p" in model_config:
-                model_kwargs["top_p"] = model_config["top_p"]
-
-            api_kwargs = model.convert_inputs_to_api_kwargs(
-                input=prompt,
-                model_kwargs=model_kwargs,
-                model_type=ModelType.LLM
-            )
+            llm_client_instance = model_client_from_config() # Instantiate OpenAIClient class
         elif request.provider == "azure":
-            logger.info(f"Using Azure AI with model: {request.model}")
-
-            # Initialize Azure AI client
-            model = AzureAIClient()
-            model_kwargs = {
-                "model": request.model,
-                "stream": True,
-                "temperature": model_config["temperature"],
-                "top_p": model_config["top_p"]
-            }
-
-            api_kwargs = model.convert_inputs_to_api_kwargs(
-                input=prompt,
-                model_kwargs=model_kwargs,
-                model_type=ModelType.LLM
-            )
-        else:
-            # Initialize Google Generative AI model
-            model = genai.GenerativeModel(
-                model_name=model_config["model"],
+            logger.info(f"Using Azure AI with model: {api_input_construction_kwargs.get('model')}")
+            llm_client_instance = model_client_from_config() # Instantiate AzureAIClient class
+        elif request.provider == "google": # Default provider
+            logger.info(f"Using Google Gemini with model: {api_input_construction_kwargs.get('model')}")
+            # Google's genai client is used differently, not through the common ModelClient pattern here
+            llm_client_instance = genai.GenerativeModel( # This is the actual model object for google
+                model_name=api_input_construction_kwargs.get("model"),
                 generation_config={
-                    "temperature": model_config["temperature"],
-                    "top_p": model_config["top_p"],
-                    "top_k": model_config["top_k"]
+                    "temperature": api_input_construction_kwargs.get("temperature"),
+                    "top_p": api_input_construction_kwargs.get("top_p"),
+                    "top_k": api_input_construction_kwargs.get("top_k")
                 }
+            )
+            api_kwargs = None # Not applicable for direct genai SDK call pattern
+        else:
+            logger.error(f"Unknown provider in websocket: {request.provider}")
+            await websocket.send_text(f"Error: Unknown provider {request.provider}")
+            await websocket.close()
+            return
+
+        # For providers using the common ModelClient pattern (vllm, ollama, openrouter, openai, azure)
+        # We need to prepare api_kwargs by calling convert_inputs_to_api_kwargs
+        if request.provider != "google":
+            api_kwargs = llm_client_instance.convert_inputs_to_api_kwargs(
+                input=prompt,
+                model_kwargs=api_input_construction_kwargs, # Pass the prepared kwargs
+                model_type=ModelType.LLM
             )
 
         # Process the response based on the provider
         try:
-            if request.provider == "ollama":
-                # Get the response and handle it properly using the previously created api_kwargs
-                response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                # Handle streaming response from Ollama
-                async for chunk in response:
-                    text = getattr(chunk, 'response', None) or getattr(chunk, 'text', None) or str(chunk)
-                    if text and not text.startswith('model=') and not text.startswith('created_at='):
-                        text = text.replace('<think>', '').replace('</think>', '')
-                        await websocket.send_text(text)
-                # Explicitly close the WebSocket connection after the response is complete
-                await websocket.close()
-            elif request.provider == "openrouter":
-                try:
-                    # Get the response and handle it properly using the previously created api_kwargs
-                    logger.info("Making OpenRouter API call")
-                    response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    # Handle streaming response from OpenRouter
-                    async for chunk in response:
-                        await websocket.send_text(chunk)
-                    # Explicitly close the WebSocket connection after the response is complete
-                    await websocket.close()
-                except Exception as e_openrouter:
-                    logger.error(f"Error with OpenRouter API: {str(e_openrouter)}")
-                    error_msg = f"\nError with OpenRouter API: {str(e_openrouter)}\n\nPlease check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
-                    await websocket.send_text(error_msg)
-                    # Close the WebSocket connection after sending the error message
-                    await websocket.close()
-            elif request.provider == "openai":
-                try:
-                    # Get the response and handle it properly using the previously created api_kwargs
-                    logger.info("Making Openai API call")
-                    response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    # Handle streaming response from Openai
-                    async for chunk in response:
+            if request.provider in ["vllm", "ollama", "openrouter", "openai", "azure"]:
+                response_stream = await llm_client_instance.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+
+                # OpenAI-compatible streaming (vLLM, OpenAI, Azure, OpenRouter)
+                if request.provider in ["vllm", "openai", "azure", "openrouter"]:
+                    async for chunk in response_stream:
                         choices = getattr(chunk, "choices", [])
                         if len(choices) > 0:
                             delta = getattr(choices[0], "delta", None)
@@ -564,48 +507,33 @@ This file contains...
                                 text = getattr(delta, "content", None)
                                 if text is not None:
                                     await websocket.send_text(text)
-                    # Explicitly close the WebSocket connection after the response is complete
-                    await websocket.close()
-                except Exception as e_openai:
-                    logger.error(f"Error with Openai API: {str(e_openai)}")
-                    error_msg = f"\nError with Openai API: {str(e_openai)}\n\nPlease check that you have set the OPENAI_API_KEY environment variable with a valid API key."
-                    await websocket.send_text(error_msg)
-                    # Close the WebSocket connection after sending the error message
-                    await websocket.close()
-            elif request.provider == "azure":
-                try:
-                    # Get the response and handle it properly using the previously created api_kwargs
-                    logger.info("Making Azure AI API call")
-                    response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    # Handle streaming response from Azure AI
-                    async for chunk in response:
-                        choices = getattr(chunk, "choices", [])
-                        if len(choices) > 0:
-                            delta = getattr(choices[0], "delta", None)
-                            if delta is not None:
-                                text = getattr(delta, "content", None)
-                                if text is not None:
-                                    await websocket.send_text(text)
-                    # Explicitly close the WebSocket connection after the response is complete
-                    await websocket.close()
-                except Exception as e_azure:
-                    logger.error(f"Error with Azure AI API: {str(e_azure)}")
-                    error_msg = f"\nError with Azure AI API: {str(e_azure)}\n\nPlease check that you have set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_VERSION environment variables with valid values."
-                    await websocket.send_text(error_msg)
-                    # Close the WebSocket connection after sending the error message
-                    await websocket.close()
-            else:
-                # Generate streaming response
-                response = model.generate_content(prompt, stream=True)
-                # Stream the response
-                for chunk in response:
+                elif request.provider == "ollama": # Ollama has a slightly different stream structure
+                    async for chunk in response_stream:
+                        # Adalflow's OllamaClient stream yields objects that might have 'response' or 'text'
+                        text = getattr(chunk, 'response', None) # For non-streaming, or final full response in some stream modes
+                        if text is None: # Check for actual streaming chunk format from Ollama
+                             delta_ollama = getattr(chunk, 'message', None) # Newer ollama lib might use this
+                             if delta_ollama:
+                                 text = getattr(delta_ollama, 'content', None)
+                             else: # Fallback to older possible attributes or direct string
+                                text = getattr(chunk, 'text', None) or (str(chunk) if not hasattr(chunk, 'model') else None)
+
+                        if text and not (hasattr(chunk, 'model') and hasattr(chunk, 'created_at')): # Filter out metadata chunks
+                            text = text.replace('<think>', '').replace('</think>', '')
+                            await websocket.send_text(text)
+
+                await websocket.close() # Close after successful streaming for these providers
+
+            elif request.provider == "google": # Default provider (Google)
+                response_stream = llm_client_instance.generate_content(prompt, stream=True)
+                for chunk in response_stream:
                     if hasattr(chunk, 'text'):
                         await websocket.send_text(chunk.text)
-                # Explicitly close the WebSocket connection after the response is complete
-                await websocket.close()
+                await websocket.close() # Close after successful streaming for Google
+            # No else needed here as unknown provider is handled above
 
         except Exception as e_outer:
-            logger.error(f"Error in streaming response: {str(e_outer)}")
+            logger.error(f"Error in streaming response for provider {request.provider}: {str(e_outer)}")
             error_message = str(e_outer)
 
             # Check for token limit errors

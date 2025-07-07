@@ -21,6 +21,11 @@ AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION')
 AWS_ROLE_ARN = os.environ.get('AWS_ROLE_ARN')
+OLLAMA_API_KEY = os.environ.get('OLLAMA_API_KEY') # Added for Ollama API Key
+OLLAMA_HEADERS_RAW = os.environ.get('OLLAMA_HEADERS') # Added for Ollama Headers
+VLLM_API_BASE_URL = os.environ.get('VLLM_API_BASE_URL')
+VLLM_MODEL_NAME = os.environ.get('VLLM_MODEL_NAME')
+VLLM_API_KEY = os.environ.get('VLLM_API_KEY')
 
 # Set keys in environment (in case they're needed elsewhere in the code)
 if OPENAI_API_KEY:
@@ -37,6 +42,17 @@ if AWS_REGION:
     os.environ["AWS_REGION"] = AWS_REGION
 if AWS_ROLE_ARN:
     os.environ["AWS_ROLE_ARN"] = AWS_ROLE_ARN
+if OLLAMA_API_KEY: # Added for Ollama API Key
+    os.environ["OLLAMA_API_KEY"] = OLLAMA_API_KEY
+if OLLAMA_HEADERS_RAW: # Added for Ollama Headers
+    os.environ["OLLAMA_HEADERS"] = OLLAMA_HEADERS_RAW
+if VLLM_API_BASE_URL:
+    os.environ["VLLM_API_BASE_URL"] = VLLM_API_BASE_URL
+if VLLM_MODEL_NAME:
+    os.environ["VLLM_MODEL_NAME"] = VLLM_MODEL_NAME
+if VLLM_API_KEY:
+    os.environ["VLLM_API_KEY"] = VLLM_API_KEY
+
 
 # Wiki authentication settings
 raw_auth_mode = os.environ.get('DEEPWIKI_AUTH_MODE', 'False')
@@ -299,38 +315,95 @@ def get_model_config(provider="google", model=None):
     if not provider_config:
         raise ValueError(f"Configuration for provider '{provider}' not found")
 
-    model_client = provider_config.get("model_client")
-    if not model_client:
-        raise ValueError(f"Model client not specified for provider '{provider}'")
+    model_client_class = provider_config.get("model_client") # This is the class, e.g. OpenAIClient
+    if not model_client_class:
+        # This should ideally be caught by load_generator_config if client_class is missing or invalid
+        raise ValueError(f"Model client class not resolved for provider '{provider}'")
 
-    # If model not provided, use default model for the provider
-    if not model:
-        model = provider_config.get("default_model")
-        if not model:
-            raise ValueError(f"No default model specified for provider '{provider}'")
-
-    # Get model parameters (if present)
-    model_params = {}
-    if model in provider_config.get("models", {}):
-        model_params = provider_config["models"][model]
-    else:
-        default_model = provider_config.get("default_model")
-        model_params = provider_config["models"][default_model]
-
-    # Prepare base configuration
-    result = {
-        "model_client": model_client,
-    }
-
-    # Provider-specific adjustments
-    if provider == "ollama":
-        # Ollama uses a slightly different parameter structure
-        if "options" in model_params:
-            result["model_kwargs"] = {"model": model, **model_params["options"]}
+    # Determine the model name to be used
+    # Priority: 1. 'model' argument from function call,
+    #           2. Provider-specific env var (like VLLM_MODEL_NAME for vLLM),
+    #           3. Default model from provider_config (generator.json)
+    model_to_use = model # From function argument
+    if not model_to_use:
+        if provider == "vllm" and VLLM_MODEL_NAME:
+            model_to_use = VLLM_MODEL_NAME
         else:
-            result["model_kwargs"] = {"model": model}
+            model_to_use = provider_config.get("default_model")
+            if not model_to_use: # Should not happen if generator.json is well-formed
+                raise ValueError(f"No default model specified for provider '{provider}' and no model argument provided.")
+
+    # Get model parameters from config, using model_to_use as the key
+    model_params = {}
+    # Check if model_to_use (which could be from VLLM_MODEL_NAME or function arg) is directly in 'models'
+    if model_to_use in provider_config.get("models", {}):
+        model_params = provider_config["models"][model_to_use]
     else:
-        # Standard structure for other providers
-        result["model_kwargs"] = {"model": model, **model_params}
+        # If not, it might be a custom model name not listed explicitly in generator.json's "models" section.
+        # In this case, fall back to using parameters of the 'default_model' as defined in generator.json for that provider.
+        default_model_in_json = provider_config.get("default_model")
+        if default_model_in_json and default_model_in_json in provider_config.get("models", {}):
+            model_params = provider_config["models"][default_model_in_json]
+            logger.info(f"Using parameters of default model '{default_model_in_json}' for model '{model_to_use}' with provider '{provider}'.")
+        else:
+            # If no parameters for the specific model and no parameters for a default model, use empty params.
+            logger.info(f"No specific parameters found for model '{model_to_use}' or for a default model for provider '{provider}'. Using empty params.")
+
+    # Instantiate client for specific providers that need explicit init with env vars here
+    if provider == "vllm":
+        if not VLLM_API_BASE_URL:
+            raise ValueError("VLLM_API_BASE_URL environment variable is not set, but required for vLLM provider.")
+
+        # Instantiate OpenAIClient with VLLM's specific base URL and API key.
+        # VLLM_API_KEY can be None. OpenAIClient's __init__ takes api_key and base_url.
+        # If VLLM_API_KEY is None, OpenAIClient might try to use OPENAI_API_KEY from env.
+        # To prevent this, if VLLM_API_KEY is not set for a keyless vLLM,
+        # we could pass a dummy non-empty string like "NO_KEY_NEEDED" if the client requires *some* value.
+        # However, the OpenAI Python client typically handles api_key=None by not sending an Authorization header,
+        # unless the base_url is the default OpenAI one. For custom base_urls, it's usually fine.
+        # Let's assume direct passing of VLLM_API_KEY (which can be None) is handled correctly.
+        actual_client_instance = model_client_class(
+            api_key=VLLM_API_KEY,  # This can be None
+            base_url=VLLM_API_BASE_URL
+        )
+        result = {"model_client": actual_client_instance}
+        result["model_kwargs"] = {"model": model_to_use, **model_params}
+
+    elif provider == "ollama":
+        # OllamaClient is from adalflow, its instantiation might be different.
+        # It typically gets its host from OLLAMA_HOST environment variable.
+        # Headers (including potential API key) are passed via model_kwargs.
+        actual_client_instance = model_client_class() # Default instantiation
+        result = {"model_client": actual_client_instance}
+
+        ollama_kwargs = {"model": model_to_use}
+        if "options" in model_params:
+            ollama_kwargs.update(model_params["options"])
+
+        headers = {}
+        if OLLAMA_API_KEY:
+            headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
+
+        if OLLAMA_HEADERS_RAW:
+            try:
+                custom_headers = json.loads(OLLAMA_HEADERS_RAW)
+                if isinstance(custom_headers, dict):
+                    headers.update(custom_headers)
+                else:
+                    logger.warning("OLLAMA_HEADERS is not a valid JSON object (dictionary). Ignoring.")
+            except json.JSONDecodeError:
+                logger.warning("OLLAMA_HEADERS is not valid JSON. Ignoring.")
+
+        if headers:
+            ollama_kwargs["headers"] = headers # Pass headers to OllamaClient via model_kwargs
+
+        result["model_kwargs"] = ollama_kwargs
+    else:
+        # For other standard providers (openai, google, azure, bedrock, openrouter),
+        # the client class itself is returned. The actual instantiation with API keys
+        # is handled by Adalflow/Langchain components, which typically look for
+        # standard environment variables (e.g., OPENAI_API_KEY, GOOGLE_API_KEY).
+        result = {"model_client": model_client_class}
+        result["model_kwargs"] = {"model": model_to_use, **model_params}
 
     return result

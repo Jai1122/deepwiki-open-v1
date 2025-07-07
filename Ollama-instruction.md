@@ -44,12 +44,34 @@ cd deepwiki-open
 ```
 
 Create a `.env` file in the project root:
-```
-# No need for API keys when using Ollama locally
+```env
+# Basic port configuration
 PORT=8001
-# Optionally, provide OLLAMA_HOST if Ollama is not local
-OLLAMA_HOST=your_ollama_host # (default: http://localhost:11434)
+
+# Configuration for connecting to a remote Ollama instance
+# OLLAMA_HOST should be the full URL to your Ollama server,
+# including http:// or https://.
+# Default is http://localhost:11434 if not set.
+# Example for a remote HTTPS server:
+# OLLAMA_HOST=https://your-remote-ollama.example.com
+OLLAMA_HOST=http://localhost:11434
+
+# If your remote Ollama server requires an API key (e.g., a Bearer token),
+# set it here. This will be sent as an "Authorization: Bearer <your_key>" header.
+# OLLAMA_API_KEY=your_ollama_api_key
+
+# For more complex authentication or other custom headers,
+# you can provide a JSON string of headers.
+# These will be merged with the Authorization header if OLLAMA_API_KEY is also set.
+# Example:
+# OLLAMA_HEADERS={"X-Custom-Auth-User": "user", "X-Another-Header": "value"}
+# OLLAMA_HEADERS=
 ```
+
+### Note on Local vs. Remote Ollama:
+- If you are running Ollama on the same machine as DeepWiki (locally), you typically don't need `OLLAMA_HOST`, `OLLAMA_API_KEY`, or `OLLAMA_HEADERS`.
+- The `OLLAMA_HOST` defaults to `http://localhost:11434`.
+- If your Ollama instance is hosted remotely, especially with HTTPS and/or authentication, you will need to configure these variables.
 
 Configure the Local Embedder for Ollama:
 ```
@@ -83,16 +105,21 @@ npm run dev
 1. Build the docker image `docker build -f Dockerfile-ollama-local -t deepwiki:ollama-local .`
 2. Run the container:
    ```bash
-   # For regular use
+   # For regular use (replace `your_ollama_host` with your actual host if remote)
+   # Add -e OLLAMA_API_KEY=your_key and -e OLLAMA_HEADERS='{"YourHeader": "Value"}' as needed
    docker run -p 3000:3000 -p 8001:8001 --name deepwiki \
      -v ~/.adalflow:/root/.adalflow \
-     -e OLLAMA_HOST=your_ollama_host \
+     -e OLLAMA_HOST=http://localhost:11434 \
+     # -e OLLAMA_API_KEY=your_ollama_api_key \
+     # -e OLLAMA_HEADERS='{"X-Custom-Auth-User": "user"}' \
      deepwiki:ollama-local
    
-   # For local repository analysis
+   # For local repository analysis (similarly, add other OLLAMA_ env vars if needed)
    docker run -p 3000:3000 -p 8001:8001 --name deepwiki \
      -v ~/.adalflow:/root/.adalflow \
-     -e OLLAMA_HOST=your_ollama_host \
+     -e OLLAMA_HOST=http://localhost:11434 \
+     # -e OLLAMA_API_KEY=your_ollama_api_key \
+     # -e OLLAMA_HEADERS='{"X-Custom-Auth-User": "user"}' \
      -v /path/to/your/repo:/app/local-repos/repo-name \
      deepwiki:ollama-local
    ```
