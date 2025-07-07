@@ -349,41 +349,30 @@ def get_model_config(provider="google", model=None):
             # If no parameters for the specific model and no parameters for a default model, use empty params.
             logger.info(f"No specific parameters found for model '{model_to_use}' or for a default model for provider '{provider}'. Using empty params.")
 
-    # Instantiate client for specific providers that need explicit init with env vars here
-    if provider == "vllm":
-        if not VLLM_API_BASE_URL:
-            raise ValueError("VLLM_API_BASE_URL environment variable is not set, but required for vLLM provider.")
+    # For all providers, we return the client CLASS and the resolved model_kwargs.
+    # The actual instantiation of the client (and passing of specific parameters like base_urls or api_keys
+    # not defined in generator.json) will be handled by the calling code (e.g., api/websocket_wiki.py).
 
-        # Instantiate OpenAIClient with VLLM's specific base URL and API key.
-        # VLLM_API_KEY can be None. OpenAIClient's __init__ takes api_key and base_url.
-        # If VLLM_API_KEY is None, OpenAIClient might try to use OPENAI_API_KEY from env.
-        # To prevent this, if VLLM_API_KEY is not set for a keyless vLLM,
-        # we could pass a dummy non-empty string like "NO_KEY_NEEDED" if the client requires *some* value.
-        # However, the OpenAI Python client typically handles api_key=None by not sending an Authorization header,
-        # unless the base_url is the default OpenAI one. For custom base_urls, it's usually fine.
-        # Let's assume direct passing of VLLM_API_KEY (which can be None) is handled correctly.
-        actual_client_instance = model_client_class(
-            api_key=VLLM_API_KEY,  # This can be None
-            base_url=VLLM_API_BASE_URL
-        )
-        result = {"model_client": actual_client_instance}
-        result["model_kwargs"] = {"model": model_to_use, **model_params}
+    result = {
+        "model_client": model_client_class,  # Return the CLASS
+        "model_kwargs": {"model": model_to_use} # Start with the resolved model name
+    }
 
-    elif provider == "ollama":
-        # OllamaClient is from adalflow, its instantiation might be different.
-        # It typically gets its host from OLLAMA_HOST environment variable.
-        # Headers (including potential API key) are passed via model_kwargs.
-        actual_client_instance = model_client_class() # Default instantiation
-        result = {"model_client": actual_client_instance}
+    # Add provider-specific model parameters from generator.json (e.g., temperature, top_p)
+    # For Ollama, model_params is expected to be the "options" dictionary.
+    # For other OpenAI-compatible clients (like vLLM, OpenAI, Azure, OpenRouter),
+    # model_params are top-level keys like "temperature".
 
-        ollama_kwargs = {"model": model_to_use}
-        if "options" in model_params:
-            ollama_kwargs.update(model_params["options"])
+    if provider == "ollama":
+        # model_params for ollama from generator.json is expected to be the "options" dict itself.
+        # We also need to handle potential OLLAMA_API_KEY and OLLAMA_HEADERS.
+        ollama_structured_kwargs = {"model": model_to_use}
+        if model_params: # model_params here is the "options" dict from generator.json
+            ollama_structured_kwargs["options"] = model_params
 
         headers = {}
         if OLLAMA_API_KEY:
             headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
-
         if OLLAMA_HEADERS_RAW:
             try:
                 custom_headers = json.loads(OLLAMA_HEADERS_RAW)
@@ -393,17 +382,13 @@ def get_model_config(provider="google", model=None):
                     logger.warning("OLLAMA_HEADERS is not a valid JSON object (dictionary). Ignoring.")
             except json.JSONDecodeError:
                 logger.warning("OLLAMA_HEADERS is not valid JSON. Ignoring.")
-
         if headers:
-            ollama_kwargs["headers"] = headers # Pass headers to OllamaClient via model_kwargs
+            ollama_structured_kwargs["headers"] = headers
 
-        result["model_kwargs"] = ollama_kwargs
+        result["model_kwargs"] = ollama_structured_kwargs
     else:
-        # For other standard providers (openai, google, azure, bedrock, openrouter),
-        # the client class itself is returned. The actual instantiation with API keys
-        # is handled by Adalflow/Langchain components, which typically look for
-        # standard environment variables (e.g., OPENAI_API_KEY, GOOGLE_API_KEY).
-        result = {"model_client": model_client_class}
-        result["model_kwargs"] = {"model": model_to_use, **model_params}
+        # For vLLM, OpenAI, Azure, OpenRouter, Google (for temp, top_p etc.)
+        # model_params are the direct key-value pairs (e.g., "temperature": 0.7)
+        result["model_kwargs"].update(model_params)
 
     return result
