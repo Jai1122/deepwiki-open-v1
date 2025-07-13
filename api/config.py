@@ -281,7 +281,7 @@ if generator_config:
 
 # Update embedder configuration
 if embedder_config:
-    for key in ["embedder", "embedder_ollama", "retriever", "text_splitter"]:
+    for key in ["embedder", "embedder_ollama", "retriever", "text_splitter", "rag"]:
         if key in embedder_config:
             configs[key] = embedder_config[key]
 

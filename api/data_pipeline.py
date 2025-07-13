@@ -1,6 +1,8 @@
 import adalflow as adal
 from adalflow.core.types import Document, List
-from adalflow.components.data_process import TextSplitter, ToEmbeddings
+from adalflow.components.data_process import ToEmbeddings
+# Use RecursiveCharacterTextSplitter for better code chunking
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 import subprocess
 import json
@@ -368,9 +370,38 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
     if is_ollama_embedder is None:
         is_ollama_embedder = check_ollama()
 
-    splitter = TextSplitter(**configs["text_splitter"])
-    embedder_config = get_embedder_config()
+    # Use RecursiveCharacterTextSplitter for more intelligent chunking, especially for code.
+    # It splits based on a list of characters, trying to keep related code together.
+    # The parameters are now more aligned with what RecursiveCharacterTextSplitter expects.
+    # We still get chunk_size and chunk_overlap from the config.
+    text_splitter_config = configs.get("text_splitter", {})
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=text_splitter_config.get("chunk_size", 1000),
+        chunk_overlap=text_splitter_config.get("chunk_overlap", 200),
+        length_function=len,
+        is_separator_regex=False,
+    )
 
+    # Adalflow's TextSplitter component might not be a direct replacement.
+    # Let's create a simple wrapper that conforms to the expected interface if needed.
+    # Adalflow components usually have a 'call' method that takes data.
+    class LangchainSplitterWrapper:
+        def __init__(self, splitter_instance):
+            self.splitter = splitter_instance
+
+        def __call__(self, documents: List[Document]) -> List[Document]:
+            texts = [doc.text for doc in documents]
+            meta_data = [doc.meta_data for doc in documents]
+            chunks = self.splitter.create_documents(texts, metadatas=meta_data)
+            # The output of create_documents is already a list of LangChain Documents,
+            # which are compatible with Adalflow Documents.
+            # We need to convert them to adalflow.core.types.Document
+            adalflow_docs = [Document(text=chunk.page_content, meta_data=chunk.metadata) for chunk in chunks]
+            return adalflow_docs
+
+    splitter_wrapper = LangchainSplitterWrapper(splitter)
+
+    embedder_config = get_embedder_config()
     embedder = get_embedder()
 
     if is_ollama_embedder:
@@ -384,7 +415,7 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
         )
 
     data_transformer = adal.Sequential(
-        splitter, embedder_transformer
+        splitter_wrapper, embedder_transformer
     )  # sequential will chain together splitter and embedder
     return data_transformer
 

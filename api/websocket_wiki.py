@@ -15,6 +15,7 @@ from api.openai_client import OpenAIClient
 from api.openrouter_client import OpenRouterClient
 from api.azureai_client import AzureAIClient
 from api.rag import RAG
+from api.context_manager import ContextManager
 
 # Configure logging
 from api.logging_config import setup_logging
@@ -183,51 +184,25 @@ async def handle_websocket_chat(websocket: WebSocket):
 
         if not input_too_large:
             try:
-                # If filePath exists, modify the query for RAG to focus on the file
                 rag_query = query
                 if request.filePath:
-                    # Use the file path to get relevant context about the file
                     rag_query = f"Contexts related to {request.filePath}"
                     logger.info(f"Modified RAG query to focus on file: {request.filePath}")
 
-                # Try to perform RAG retrieval
-                try:
-                    # This will use the actual RAG implementation
-                    retrieved_documents = request_rag(rag_query, language=request.language)
+                retrieved_docs_result = request_rag(rag_query, language=request.language)
 
-                    if retrieved_documents and retrieved_documents[0].documents:
-                        # Format context for the prompt in a more structured way
-                        documents = retrieved_documents[0].documents
-                        logger.info(f"Retrieved {len(documents)} documents")
+                if retrieved_docs_result and retrieved_docs_result[0].documents:
+                    documents = retrieved_docs_result[0].documents
+                    logger.info(f"Retrieved {len(documents)} documents from RAG.")
 
-                        # Group documents by file path
-                        docs_by_file = {}
-                        for doc in documents:
-                            file_path = doc.meta_data.get('file_path', 'unknown')
-                            if file_path not in docs_by_file:
-                                docs_by_file[file_path] = []
-                            docs_by_file[file_path].append(doc)
-
-                        # Format context text with file path grouping
-                        context_parts = []
-                        for file_path, docs in docs_by_file.items():
-                            # Add file header with metadata
-                            header = f"## File Path: {file_path}\n\n"
-                            # Add document content
-                            content = "\n\n".join([doc.text for doc in docs])
-
-                            context_parts.append(f"{header}{content}")
-
-                        # Join all parts with clear separation
-                        context_text = "\n\n" + "-" * 10 + "\n\n".join(context_parts)
-                    else:
-                        logger.warning("No documents retrieved from RAG")
-                except Exception as e:
-                    logger.error(f"Error in RAG retrieval: {str(e)}")
-                    # Continue without RAG if there's an error
-
+                    # Instantiate and use the ContextManager to build the context string
+                    context_token_limit = configs.get("rag", {}).get("context_token_limit", 4096)
+                    context_manager = ContextManager(model_provider=request.provider)
+                    context_text = context_manager.build_context(documents, context_token_limit)
+                else:
+                    logger.warning("No documents retrieved from RAG.")
             except Exception as e:
-                logger.error(f"Error retrieving documents: {str(e)}")
+                logger.error(f"Error during RAG retrieval or context building: {str(e)}")
                 context_text = ""
 
         # Get repository information
@@ -414,10 +389,9 @@ This file contains...
             prompt += f"<currentFileContent path=\"{request.filePath}\">\n{file_content}\n</currentFileContent>\n\n"
 
         # Only include context if it's not empty
-        CONTEXT_START = "<START_OF_CONTEXT>"
-        CONTEXT_END = "<END_OF_CONTEXT>"
         if context_text.strip():
-            prompt += f"{CONTEXT_START}\n{context_text}\n{CONTEXT_END}\n\n"
+            # The ContextManager already adds the <START_OF_CONTEXT> and <END_OF_CONTEXT> tags.
+            prompt += f"{context_text}\n\n"
         else:
             # Add a note that we're skipping RAG due to size constraints or because it's the isolated API
             logger.info("No context available from RAG")
@@ -554,139 +528,10 @@ This file contains...
 
         except Exception as e_outer:
             logger.error(f"Error in streaming response for provider {request.provider}: {str(e_outer)}")
-            error_message = str(e_outer)
-
-            # Check for token limit errors
-            if "maximum context length" in error_message or "token limit" in error_message or "too many tokens" in error_message:
-                # If we hit a token limit error, try again without context
-                logger.warning("Token limit exceeded, retrying without context")
-                try:
-                    # Create a simplified prompt without context
-                    simplified_prompt = f"/no_think {system_prompt}\n\n"
-                    if conversation_history:
-                        simplified_prompt += f"<conversation_history>\n{conversation_history}</conversation_history>\n\n"
-
-                    # Include file content in the fallback prompt if it was retrieved
-                    if request.filePath and file_content:
-                        simplified_prompt += f"<currentFileContent path=\"{request.filePath}\">\n{file_content}\n</currentFileContent>\n\n"
-
-                    simplified_prompt += "<note>Answering without retrieval augmentation due to input size constraints.</note>\n\n"
-                    simplified_prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
-
-                    if request.provider == "ollama":
-                        simplified_prompt += " /no_think"
-
-                        # Create new api_kwargs with the simplified prompt
-                        fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
-                            input=simplified_prompt,
-                            model_kwargs=model_kwargs,
-                            model_type=ModelType.LLM
-                        )
-
-                        # Get the response using the simplified prompt
-                        fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
-
-                        # Handle streaming fallback_response from Ollama
-                        async for chunk in fallback_response:
-                            text = getattr(chunk, 'response', None) or getattr(chunk, 'text', None) or str(chunk)
-                            if text and not text.startswith('model=') and not text.startswith('created_at='):
-                                text = text.replace('<think>', '').replace('</think>', '')
-                                await websocket.send_text(text)
-                    elif request.provider == "openrouter":
-                        try:
-                            # Create new api_kwargs with the simplified prompt
-                            fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
-                                input=simplified_prompt,
-                                model_kwargs=model_kwargs,
-                                model_type=ModelType.LLM
-                            )
-
-                            # Get the response using the simplified prompt
-                            logger.info("Making fallback OpenRouter API call")
-                            fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
-
-                            # Handle streaming fallback_response from OpenRouter
-                            async for chunk in fallback_response:
-                                await websocket.send_text(chunk)
-                        except Exception as e_fallback:
-                            logger.error(f"Error with OpenRouter API fallback: {str(e_fallback)}")
-                            error_msg = f"\nError with OpenRouter API fallback: {str(e_fallback)}\n\nPlease check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
-                            await websocket.send_text(error_msg)
-                    elif request.provider == "openai":
-                        try:
-                            # Create new api_kwargs with the simplified prompt
-                            fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
-                                input=simplified_prompt,
-                                model_kwargs=model_kwargs,
-                                model_type=ModelType.LLM
-                            )
-
-                            # Get the response using the simplified prompt
-                            logger.info("Making fallback Openai API call")
-                            fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
-
-                            # Handle streaming fallback_response from Openai
-                            async for chunk in fallback_response:
-                                text = chunk if isinstance(chunk, str) else getattr(chunk, 'text', str(chunk))
-                                await websocket.send_text(text)
-                        except Exception as e_fallback:
-                            logger.error(f"Error with Openai API fallback: {str(e_fallback)}")
-                            error_msg = f"\nError with Openai API fallback: {str(e_fallback)}\n\nPlease check that you have set the OPENAI_API_KEY environment variable with a valid API key."
-                            await websocket.send_text(error_msg)
-                    elif request.provider == "azure":
-                        try:
-                            # Create new api_kwargs with the simplified prompt
-                            fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
-                                input=simplified_prompt,
-                                model_kwargs=model_kwargs,
-                                model_type=ModelType.LLM
-                            )
-
-                            # Get the response using the simplified prompt
-                            logger.info("Making fallback Azure AI API call")
-                            fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
-
-                            # Handle streaming fallback response from Azure AI
-                            async for chunk in fallback_response:
-                                choices = getattr(chunk, "choices", [])
-                                if len(choices) > 0:
-                                    delta = getattr(choices[0], "delta", None)
-                                    if delta is not None:
-                                        text = getattr(delta, "content", None)
-                                        if text is not None:
-                                            await websocket.send_text(text)
-                        except Exception as e_fallback:
-                            logger.error(f"Error with Azure AI API fallback: {str(e_fallback)}")
-                            error_msg = f"\nError with Azure AI API fallback: {str(e_fallback)}\n\nPlease check that you have set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_VERSION environment variables with valid values."
-                            await websocket.send_text(error_msg)
-                    else:
-                        # Initialize Google Generative AI model
-                        model_config = get_model_config(request.provider, request.model)
-                        fallback_model = genai.GenerativeModel(
-                            model_name=model_config["model"],
-                            generation_config={
-                                "temperature": model_config["model_kwargs"].get("temperature", 0.7),
-                                "top_p": model_config["model_kwargs"].get("top_p", 0.8),
-                                "top_k": model_config["model_kwargs"].get("top_k", 40)
-                            }
-                        )
-
-                        # Get streaming response using simplified prompt
-                        fallback_response = fallback_model.generate_content(simplified_prompt, stream=True)
-                        # Stream the fallback response
-                        for chunk in fallback_response:
-                            if hasattr(chunk, 'text'):
-                                await websocket.send_text(chunk.text)
-                except Exception as e2:
-                    logger.error(f"Error in fallback streaming response: {str(e2)}")
-                    await websocket.send_text(f"\nI apologize, but your request is too large for me to process. Please try a shorter query or break it into smaller parts.")
-                    # Close the WebSocket connection after sending the error message
-                    await websocket.close()
-            else:
-                # For other errors, return the error message
-                await websocket.send_text(f"\nError: {error_message}")
-                # Close the WebSocket connection after sending the error message
-                await websocket.close()
+            # For other errors, return the error message
+            await websocket.send_text(f"\nError: {str(e_outer)}")
+            # Close the WebSocket connection after sending the error message
+            await websocket.close()
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
