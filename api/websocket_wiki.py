@@ -583,27 +583,35 @@ This file contains...
             if not isinstance(turn_id, int) and hasattr(turn, 'user_query') and hasattr(turn, 'assistant_response'):
                 conversation_history += f"<turn>\n<user>{turn.user_query.query_str}</user>\n<assistant>{turn.assistant_response.response_str}</assistant>\n</turn>\n"
 
-        # Create the prompt with context
-        prompt = f"/no_think {system_prompt}\n\n"
+        # --- RAG and Context Management ---
+        retrieved_documents = None
+        if not input_too_large:
+            try:
+                rag_query = query
+                if request.filePath:
+                    rag_query = f"Contexts related to {request.filePath}"
 
-        if conversation_history:
-            prompt += f"<conversation_history>\n{conversation_history}</conversation_history>\n\n"
+                retrieved_docs_result = request_rag(rag_query, language=request.language)
+                if retrieved_docs_result and retrieved_docs_result[0].documents:
+                    retrieved_documents = retrieved_docs_result[0].documents
+            except Exception as e:
+                logger.error(f"Error during RAG retrieval: {str(e)}")
 
-        # Check if filePath is provided and fetch file content if it exists
-        if file_content:
-            # Add file content to the prompt after conversation history
-            prompt += f"<currentFileContent path=\"{request.filePath}\">\n{file_content}\n</currentFileContent>\n\n"
+        # --- Holistic Prompt Construction ---
+        model_config_dict = get_model_config(request.provider, request.model)
+        resolved_model_kwargs = model_config_dict.get("model_kwargs", {})
+        model_max_tokens = resolved_model_kwargs.get("max_context_tokens", 8192)
 
-        # Only include context if it's not empty
-        if context_text.strip():
-            # The ContextManager already adds the <START_OF_CONTEXT> and <END_OF_CONTEXT> tags.
-            prompt += f"{context_text}\n\n"
-        else:
-            # Add a note that we're skipping RAG due to size constraints or because it's the isolated API
-            logger.info("No context available from RAG")
-            prompt += "<note>Answering without retrieval augmentation.</note>\n\n"
-
-        prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
+        context_manager = ContextManager(model_provider=request.provider)
+        prompt = context_manager.build_prompt(
+            system_prompt=system_prompt,
+            query=query,
+            conversation_history=conversation_history,
+            file_content=file_content,
+            file_path=request.filePath,
+            retrieved_documents=retrieved_documents,
+            model_max_tokens=model_max_tokens
+        )
 
         # Get the full model configuration from config.py
         # Note: we already called this above to get the max_context_tokens,
