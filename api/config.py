@@ -137,14 +137,15 @@ def load_generator_config():
             if provider_config.get("client_class") in CLIENT_CLASSES:
                 provider_config["model_client"] = CLIENT_CLASSES[provider_config["client_class"]]
             # Fall back to default mapping based on provider_id
-            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure"]:
+            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure", "vllm"]:
                 default_map = {
                     "google": GoogleGenAIClient,
                     "openai": OpenAIClient,
                     "openrouter": OpenRouterClient,
                     "ollama": OllamaClient,
                     "bedrock": BedrockClient,
-                    "azure": AzureAIClient
+                    "azure": AzureAIClient,
+                    "vllm": OpenAIClient # vLLM uses an OpenAI-compatible client
                 }
                 provider_config["model_client"] = default_map[provider_id]
             else:
@@ -301,7 +302,7 @@ def get_model_config(provider="google", model=None):
     Get configuration for the specified provider and model
 
     Parameters:
-        provider (str): Model provider ('google', 'openai', 'openrouter', 'ollama', 'bedrock')
+        provider (str): Model provider ('google', 'openai', 'openrouter', 'ollama', 'bedrock', 'azure', 'vllm')
         model (str): Model name, or None to use default model
 
     Returns:
@@ -392,3 +393,4 @@ def get_model_config(provider="google", model=None):
         result["model_kwargs"].update(model_params)
 
     return result
+```
