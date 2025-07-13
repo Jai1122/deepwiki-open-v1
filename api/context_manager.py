@@ -89,7 +89,7 @@ class ContextManager:
                     current_tokens += count_tokens(context_parts[-1], self.is_ollama)
 
                 # Stop processing more documents as we have hit the token limit
-                logger.info(f"Context budget reached. Stopping document processing.")
+                logger.info("Context budget reached. Stopping document processing.")
                 break
 
         if not context_parts:
@@ -104,4 +104,3 @@ class ContextManager:
         logger.info(f"Final context built with {len(context_parts)} documents and {final_tokens} tokens (limit: {max_tokens}).")
 
         return context_header + final_context + context_footer
-```
