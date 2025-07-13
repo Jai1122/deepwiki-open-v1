@@ -25,6 +25,18 @@
         }
       }
     },
+    "vllm": {
+      "client_class": "OpenAIClient",
+      "default_model": "${VLLM_MODEL_NAME:-vllm-default-model}",
+      "supportsCustomModel": true,
+      "models": {
+        "${VLLM_MODEL_NAME:-vllm-default-model}": {
+          "max_context_tokens": 40960,
+          "temperature": 0.7,
+          "top_p": 0.9
+        }
+      }
+    },
     "openai": {
       "default_model": "gpt-4o",
       "supportsCustomModel": true,
