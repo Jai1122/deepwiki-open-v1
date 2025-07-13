@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLLM Wiki Generator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>VLLM Wiki Generator</h1>
+        <div class="form-container">
+            <input type="text" id="repo-path" placeholder="Enter local repository path">
+            <button id="generate-btn">Generate Wiki</button>
+            <button id="export-md-btn">Export as Markdown</button>
+        </div>
+        <div id="processed-projects">
+            <h2>Processed Projects</h2>
+            <ul id="projects-list"></ul>
+        </div>
+        <div id="qa-container">
+            <h2>Q&A</h2>
+            <input type="text" id="question" placeholder="Ask a question about the repository">
+            <button id="ask-btn">Ask</button>
+            <div id="answer"></div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
