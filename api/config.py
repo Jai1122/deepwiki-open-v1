@@ -21,8 +21,8 @@ AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION')
 AWS_ROLE_ARN = os.environ.get('AWS_ROLE_ARN')
-OLLAMA_API_KEY = os.environ.get('OLLAMA_API_KEY') # Added for Ollama API Key
-OLLAMA_HEADERS_RAW = os.environ.get('OLLAMA_HEADERS') # Added for Ollama Headers
+OLLAMA_API_KEY = os.environ.get('OLLAMA_API_KEY')
+OLLAMA_HEADERS_RAW = os.environ.get('OLLAMA_HEADERS')
 VLLM_API_BASE_URL = os.environ.get('VLLM_API_BASE_URL')
 VLLM_MODEL_NAME = os.environ.get('VLLM_MODEL_NAME')
 VLLM_API_KEY = os.environ.get('VLLM_API_KEY')
@@ -42,9 +42,9 @@ if AWS_REGION:
     os.environ["AWS_REGION"] = AWS_REGION
 if AWS_ROLE_ARN:
     os.environ["AWS_ROLE_ARN"] = AWS_ROLE_ARN
-if OLLAMA_API_KEY: # Added for Ollama API Key
+if OLLAMA_API_KEY:
     os.environ["OLLAMA_API_KEY"] = OLLAMA_API_KEY
-if OLLAMA_HEADERS_RAW: # Added for Ollama Headers
+if OLLAMA_HEADERS_RAW:
     os.environ["OLLAMA_HEADERS"] = OLLAMA_HEADERS_RAW
 if VLLM_API_BASE_URL:
     os.environ["VLLM_API_BASE_URL"] = VLLM_API_BASE_URL
@@ -145,7 +145,7 @@ def load_generator_config():
                     "ollama": OllamaClient,
                     "bedrock": BedrockClient,
                     "azure": AzureAIClient,
-                    "vllm": OpenAIClient # vLLM uses an OpenAI-compatible client
+                    "vllm": OpenAIClient
                 }
                 provider_config["model_client"] = default_map[provider_id]
             else:
@@ -368,8 +368,12 @@ def get_model_config(provider="google", model=None):
         # model_params for ollama from generator.json is expected to be the "options" dict itself.
         # We also need to handle potential OLLAMA_API_KEY and OLLAMA_HEADERS.
         ollama_structured_kwargs = {"model": model_to_use}
-        if model_params: # model_params here is the "options" dict from generator.json
-            ollama_structured_kwargs["options"] = model_params
+        # The 'max_context_tokens' is a top-level key, not part of 'options'.
+        if 'max_context_tokens' in model_params:
+            ollama_structured_kwargs['max_context_tokens'] = model_params['max_context_tokens']
+
+        if model_params.get("options"): # Check if 'options' key exists
+            ollama_structured_kwargs["options"] = model_params["options"]
 
         headers = {}
         if OLLAMA_API_KEY:

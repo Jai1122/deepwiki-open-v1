@@ -25,7 +25,7 @@
 - **Easy Navigation**: Simple, intuitive interface to explore the wiki
 - **Ask Feature**: Chat with your repository using RAG-powered AI to get accurate answers
 - **DeepResearch**: Multi-turn research process that thoroughly investigates complex topics
-- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, local Ollama models, and vLLM (via OpenAI-compatible API).
+- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, and local Ollama models
 
 ## 🚀 Quick Start (Super Easy!)
 
@@ -43,10 +43,6 @@ echo "OPENAI_API_KEY=your_openai_api_key" >> .env
 echo "OPENROUTER_API_KEY=your_openrouter_api_key" >> .env
 # Optional: Add Ollama host if not local. defaults to http://localhost:11434
 echo "OLLAMA_HOST=your_ollama_host" >> .env
-# Optional: Add vLLM configuration if using a vLLM server
-echo "VLLM_API_BASE_URL=your_vllm_api_base_url" >> .env # e.g., http://localhost:8000/v1
-echo "VLLM_MODEL_NAME=your_vllm_model_name" >> .env   # e.g., mistralai/Mistral-7B-Instruct-v0.1
-echo "VLLM_API_KEY=your_vllm_api_key" >> .env         # Optional, if your vLLM endpoint is secured
 # Optional: Add Azure API key, endpoint and version if you want to use azure openai models
 echo "AZURE_OPENAI_API_KEY=your_azure_openai_api_key" >> .env
 echo "AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint" >> .env
@@ -79,10 +75,6 @@ AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint
 AZURE_OPENAI_VERSION=your_azure_openai_version
 # Optional: Add Ollama host if not local. default: http://localhost:11434
 OLLAMA_HOST=your_ollama_host
-# Optional: Add vLLM configuration if using a vLLM server
-VLLM_API_BASE_URL=your_vllm_api_base_url # e.g., http://localhost:8000/v1
-VLLM_MODEL_NAME=your_vllm_model_name   # e.g., mistralai/Mistral-7B-Instruct-v0.1
-VLLM_API_KEY=your_vllm_api_key         # Optional, if your vLLM endpoint is secured
 ```
 
 #### Step 2: Start the Backend
@@ -198,8 +190,7 @@ DeepWiki now implements a flexible provider-based model selection system support
 - **OpenAI**: Default `gpt-4o`, also supports `o4-mini`, etc.
 - **OpenRouter**: Access to multiple models via a unified API, including Claude, Llama, Mistral, etc.
 - **Azure OpenAI**: Default `gpt-4o`, also supports `o4-mini`, etc.
-- **Ollama**: Support for locally running open-source models like `llama3`.
-- **vLLM**: Support for self-hosted models served via an OpenAI-compatible API (e.g., using vLLM).
+- **Ollama**: Support for locally running open-source models like `llama3`
 
 ### Environment Variables
 
@@ -219,11 +210,6 @@ OPENAI_BASE_URL=https://custom-api-endpoint.com/v1  # Optional, for custom OpenA
 
 # Ollama host
 OLLAMA_HOST=your_ollama_host # Optional, if Ollama is not local. default: http://localhost:11434
-
-# vLLM Configuration (for using self-hosted models via vLLM's OpenAI-compatible API)
-VLLM_API_BASE_URL=http://your_vllm_host:port/v1       # Required if using vLLM provider
-VLLM_MODEL_NAME=your_model_served_by_vllm         # Optional, model name to pass to vLLM
-VLLM_API_KEY=your_vllm_api_key                    # Optional, if your vLLM endpoint is secured
 
 # Configuration Directory
 DEEPWIKI_CONFIG_DIR=/path/to/custom/config/dir  # Optional, for custom config file location
@@ -332,9 +318,6 @@ docker-compose up
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint                    | No | Required only if you want to use Azure OpenAI models                                                       |
 | `AZURE_OPENAI_VERSION` | Azure OpenAI version                     | No | Required only if you want to use Azure OpenAI models                                                       |
 | `OLLAMA_HOST`        | Ollama Host (default: http://localhost:11434)                | No | Required only if you want to use external Ollama server                                                  |
-| `VLLM_API_BASE_URL`  | Base URL for your vLLM OpenAI-compatible API endpoint        | No | Required if using the vLLM provider (e.g., `http://localhost:8000/v1`)                                   |
-| `VLLM_MODEL_NAME`    | Model name to be used with vLLM                              | No | Optional, specifies the model for vLLM (e.g., `mistralai/Mistral-7B-Instruct-v0.1`)                      |
-| `VLLM_API_KEY`       | API Key for your vLLM endpoint (if secured)                  | No | Optional, only needed if your vLLM server requires an API key                                            |
 | `PORT`               | Port for the API server (default: 8001)                      | No | If you host API and frontend on the same machine, make sure change port of `SERVER_BASE_URL` accordingly |
 | `SERVER_BASE_URL`    | Base URL for the API server (default: http://localhost:8001) | No |
 | `DEEPWIKI_AUTH_MODE` | Set to `true` or `1` to enable authorization mode. | No | Defaults to `false`. If enabled, `DEEPWIKI_AUTH_CODE` is required. |
@@ -373,9 +356,6 @@ docker run -p 8001:8001 -p 3000:3000 \
   -e AZURE_OPENAI_API_KEY=your_azure_openai_api_key \
   -e AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint \
   -e AZURE_OPENAI_VERSION=your_azure_openai_version \
-  -e VLLM_API_BASE_URL=your_vllm_api_base_url \
-  -e VLLM_MODEL_NAME=your_vllm_model_name \
-  -e VLLM_API_KEY=your_vllm_api_key \
 
   -v ~/.adalflow:/root/.adalflow \
   ghcr.io/asyncfuncai/deepwiki-open:latest

@@ -832,4 +832,3 @@ class DatabaseManager:
             List[Document]: List of Document objects
         """
         return self.prepare_database(repo_url_or_path, type, access_token)
-```
