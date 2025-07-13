@@ -16,6 +16,7 @@ from api.openrouter_client import OpenRouterClient
 from api.azureai_client import AzureAIClient
 from api.rag import RAG
 from api.context_manager import ContextManager
+import inspect
 
 # Configure logging
 from api.logging_config import setup_logging
@@ -178,11 +179,54 @@ async def handle_websocket_chat(websocket: WebSocket):
         # Get the query from the last message
         query = last_message.content
 
-        # Only retrieve documents if input is not too large
-        context_text = ""
-        retrieved_documents = None
+        # Get the full model configuration from config.py
+        model_config_dict = get_model_config(request.provider, request.model)
+        resolved_model_kwargs = model_config_dict.get("model_kwargs", {})
 
-        if not input_too_large:
+        # Determine the model's maximum context length
+        # Fallback to a safe default if not specified in generator.json
+        model_max_tokens = resolved_model_kwargs.get("max_context_tokens", 8192)
+
+        # --- Dynamic Token Budgeting ---
+
+        # 1. Calculate tokens for all non-RAG components of the prompt
+        base_prompt_components = []
+
+        # System prompt and base template
+        base_prompt_template = f"/no_think {system_prompt}\n\n"
+        base_prompt_components.append(base_prompt_template)
+
+        # Conversation history
+        if conversation_history:
+            history_component = f"<conversation_history>\n{conversation_history}</conversation_history>\n\n"
+            base_prompt_components.append(history_component)
+
+        # File content
+        if file_content:
+            file_component = f"<currentFileContent path=\"{request.filePath}\">\n{file_content}\n</currentFileContent>\n\n"
+            base_prompt_components.append(file_component)
+
+        # Final query and wrapper tags
+        final_query_component = f"<note>Answering without retrieval augmentation.</note>\n\n<query>\n{query}\n</query>\n\nAssistant: "
+        base_prompt_components.append(final_query_component)
+
+        # Sum up the tokens for the base prompt
+        base_prompt_tokens = sum(count_tokens(comp, request.provider == "ollama") for comp in base_prompt_components)
+
+        # 2. Calculate the available budget for the RAG context
+        # Leave a buffer for the model's response generation (e.g., 2048 tokens)
+        response_buffer = 2048
+        available_rag_budget = model_max_tokens - base_prompt_tokens - response_buffer
+
+        logger.info(f"Model max tokens: {model_max_tokens}, Base prompt tokens: {base_prompt_tokens}, Response buffer: {response_buffer}")
+        logger.info(f"Calculated available budget for RAG context: {available_rag_budget}")
+
+        context_text = ""
+        if available_rag_budget < 200: # If budget is too small, don't even bother with RAG
+            logger.warning(f"Available RAG budget ({available_rag_budget} tokens) is too small. Skipping retrieval.")
+        elif input_too_large:
+            logger.warning("Input query is too large, skipping RAG to save tokens.")
+        else:
             try:
                 rag_query = query
                 if request.filePath:
@@ -195,10 +239,9 @@ async def handle_websocket_chat(websocket: WebSocket):
                     documents = retrieved_docs_result[0].documents
                     logger.info(f"Retrieved {len(documents)} documents from RAG.")
 
-                    # Instantiate and use the ContextManager to build the context string
-                    context_token_limit = configs.get("rag", {}).get("context_token_limit", 4096)
+                    # Use the ContextManager with the dynamically calculated budget
                     context_manager = ContextManager(model_provider=request.provider)
-                    context_text = context_manager.build_context(documents, context_token_limit)
+                    context_text = context_manager.build_context(documents, available_rag_budget)
                 else:
                     logger.warning("No documents retrieved from RAG.")
             except Exception as e:
@@ -400,6 +443,8 @@ This file contains...
         prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
 
         # Get the full model configuration from config.py
+        # Note: we already called this above to get the max_context_tokens,
+        # but calling it again is safe and ensures we have the latest resolved kwargs.
         model_config_dict = get_model_config(request.provider, request.model)
 
         resolved_client_class = model_config_dict["model_client"]
