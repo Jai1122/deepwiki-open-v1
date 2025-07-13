@@ -621,6 +621,10 @@ This file contains...
         api_input_construction_kwargs = resolved_model_kwargs_from_config.copy()
         api_input_construction_kwargs["stream"] = True # Ensure streaming for websockets
 
+        # Remove the internal-use 'max_context_tokens' before passing to the client
+        api_input_construction_kwargs.pop('max_context_tokens', None)
+
+
         # Instantiate clients based on provider
         if request.provider == "vllm":
             logger.info(f"Using vLLM with model: {api_input_construction_kwargs.get('model')}")
