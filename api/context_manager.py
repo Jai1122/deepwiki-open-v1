@@ -102,7 +102,7 @@ class ContextManager:
         if file_content:
             logger.info(f"Original file content tokens: {count_tokens(file_content, self.is_ollama)}")
             wrapper_cost = count_tokens(file_content_wrapper.format(file_path, ""), self.is_ollama)
-            content_budget = available_budget - wrapper_cost
+            content_budget = int(available_budget * 0.5) - wrapper_cost
 
             if content_budget > 0:
                 truncated_file_content = self._truncate_text(file_content, content_budget)
@@ -122,7 +122,7 @@ class ContextManager:
         if conversation_history:
             logger.info(f"Original conversation history tokens: {count_tokens(conversation_history, self.is_ollama)}")
             wrapper_cost = count_tokens(history_wrapper.format(""), self.is_ollama)
-            content_budget = available_budget - wrapper_cost
+            content_budget = int(available_budget * 0.25) - wrapper_cost
 
             if content_budget > 0:
                 truncated_history = self._truncate_text(conversation_history, content_budget)
@@ -143,7 +143,7 @@ class ContextManager:
         if retrieved_documents:
             logger.info(f"Original RAG documents: {len(retrieved_documents)}")
             wrapper_cost = count_tokens(rag_context_wrapper.format(""), self.is_ollama)
-            content_budget = available_budget - wrapper_cost
+            content_budget = int(available_budget * 0.25) - wrapper_cost
 
             if content_budget > 0:
                 rag_token_counter = 0
