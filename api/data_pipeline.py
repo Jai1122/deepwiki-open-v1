@@ -27,6 +27,20 @@ logger = logging.getLogger(__name__)
 # Maximum token limit for OpenAI embedding models
 MAX_EMBEDDING_TOKENS = 8192
 
+def get_tokenizer(is_ollama_embedder: bool = None):
+    """
+    Get the tokenizer for the specified embedder.
+    """
+    # Determine if using Ollama embedder if not specified
+    if is_ollama_embedder is None:
+        from api.config import is_ollama_embedder as check_ollama
+        is_ollama_embedder = check_ollama()
+
+    if is_ollama_embedder:
+        return tiktoken.get_encoding("cl100k_base")
+    else:
+        return tiktoken.encoding_for_model("text-embedding-3-small")
+
 def count_tokens(text: str, is_ollama_embedder: bool = None) -> int:
     """
     Count the number of tokens in a text string using tiktoken.
@@ -40,16 +54,7 @@ def count_tokens(text: str, is_ollama_embedder: bool = None) -> int:
         int: The number of tokens in the text.
     """
     try:
-        # Determine if using Ollama embedder if not specified
-        if is_ollama_embedder is None:
-            from api.config import is_ollama_embedder as check_ollama
-            is_ollama_embedder = check_ollama()
-
-        if is_ollama_embedder:
-            encoding = tiktoken.get_encoding("cl100k_base")
-        else:
-            encoding = tiktoken.encoding_for_model("text-embedding-3-small")
-
+        encoding = get_tokenizer(is_ollama_embedder)
         return len(encoding.encode(text))
     except Exception as e:
         # Fallback to a simple approximation if tiktoken fails

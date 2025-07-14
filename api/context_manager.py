@@ -26,17 +26,21 @@ class ContextManager:
         if not text or max_tokens <= 0:
             return ""
 
-        # Simple character-based truncation assuming ~4 chars/token as a rough guide
-        # This is a robust approximation. A more precise method would be to encode, slice tokens, and decode.
-        avg_chars_per_token = 4
-        estimated_chars_to_keep = int(max_tokens * avg_chars_per_token)
+        # Use a more precise token-based truncation
+        from api.data_pipeline import get_tokenizer
+        encoding = get_tokenizer(self.is_ollama)
+        tokens = encoding.encode(text)
 
-        truncated_text = text[:estimated_chars_to_keep]
+        if len(tokens) > max_tokens:
+            truncated_tokens = tokens[:max_tokens]
+            truncated_text = encoding.decode(truncated_tokens)
+        else:
+            truncated_text = text
 
         # Re-count tokens to be precise after truncation and adjust if necessary
         while count_tokens(truncated_text, self.is_ollama) > max_tokens:
-            # Reduce by 10% until it fits
-            truncated_text = truncated_text[:int(len(truncated_text) * 0.9)]
+            # Reduce by 20% until it fits
+            truncated_text = truncated_text[:int(len(truncated_text) * 0.8)]
 
         return truncated_text
 
@@ -151,8 +155,11 @@ class ContextManager:
                         remaining_doc_budget = content_budget - rag_token_counter - count_tokens(doc_header, self.is_ollama) - doc_separator_cost
                         if remaining_doc_budget > 50: # Minimum meaningful content size
                             truncated_doc_text = self._truncate_text(doc.text, remaining_doc_budget)
-                            rag_content_parts.append(f"{doc_header}{truncated_doc_text}...")
-                            logger.warning(f"RAG document '{doc_path}' was truncated.")
+                            if len(truncated_doc_text) > 100: # Only add if it's a meaningful chunk
+                                rag_content_parts.append(f"{doc_header}{truncated_doc_text}...")
+                                logger.warning(f"RAG document '{doc_path}' was truncated.")
+                            else:
+                                logger.warning(f"RAG document '{doc_path}' was too small to be included after truncation.")
                         break # Budget is full
 
                 if rag_content_parts:
