@@ -380,6 +380,7 @@ This file contains...
             retrieved_documents=retrieved_documents,
             model_max_tokens=model_max_tokens
         )
+        logger.info(f"Final prompt tokens from websocket: {count_tokens(prompt, request.provider == 'ollama')}")
 
         # Get the full model configuration from config.py
         # Note: we already called this above to get the max_context_tokens,
