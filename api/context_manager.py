@@ -53,7 +53,7 @@ class ContextManager:
         file_path: Optional[str],
         retrieved_documents: Optional[List[Document]],
         model_max_tokens: int,
-        response_buffer: int = 2048
+        response_buffer: int = 4096
     ) -> str:
         """
         Builds the final prompt string from all components, ensuring it does not exceed the model's token limit.
@@ -195,6 +195,6 @@ class ContextManager:
         if final_token_count > (model_max_tokens - response_buffer):
             logger.error(f"CRITICAL: Final prompt token count ({final_token_count}) exceeded budget after assembly. This indicates a bug in the ContextManager.")
             # Fallback to a safe, minimal prompt
-            return f"{prompt_template_start}{prompt_template_end}"
+            return self._truncate_text(prompt, model_max_tokens - response_buffer)
 
         return prompt
