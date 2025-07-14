@@ -462,24 +462,14 @@ This file contains...
             await websocket.close()
             return
 
-        api_kwargs_for_call = {}
-        if request.provider != "google":
-            try:
+        # Process the response based on the provider
+        try:
+            if request.provider in ["vllm", "ollama", "openrouter", "openai", "azure"]:
                 api_kwargs_for_call = llm_client_instance.convert_inputs_to_api_kwargs(
                     input=prompt,
                     model_kwargs=api_input_construction_kwargs,
                     model_type=ModelType.LLM
                 )
-            except Exception as e_convert:
-                logger.error(f"Error converting inputs for provider {request.provider}: {str(e_convert)}")
-                await websocket.send_text(f"Error preparing request for provider {request.provider}: {str(e_convert)}")
-                await websocket.close()
-                return
-
-
-        # Process the response based on the provider
-        try:
-            if request.provider in ["vllm", "ollama", "openrouter", "openai", "azure"]:
                 response_stream = await llm_client_instance.acall(api_kwargs=api_kwargs_for_call, model_type=ModelType.LLM)
 
                 if request.provider in ["vllm", "openai", "azure", "openrouter"]: # OpenAI-compatible streaming
