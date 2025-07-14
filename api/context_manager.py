@@ -94,91 +94,40 @@ class ContextManager:
         logger.info(f"System prompt tokens: {count_tokens(system_prompt, self.is_ollama)}")
         logger.info(f"Query tokens: {count_tokens(query, self.is_ollama)}")
 
-        # --- 3. Prioritized Stuffing and Truncation ---
+        # --- 3. Dynamic Truncation ---
+        components = []
+        if file_content:
+            components.append({"name": "file_content", "content": file_content, "priority": 1})
+        if conversation_history:
+            components.append({"name": "conversation_history", "content": conversation_history, "priority": 2})
+        if retrieved_documents:
+            rag_content = rag_doc_separator.join([f"## File Path: {doc.meta_data.get('file_path', 'unknown')}\n\n{doc.text}" for doc in retrieved_documents])
+            components.append({"name": "rag_documents", "content": rag_content, "priority": 3})
+
+        total_content_tokens = sum(count_tokens(c["content"], self.is_ollama) for c in components)
+
+        if total_content_tokens > available_budget:
+            # Distribute the budget according to priority
+            for component in sorted(components, key=lambda x: x["priority"]):
+                if available_budget <= 0:
+                    component["content"] = ""
+                    continue
+
+                component_tokens = count_tokens(component["content"], self.is_ollama)
+                if component_tokens > available_budget:
+                    component["content"] = self._truncate_text(component["content"], available_budget)
+                    available_budget = 0
+                else:
+                    available_budget -= component_tokens
 
         final_components = []
-
-        # Priority 1: File Content (if provided)
-        if file_content:
-            logger.info(f"Original file content tokens: {count_tokens(file_content, self.is_ollama)}")
-            wrapper_cost = count_tokens(file_content_wrapper.format(file_path, ""), self.is_ollama)
-            content_budget = int(available_budget * 0.5) - wrapper_cost
-
-            if content_budget > 0:
-                truncated_file_content = self._truncate_text(file_content, content_budget)
-                if truncated_file_content:
-                    final_file_component = file_content_wrapper.format(file_path, truncated_file_content)
-                    final_components.append(final_file_component)
-                    available_budget -= count_tokens(final_file_component, self.is_ollama)
-                    logger.info(f"Truncated file content tokens: {count_tokens(truncated_file_content, self.is_ollama)}")
-                    if len(truncated_file_content) < len(file_content):
-                        logger.warning(f"File content for '{file_path}' was truncated to fit the context window.")
-                else:
-                    logger.warning(f"Not enough budget to include any content from file '{file_path}'.")
-            else:
-                logger.warning(f"Not enough budget to include file content wrapper for '{file_path}'.")
-
-        # Priority 2: Conversation History
-        if conversation_history:
-            logger.info(f"Original conversation history tokens: {count_tokens(conversation_history, self.is_ollama)}")
-            wrapper_cost = count_tokens(history_wrapper.format(""), self.is_ollama)
-            content_budget = int(available_budget * 0.25) - wrapper_cost
-
-            if content_budget > 0:
-                truncated_history = self._truncate_text(conversation_history, content_budget)
-                if truncated_history:
-                    final_history_component = history_wrapper.format(truncated_history)
-                    final_components.append(final_history_component)
-                    available_budget -= count_tokens(final_history_component, self.is_ollama)
-                    logger.info(f"Truncated conversation history tokens: {count_tokens(truncated_history, self.is_ollama)}")
-                    if len(truncated_history) < len(conversation_history):
-                        logger.warning("Conversation history was truncated to fit the context window.")
-                else:
-                    logger.warning("Not enough budget to include any conversation history.")
-            else:
-                logger.warning("Not enough budget to include conversation history wrapper.")
-
-        # Priority 3: RAG Context (retrieved documents)
-        rag_content_parts = []
-        if retrieved_documents:
-            logger.info(f"Original RAG documents: {len(retrieved_documents)}")
-            wrapper_cost = count_tokens(rag_context_wrapper.format(""), self.is_ollama)
-            content_budget = int(available_budget * 0.25) - wrapper_cost
-
-            if content_budget > 0:
-                rag_token_counter = 0
-                for i, doc in enumerate(retrieved_documents):
-                    doc_path = doc.meta_data.get('file_path', 'unknown')
-                    doc_header = f"## File Path: {doc_path}\n\n"
-                    doc_separator_cost = count_tokens(rag_doc_separator, self.is_ollama)
-
-                    doc_cost = count_tokens(doc_header + doc.text, self.is_ollama) + doc_separator_cost
-                    logger.info(f"RAG document {i+1} tokens: {doc_cost}")
-
-                    if rag_token_counter + doc_cost <= content_budget:
-                        rag_content_parts.append(f"{doc_header}{doc.text}")
-                        rag_token_counter += doc_cost
-                    else:
-                        # Truncate the last document that partially fits
-                        remaining_doc_budget = content_budget - rag_token_counter - count_tokens(doc_header, self.is_ollama) - doc_separator_cost
-                        if remaining_doc_budget > 50: # Minimum meaningful content size
-                            truncated_doc_text = self._truncate_text(doc.text, remaining_doc_budget)
-                            if len(truncated_doc_text) > 100: # Only add if it's a meaningful chunk
-                                rag_content_parts.append(f"{doc_header}{truncated_doc_text}...")
-                                logger.warning(f"RAG document '{doc_path}' was truncated.")
-                                logger.info(f"Truncated RAG document tokens: {count_tokens(truncated_doc_text, self.is_ollama)}")
-                            else:
-                                logger.warning(f"RAG document '{doc_path}' was too small to be included after truncation.")
-                        break # Budget is full
-
-                if rag_content_parts:
-                    final_rag_content = rag_doc_separator.join(rag_content_parts)
-                    final_rag_component = rag_context_wrapper.format(final_rag_content)
-                    final_components.append(final_rag_component)
-                    available_budget -= count_tokens(final_rag_component, self.is_ollama)
-                    logger.info(f"Final RAG content tokens: {count_tokens(final_rag_content, self.is_ollama)}")
-            else:
-                logger.warning("Not enough budget to include RAG context wrapper.")
+        for component in components:
+            if component["name"] == "file_content" and component["content"]:
+                final_components.append(file_content_wrapper.format(file_path, component["content"]))
+            elif component["name"] == "conversation_history" and component["content"]:
+                final_components.append(history_wrapper.format(component["content"]))
+            elif component["name"] == "rag_documents" and component["content"]:
+                final_components.append(rag_context_wrapper.format(component["content"]))
 
         # --- 4. Assemble the final prompt ---
 
