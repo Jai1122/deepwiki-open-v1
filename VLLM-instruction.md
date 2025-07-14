@@ -85,4 +85,3 @@ To use the vLLM provider, you must add its configuration to the `providers` sect
 5.  When using the DeepWiki interface or API, select "vllm" as the provider and choose the appropriate model (which should correspond to your `VLLM_MODEL_NAME`).
 
 DeepWiki will then direct generation requests to your vLLM instance.
-```

@@ -531,4 +531,3 @@ This file contains...
             await websocket.close()
         except:
             pass
-```

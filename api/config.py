@@ -397,4 +397,3 @@ def get_model_config(provider="google", model=None):
         result["model_kwargs"].update(model_params)
 
     return result
-```
