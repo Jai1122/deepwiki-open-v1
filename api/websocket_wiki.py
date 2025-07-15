@@ -206,12 +206,14 @@ async def build_prompt_for_request(request: ChatCompletionRequest, request_rag: 
                 rag_query = f"Contexts related to {request.filePath}"
 
             retrieved_docs_result = request_rag(rag_query, language=request.language)
-            if retrieved_docs_result and retrieved_docs_result[0] and retrieved_docs_result[0].documents:
+            if retrieved_docs_result and isinstance(retrieved_docs_result, (list, tuple)) and len(retrieved_docs_result) > 0 and retrieved_docs_result[0] and hasattr(retrieved_docs_result[0], 'documents'):
                 retrieved_documents = retrieved_docs_result[0].documents
         except Exception as e:
             logger.error(f"Error during RAG retrieval: {str(e)}")
 
     model_config_dict = get_model_config(request.provider, request.model)
+    if not model_config_dict:
+        raise ValueError("Failed to get model configuration.")
     resolved_model_kwargs = model_config_dict.get("model_kwargs", {})
     model_max_tokens = resolved_model_kwargs.get("max_context_tokens", 8192)
 
