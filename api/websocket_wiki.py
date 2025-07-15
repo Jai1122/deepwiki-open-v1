@@ -99,7 +99,9 @@ async def handle_websocket_chat(websocket: WebSocket):
     """
     await websocket.accept()
     try:
+        logger.info("WebSocket connection accepted.")
         request_data = await websocket.receive_json()
+        logger.info(f"Received request data: {request_data}")
         request = ChatCompletionRequest(**request_data)
 
         input_too_large = False
@@ -154,19 +156,25 @@ async def handle_websocket_chat(websocket: WebSocket):
 
         # Get the query from the last message
         query = last_message.content
+        logger.info("Building prompt...")
         prompt = await build_prompt_for_request(request, request_rag, is_deep_research, research_iteration, query, input_too_large)
+        logger.info("Prompt built successfully.")
+
+        logger.info("Calling model and streaming response...")
         await call_model_and_stream_response(websocket, request, prompt)
+        logger.info("Model call and streaming finished.")
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
-        logger.error(f"Error in WebSocket handler: {str(e)}")
+        logger.error(f"Error in WebSocket handler: {str(e)}", exc_info=True)
         if not websocket.client_state.name == 'DISCONNECTED':
             try:
                 await websocket.send_text(f"Error: {str(e)}")
             except:
                 pass
     finally:
+        logger.info("Closing WebSocket connection.")
         if not websocket.client_state.name == 'DISCONNECTED':
             await websocket.close()
 

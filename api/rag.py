@@ -476,6 +476,16 @@ IMPORTANT FORMATTING RULES:
         """
         try:
             logger.info(f"Querying retriever with query: {query}")
+            if self.retriever is None:
+                logger.error("Retriever is not initialized.")
+                return [], RAGAnswer(
+                    rationale="Retriever not initialized.",
+                    answer="The retriever has not been initialized. Please prepare the retriever first."
+                )
+
+            logger.info(f"Retriever type: {type(self.retriever)}")
+            logger.info(f"Transformed docs count: {len(self.transformed_docs)}")
+
             retrieved_documents = self.retriever(query)
             logger.info(f"Retriever returned: {retrieved_documents}")
 
@@ -493,6 +503,7 @@ IMPORTANT FORMATTING RULES:
                 for doc_index in retrieved_documents[0].doc_indices
             ]
 
+            logger.info(f"Returning {len(retrieved_documents[0].documents)} documents.")
             return retrieved_documents
 
         except Exception as e:
