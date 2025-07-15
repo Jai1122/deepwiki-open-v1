@@ -347,7 +347,7 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
     if documents:
         yield documents
 
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 
 def create_vector_store(documents, embedder):
     """
