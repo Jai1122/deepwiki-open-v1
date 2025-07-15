@@ -140,6 +140,7 @@ async def handle_websocket_chat(websocket: WebSocket):
                     last_message.content = original_topic
                     logger.info(f"Using original topic for research: {original_topic}")
 
+        # Get the query from the last message
         query = last_message.content
         prompt = await build_prompt_for_request(request, request_rag, is_deep_research, research_iteration, query, input_too_large)
         await call_model_and_stream_response(websocket, request, prompt)
@@ -231,7 +232,65 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
     api_input_construction_kwargs.pop('max_context_tokens', None)
 
     # Instantiate clients based on provider
-    # ... (client instantiation logic remains the same)
+    if request.provider == "vllm":
+        logger.info(f"Using vLLM with model: {api_input_construction_kwargs.get('model')}")
+        vllm_base_url = os.environ.get('VLLM_API_BASE_URL')
+        vllm_api_key = os.environ.get('VLLM_API_KEY')
+        if not vllm_base_url:
+            # Send error to client and close WebSocket
+            error_msg = "VLLM_API_BASE_URL is not set for vLLM provider."
+            logger.error(error_msg)
+            await websocket.send_text(f"Error: {error_msg}")
+            await websocket.close()
+            return
+        # resolved_client_class is OpenAIClient
+        llm_client_instance = resolved_client_class(base_url=vllm_base_url, api_key=vllm_api_key)
+
+    elif request.provider == "ollama":
+        logger.info(f"Using Ollama with model: {api_input_construction_kwargs.get('model')}")
+        if not prompt.endswith(" /no_think"): # Avoid adding it multiple times
+            prompt += " /no_think" # Ollama specific prompt adjustment
+        # resolved_client_class is OllamaClient
+        llm_client_instance = resolved_client_class() # OllamaClient picks up OLLAMA_HOST from env
+                                                   # and expects headers/options in model_kwargs for convert_inputs...
+                                                   # api_input_construction_kwargs for ollama is already correctly structured by get_model_config
+
+    elif request.provider == "openrouter":
+        logger.info(f"Using OpenRouter with model: {api_input_construction_kwargs.get('model')}")
+        # resolved_client_class is OpenRouterClient
+        llm_client_instance = resolved_client_class(api_key=OPENROUTER_API_KEY) # Pass key if constructor takes it
+        if not OPENROUTER_API_KEY:
+             logger.warning("OPENROUTER_API_KEY not configured, OpenRouter call might fail.")
+
+    elif request.provider == "openai":
+        logger.info(f"Using OpenAI protocol with model: {api_input_construction_kwargs.get('model')}")
+        # resolved_client_class is OpenAIClient
+        llm_client_instance = resolved_client_class(api_key=OPENAI_API_KEY) # Pass key if constructor takes it
+        if not OPENAI_API_KEY:
+             logger.warning("OPENAI_API_KEY not configured, OpenAI call might fail.")
+
+    elif request.provider == "azure":
+        logger.info(f"Using Azure AI with model: {api_input_construction_kwargs.get('model')}")
+        # resolved_client_class is AzureAIClient
+        llm_client_instance = resolved_client_class() # AzureAIClient reads its specific env vars
+
+    elif request.provider == "google":
+        logger.info(f"Using Google Gemini with model: {api_input_construction_kwargs.get('model')}")
+        # Google's genai client is instantiated and used differently
+        llm_client_instance = genai.GenerativeModel(
+            model_name=api_input_construction_kwargs.get("model"),
+            generation_config={
+                "temperature": api_input_construction_kwargs.get("temperature"),
+                "top_p": api_input_construction_kwargs.get("top_p"),
+                "top_k": api_input_construction_kwargs.get("top_k")
+            }
+        )
+        # api_kwargs_for_call is not used for Google in the same way
+    else:
+        logger.error(f"Unknown provider in websocket: {request.provider}")
+        await websocket.send_text(f"Error: Unknown provider {request.provider}")
+        await websocket.close()
+        return
 
     try:
         if request.provider in ["vllm", "ollama", "openrouter", "openai", "azure"]:
