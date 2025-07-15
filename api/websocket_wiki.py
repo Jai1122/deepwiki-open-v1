@@ -206,8 +206,17 @@ async def build_prompt_for_request(request: ChatCompletionRequest, request_rag: 
                 rag_query = f"Contexts related to {request.filePath}"
 
             retrieved_docs_result = request_rag(rag_query, language=request.language)
-            if retrieved_docs_result and isinstance(retrieved_docs_result, (list, tuple)) and len(retrieved_docs_result) > 0 and retrieved_docs_result[0] and hasattr(retrieved_docs_result[0], 'documents'):
-                retrieved_documents = retrieved_docs_result[0].documents
+
+            # Check if the result is valid and has documents
+            if retrieved_docs_result and isinstance(retrieved_docs_result, (list, tuple)) and len(retrieved_docs_result) > 0:
+                first_result = retrieved_docs_result[0]
+                if first_result and hasattr(first_result, 'documents'):
+                    retrieved_documents = first_result.documents
+                else:
+                    logger.warning("RAG result is missing 'documents' attribute.")
+            else:
+                logger.warning("RAG retrieval returned no documents or an invalid result.")
+
         except Exception as e:
             logger.error(f"Error during RAG retrieval: {str(e)}")
 
