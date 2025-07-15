@@ -1,6 +1,7 @@
 import adalflow as adal
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import ToEmbeddings
+from adalflow.core.components import Component
 # Use RecursiveCharacterTextSplitter for better code chunking
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
@@ -389,7 +390,7 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
     # Adalflow's TextSplitter component might not be a direct replacement.
     # Let's create a simple wrapper that conforms to the expected interface if needed.
     # Adalflow components usually have a 'call' method that takes data.
-    class LangchainSplitterWrapper:
+    class LangchainSplitterWrapper(Component):
         def __init__(self, splitter_instance):
             self.splitter = splitter_instance
 
