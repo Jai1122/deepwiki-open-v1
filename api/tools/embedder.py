@@ -1,23 +1,12 @@
-import adalflow as adal
-
+from langchain_community.embeddings import OllamaEmbeddings
 from api.config import configs
-
-
 import logging
-import adal
 
-def get_embedder() -> adal.Embedder:
+def get_embedder():
     embedder_config = configs["embedder"]
+    model = embedder_config.get("model_kwargs", {}).get("model")
 
-    # --- Initialize Embedder ---
-    model_client_class = embedder_config["model_client"]
-    if "initialize_kwargs" in embedder_config:
-        model_client = model_client_class(**embedder_config["initialize_kwargs"])
+    if model:
+        return OllamaEmbeddings(model=model)
     else:
-        model_client = model_client_class()
-    embedder = adal.Embedder(
-        model_client=model_client,
-        model_kwargs=embedder_config["model_kwargs"],
-    )
-    logging.info(f"Embedder methods: {dir(adal.Embedder)}")
-    return embedder
+        return OllamaEmbeddings()
