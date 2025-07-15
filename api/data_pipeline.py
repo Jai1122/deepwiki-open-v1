@@ -295,7 +295,7 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                         continue
 
                     doc = Document(
-                        text=content,
+                        page_content=content,
                         meta_data={
                             "file_path": relative_path,
                             "type": ext[1:],
@@ -329,7 +329,7 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                         continue
 
                     doc = Document(
-                        text=content,
+                        page_content=content,
                         meta_data={
                             "file_path": relative_path,
                             "type": ext[1:],

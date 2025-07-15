@@ -115,6 +115,9 @@ async def handle_websocket_chat(websocket: WebSocket):
                     input_too_large = True
 
         request_rag = await prepare_rag(request)
+        if not request_rag:
+            await websocket.send_text("Error: Could not initialize RAG.")
+            return
 
         if not request.messages or len(request.messages) == 0:
             await websocket.send_text("Error: No messages provided")
