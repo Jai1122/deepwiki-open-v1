@@ -1,4 +1,5 @@
 from langchain.docstore.document import Document
+from typing import List
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 import subprocess
