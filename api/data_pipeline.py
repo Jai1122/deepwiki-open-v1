@@ -266,8 +266,7 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
 
             # Check if file is in an excluded directory
             for excluded in excluded_dirs:
-                clean_excluded = excluded.strip("./").rstrip("/")
-                if clean_excluded in file_path_parts:
+                if file_path.startswith(os.path.join(path, excluded.strip("./"))):
                     is_excluded = True
                     break
 
