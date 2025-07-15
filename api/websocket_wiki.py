@@ -324,27 +324,23 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
                     if text:
                        text = text.replace('<think>', '').replace('</think>', '')
                        await websocket.send_text(text)
-            await websocket.close()
-
         elif request.provider == "google":
             response_stream = llm_client_instance.generate_content(prompt, stream=True)
             for chunk in response_stream:
                 if hasattr(chunk, 'text'):
                     await websocket.send_text(chunk.text)
-            await websocket.close()
 
     except Exception as e_outer:
         logger.error(f"Error in streaming response for provider {request.provider}: {str(e_outer)}")
-        await websocket.send_text(f"\nError: {str(e_outer)}")
-        await websocket.close()
+        if not websocket.client_state.name == 'DISCONNECTED':
+            await websocket.send_text(f"\nError: {str(e_outer)}")
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Error in WebSocket handler: {str(e)}")
-        try:
-            await websocket.send_text(f"Error: {str(e)}")
-        except:
-            pass
-    finally:
-        await websocket.close()
+        if not websocket.client_state.name == 'DISCONNECTED':
+            try:
+                await websocket.send_text(f"Error: {str(e)}")
+            except:
+                pass
