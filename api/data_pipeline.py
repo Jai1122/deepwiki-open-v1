@@ -617,12 +617,50 @@ class DatabaseManager:
         self.repo_paths = None
 
     def _extract_repo_name_from_url(self, repo_url_or_path: str, repo_type: str) -> str:
-        # ... (same as before)
-        pass
+        """
+        Extracts the repository name from the URL or path.
+        """
+        try:
+            if os.path.isdir(repo_url_or_path):
+                return os.path.basename(repo_url_or_path)
+
+            parsed_url = urlparse(repo_url_or_path)
+            path_parts = parsed_url.path.strip('/').split('/')
+
+            if repo_type == "github" and len(path_parts) >= 2:
+                return f"github_{path_parts[-2]}_{path_parts[-1]}"
+            elif repo_type == "gitlab" and len(path_parts) >= 2:
+                return f"gitlab_{path_parts[-2]}_{path_parts[-1]}"
+            elif repo_type == "bitbucket" and len(path_parts) >= 2:
+                return f"bitbucket_{path_parts[-2]}_{path_parts[-1]}"
+            else:
+                return "local_repo"
+        except Exception as e:
+            logger.error(f"Error extracting repo name: {e}")
+            return "unknown_repo"
 
     def _create_repo(self, repo_url_or_path: str, repo_type: str = "github", access_token: str = None) -> None:
-        # ... (same as before)
-        pass
+        """
+        Create the repository directory and download the repository.
+        """
+        self.repo_url_or_path = repo_url_or_path
+        repo_name = self._extract_repo_name_from_url(repo_url_or_path, repo_type)
+
+        save_dir = os.path.join(os.getcwd(), "repositories")
+        os.makedirs(save_dir, exist_ok=True)
+
+        save_repo_dir = os.path.join(save_dir, repo_name)
+        save_db_dir = os.path.join(save_dir, f"{repo_name}_db")
+        os.makedirs(save_db_dir, exist_ok=True)
+
+        self.repo_paths = {
+            "save_dir": save_dir,
+            "save_repo_dir": save_repo_dir,
+            "save_db_dir": save_db_dir,
+            "save_db_file": os.path.join(save_db_dir, "faiss_index"),
+        }
+
+        download_repo(repo_url_or_path, save_repo_dir, repo_type, access_token)
 
     def prepare_db_index(self, is_ollama_embedder: bool = False, excluded_dirs: List[str] = None,
                         excluded_files: List[str] = None, included_dirs: List[str] = None,
