@@ -148,10 +148,11 @@ async def handle_websocket_chat(websocket: WebSocket):
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Error in WebSocket handler: {str(e)}")
-        try:
-            await websocket.send_text(f"Error: {str(e)}")
-        except:
-            pass
+        if not websocket.client_state.name == 'DISCONNECTED':
+            try:
+                await websocket.send_text(f"Error: {str(e)}")
+            except:
+                pass
     finally:
         if not websocket.client_state.name == 'DISCONNECTED':
             await websocket.close()
