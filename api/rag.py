@@ -475,7 +475,17 @@ IMPORTANT FORMATTING RULES:
             Tuple of (RAGAnswer, retrieved_documents)
         """
         try:
+            logger.info(f"Querying retriever with query: {query}")
             retrieved_documents = self.retriever(query)
+            logger.info(f"Retriever returned: {retrieved_documents}")
+
+            if not retrieved_documents or not retrieved_documents[0].doc_indices:
+                logger.warning("Retriever returned no documents.")
+                return [], RAGAnswer(
+                    rationale="No documents found.",
+                    answer="No relevant documents were found to answer your question."
+                )
+
 
             # Fill in the documents
             retrieved_documents[0].documents = [
@@ -486,7 +496,7 @@ IMPORTANT FORMATTING RULES:
             return retrieved_documents
 
         except Exception as e:
-            logger.error(f"Error in RAG call: {str(e)}")
+            logger.error(f"Error in RAG call: {str(e)}", exc_info=True)
             # To ensure a consistent return type, we return a tuple containing an
             # empty list of documents and an empty RAGAnswer object.
             # This prevents the caller from crashing on a NoneType object.
