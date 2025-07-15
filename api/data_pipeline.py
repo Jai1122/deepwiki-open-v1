@@ -137,9 +137,9 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
 download_github_repo = download_repo
 
 def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                      included_dirs: List[str] = None, included_files: List[str] = None):
+                      included_dirs: List[str] = None, included_files: List[str] = None, batch_size: int = 100):
     """
-    Recursively reads all documents in a directory and its subdirectories.
+    Recursively reads all documents in a directory and its subdirectories, yielding them in batches.
 
     Args:
         path (str): The root directory path.
@@ -153,8 +153,9 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
             When provided, only files in these directories will be processed.
         included_files (List[str], optional): List of file patterns to include exclusively.
             When provided, only files matching these patterns will be processed.
+        batch_size (int): The number of documents to yield in each batch.
 
-    Returns:
+    Yields:
         list: A list of Document objects with metadata.
     """
     documents = []
@@ -356,7 +357,8 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                 logger.error(f"Error reading {file_path}: {e}")
 
     logger.info(f"Found {len(documents)} documents")
-    return documents
+    if documents:
+        yield documents
 
 def prepare_data_pipeline(is_ollama_embedder: bool = None):
     """
@@ -426,13 +428,13 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
     return data_transformer
 
 def transform_documents_and_save_to_db(
-    documents: List[Document], db_path: str, is_ollama_embedder: bool = None
+    document_generator, db_path: str, is_ollama_embedder: bool = None
 ) -> LocalDB:
     """
     Transforms a list of documents and saves them to a local database.
 
     Args:
-        documents (list): A list of `Document` objects.
+        document_generator: A generator that yields batches of documents.
         db_path (str): The path to the local database file.
         is_ollama_embedder (bool, optional): Whether to use Ollama for embedding.
                                            If None, will be determined from configuration.
@@ -443,8 +445,9 @@ def transform_documents_and_save_to_db(
     # Save the documents to a local database
     db = LocalDB()
     db.register_transformer(transformer=data_transformer, key="split_and_embed")
-    db.load(documents)
-    db.transform(key="split_and_embed")
+    for documents in document_generator:
+        db.load(documents)
+        db.transform(key="split_and_embed")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     db.save_state(filepath=db_path)
     return db
@@ -809,7 +812,7 @@ class DatabaseManager:
 
         # prepare the database
         logger.info("Creating new database...")
-        documents = read_all_documents(
+        document_generator = read_all_documents(
             self.repo_paths["save_repo_dir"],
             is_ollama_embedder=is_ollama_embedder,
             excluded_dirs=excluded_dirs,
@@ -818,7 +821,7 @@ class DatabaseManager:
             included_files=included_files
         )
         self.db = transform_documents_and_save_to_db(
-            documents, self.repo_paths["save_db_file"], is_ollama_embedder=is_ollama_embedder
+            document_generator, self.repo_paths["save_db_file"], is_ollama_embedder=is_ollama_embedder
         )
         logger.info(f"Total documents: {len(documents)}")
         transformed_docs = self.db.get_transformed_data(key="split_and_embed")
