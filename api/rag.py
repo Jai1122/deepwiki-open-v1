@@ -392,8 +392,9 @@ IMPORTANT FORMATTING RULES:
         return valid_documents
 
     def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
-                      excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                      included_dirs: List[str] = None, included_files: List[str] = None):
+                      is_ollama_embedder: bool = False, excluded_dirs: List[str] = None,
+                      excluded_files: List[str] = None, included_dirs: List[str] = None,
+                      included_files: List[str] = None):
         """
         Prepare the retriever for a repository.
         Will load database from local storage if available.
@@ -401,6 +402,7 @@ IMPORTANT FORMATTING RULES:
         Args:
             repo_url_or_path: URL or local path to the repository
             access_token: Optional access token for private repositories
+            is_ollama_embedder: Whether the embedder is from Ollama
             excluded_dirs: Optional list of directories to exclude from processing
             excluded_files: Optional list of file patterns to exclude from processing
             included_dirs: Optional list of directories to include exclusively
@@ -412,7 +414,7 @@ IMPORTANT FORMATTING RULES:
             repo_url_or_path,
             type,
             access_token,
-            is_ollama_embedder=self.is_ollama_embedder,
+            is_ollama_embedder=is_ollama_embedder,
             excluded_dirs=excluded_dirs,
             excluded_files=excluded_files,
             included_dirs=included_dirs,

@@ -76,7 +76,19 @@ async def prepare_rag(request: ChatCompletionRequest) -> RAG:
         included_files = [unquote(file_pattern) for file_pattern in request.included_files.split('\n') if file_pattern.strip()]
         logger.info(f"Using custom included files: {included_files}")
 
-    request_rag.prepare_retriever(request.repo_url, request.type, request.token, excluded_dirs, excluded_files, included_dirs, included_files)
+    from api.config import is_ollama_embedder
+    is_ollama = is_ollama_embedder()
+
+    request_rag.prepare_retriever(
+        request.repo_url,
+        request.type,
+        request.token,
+        is_ollama_embedder=is_ollama,
+        excluded_dirs=excluded_dirs,
+        excluded_files=excluded_files,
+        included_dirs=included_dirs,
+        included_files=included_files
+    )
     logger.info(f"Retriever prepared for {request.repo_url}")
     return request_rag
 

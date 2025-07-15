@@ -208,80 +208,72 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
 
     logger.info(f"Reading documents from {path}")
 
-    def should_process_file(file_path: str, use_inclusion: bool, included_dirs: List[str], included_files: List[str],
+    def should_process_file(root_path: str, file_path: str, use_inclusion: bool, included_dirs: List[str], included_files: List[str],
                            excluded_dirs: List[str], excluded_files: List[str]) -> bool:
         """
         Determine if a file should be processed based on inclusion/exclusion rules.
 
         Args:
-            file_path (str): The file path to check
-            use_inclusion (bool): Whether to use inclusion mode
-            included_dirs (List[str]): List of directories to include
-            included_files (List[str]): List of files to include
-            excluded_dirs (List[str]): List of directories to exclude
-            excluded_files (List[str]): List of files to exclude
+            root_path (str): The root path of the repository.
+            file_path (str): The file path to check.
+            use_inclusion (bool): Whether to use inclusion mode.
+            included_dirs (List[str]): List of directories to include.
+            included_files (List[str]): List of files to include.
+            excluded_dirs (List[str]): List of directories to exclude.
+            excluded_files (List[str]): List of files to exclude.
 
         Returns:
-            bool: True if the file should be processed, False otherwise
+            bool: True if the file should be processed, False otherwise.
         """
-        file_path_parts = os.path.normpath(file_path).split(os.sep)
+        relative_path = os.path.relpath(file_path, root_path)
         file_name = os.path.basename(file_path)
 
-        if use_inclusion:
-            # Inclusion mode: file must be in included directories or match included files
-            is_included = False
+        # Normalize path separators for consistent matching
+        relative_path_parts = relative_path.split(os.sep)
 
-            # Check if file is in an included directory
+        if use_inclusion:
+            # Inclusion mode: file must be in an included directory or match an included file pattern.
+            is_included = False
+            if not included_dirs and not included_files:
+                return True  # If no inclusion rules, include everything.
+
+            # Check against included directories
             if included_dirs:
                 for included in included_dirs:
-                    clean_included = included.strip("./").rstrip("/")
-                    if clean_included in file_path_parts:
+                    clean_included = included.strip("./").rstrip("/").split('/')
+                    if len(clean_included) <= len(relative_path_parts) and all(part == rel_part for part, rel_part in zip(clean_included, relative_path_parts)):
                         is_included = True
                         break
 
-            # Check if file matches included file patterns
+            # Check against included files if not already included by a directory rule
             if not is_included and included_files:
-                for included_file in included_files:
-                    if file_name == included_file or file_name.endswith(included_file):
+                for pattern in included_files:
+                    if glob.fnmatch.fnmatch(file_name, pattern):
                         is_included = True
                         break
-
-            # If no inclusion rules are specified for a category, allow all files from that category
-            if not included_dirs and not included_files:
-                is_included = True
-            elif not included_dirs and included_files:
-                # Only file patterns specified, allow all directories
-                pass  # is_included is already set based on file patterns
-            elif included_dirs and not included_files:
-                # Only directory patterns specified, allow all files in included directories
-                pass  # is_included is already set based on directory patterns
-
             return is_included
         else:
-            # Exclusion mode: file must not be in excluded directories or match excluded files
-            is_excluded = False
+            # Exclusion mode: file must not be in an excluded directory or match an excluded file pattern.
 
-            # Check if file is in an excluded directory
+            # Check against excluded files
+            for pattern in excluded_files:
+                if glob.fnmatch.fnmatch(file_name, pattern):
+                    return False  # Exclude if filename matches a pattern
+
+            # Check against excluded directories
             for excluded in excluded_dirs:
-                if file_path.startswith(os.path.join(path, excluded.strip("./"))):
-                    is_excluded = True
-                    break
+                clean_excluded = excluded.strip("./").rstrip("/").split('/')
+                if len(clean_excluded) <= len(relative_path_parts) and all(part == rel_part for part, rel_part in zip(clean_excluded, relative_path_parts)):
+                    return False # Exclude if path is within an excluded directory
 
-            # Check if file matches excluded file patterns
-            if not is_excluded:
-                for excluded_file in excluded_files:
-                    if file_name == excluded_file:
-                        is_excluded = True
-                        break
-
-            return not is_excluded
+            return True
 
     # Process code files first
     for ext in code_extensions:
         files = glob.glob(f"{path}/**/*{ext}", recursive=True)
         for file_path in files:
             # Check if file should be processed based on inclusion/exclusion rules
-            if not should_process_file(file_path, use_inclusion_mode, included_dirs, included_files, excluded_dirs, excluded_files):
+            if not should_process_file(path, file_path, use_inclusion_mode, included_dirs, included_files, excluded_dirs, excluded_files):
                 continue
 
             try:
@@ -322,7 +314,7 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
         files = glob.glob(f"{path}/**/*{ext}", recursive=True)
         for file_path in files:
             # Check if file should be processed based on inclusion/exclusion rules
-            if not should_process_file(file_path, use_inclusion_mode, included_dirs, included_files, excluded_dirs, excluded_files):
+            if not should_process_file(path, file_path, use_inclusion_mode, included_dirs, included_files, excluded_dirs, excluded_files):
                 continue
 
             try:
@@ -604,15 +596,17 @@ class DatabaseManager:
         self.repo_paths = None
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
-                       excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                       included_dirs: List[str] = None, included_files: List[str] = None) -> FAISS:
+                       is_ollama_embedder: bool = False, excluded_dirs: List[str] = None,
+                       excluded_files: List[str] = None, included_dirs: List[str] = None,
+                       included_files: List[str] = None) -> FAISS:
         """
         Create a new database from the repository.
         """
         self.reset_database()
         self._create_repo(repo_url_or_path, type, access_token)
-        return self.prepare_db_index(excluded_dirs=excluded_dirs, excluded_files=excluded_files,
-                                   included_dirs=included_dirs, included_files=included_files)
+        return self.prepare_db_index(is_ollama_embedder=is_ollama_embedder, excluded_dirs=excluded_dirs,
+                                   excluded_files=excluded_files, included_dirs=included_dirs,
+                                   included_files=included_files)
 
     def reset_database(self):
         """
@@ -630,8 +624,9 @@ class DatabaseManager:
         # ... (same as before)
         pass
 
-    def prepare_db_index(self, excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                        included_dirs: List[str] = None, included_files: List[str] = None) -> FAISS:
+    def prepare_db_index(self, is_ollama_embedder: bool = False, excluded_dirs: List[str] = None,
+                        excluded_files: List[str] = None, included_dirs: List[str] = None,
+                        included_files: List[str] = None) -> FAISS:
         """
         Prepare the indexed database for the repository.
         """
@@ -652,6 +647,7 @@ class DatabaseManager:
         documents = []
         for docs in read_all_documents(
             self.repo_paths["save_repo_dir"],
+            is_ollama_embedder=is_ollama_embedder,
             excluded_dirs=excluded_dirs,
             excluded_files=excluded_files,
             included_dirs=included_dirs,
