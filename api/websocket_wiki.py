@@ -86,13 +86,10 @@ async def handle_websocket_chat(websocket: WebSocket):
     This replaces the HTTP streaming endpoint with a WebSocket connection.
     """
     await websocket.accept()
-
     try:
-        # Receive and parse the request data
         request_data = await websocket.receive_json()
         request = ChatCompletionRequest(**request_data)
 
-        # Check if request contains very large input
         input_too_large = False
         if request.messages and len(request.messages) > 0:
             last_message = request.messages[-1]
@@ -103,85 +100,61 @@ async def handle_websocket_chat(websocket: WebSocket):
                     logger.warning(f"Request exceeds recommended token limit ({tokens} > 7500)")
                     input_too_large = True
 
-        try:
-            request_rag = await prepare_rag(request)
-        except ValueError as e:
-            if "No valid documents with embeddings found" in str(e):
-                logger.error(f"No valid embeddings found: {str(e)}")
-                await websocket.send_text("Error: No valid document embeddings found. This may be due to embedding size inconsistencies or API errors during document processing. Please try again or check your repository content.")
-                await websocket.close()
-                return
-            else:
-                logger.error(f"ValueError preparing retriever: {str(e)}")
-                await websocket.send_text(f"Error preparing retriever: {str(e)}")
-                await websocket.close()
-                return
-        except Exception as e:
-            logger.error(f"Error preparing retriever: {str(e)}")
-            # Check for specific embedding-related errors
-            if "All embeddings should be of the same size" in str(e):
-                await websocket.send_text("Error: Inconsistent embedding sizes detected. Some documents may have failed to embed properly. Please try again.")
-            else:
-                await websocket.send_text(f"Error preparing retriever: {str(e)}")
-            await websocket.close()
-            return
+        request_rag = await prepare_rag(request)
 
-        # Validate request
         if not request.messages or len(request.messages) == 0:
             await websocket.send_text("Error: No messages provided")
-            await websocket.close()
             return
 
         last_message = request.messages[-1]
         if last_message.role != "user":
             await websocket.send_text("Error: Last message must be from the user")
-            await websocket.close()
             return
 
-        # Process previous messages to build conversation history
         for i in range(0, len(request.messages) - 1, 2):
             if i + 1 < len(request.messages):
                 user_msg = request.messages[i]
-                assistant_msg = request.messages[i + 1]
-
+                assistant_msg = request.messages[i+1]
                 if user_msg.role == "user" and assistant_msg.role == "assistant":
-                    request_rag.memory.add_dialog_turn(
-                        user_query=user_msg.content,
-                        assistant_response=assistant_msg.content
-                    )
+                    request_rag.memory.add_dialog_turn(user_query=user_msg.content, assistant_response=assistant_msg.content)
 
-        # Check if this is a Deep Research request
         is_deep_research = False
         research_iteration = 1
-
-        # Process messages to detect Deep Research requests
         for msg in request.messages:
             if hasattr(msg, 'content') and msg.content and "[DEEP RESEARCH]" in msg.content:
                 is_deep_research = True
-                # Only remove the tag from the last message
                 if msg == request.messages[-1]:
-                    # Remove the Deep Research tag
                     msg.content = msg.content.replace("[DEEP RESEARCH]", "").strip()
 
-        # Count research iterations if this is a Deep Research request
         if is_deep_research:
             research_iteration = sum(1 for msg in request.messages if msg.role == 'assistant') + 1
             logger.info(f"Deep Research request detected - iteration {research_iteration}")
-
-            # Check if this is a continuation request
             if "continue" in last_message.content.lower() and "research" in last_message.content.lower():
-                # Find the original topic from the first user message
                 original_topic = None
                 for msg in request.messages:
                     if msg.role == "user" and "continue" not in msg.content.lower():
                         original_topic = msg.content.replace("[DEEP RESEARCH]", "").strip()
                         logger.info(f"Found original research topic: {original_topic}")
                         break
-
                 if original_topic:
-                    # Replace the continuation message with the original topic
                     last_message.content = original_topic
                     logger.info(f"Using original topic for research: {original_topic}")
+
+        query = last_message.content
+        prompt = await build_prompt_for_request(request, request_rag, is_deep_research, research_iteration, query, input_too_large)
+        await call_model_and_stream_response(websocket, request, prompt)
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Error in WebSocket handler: {str(e)}")
+        try:
+            await websocket.send_text(f"Error: {str(e)}")
+        except:
+            pass
+    finally:
+        if not websocket.client_state.name == 'DISCONNECTED':
+            await websocket.close()
 
 async def build_prompt_for_request(request: ChatCompletionRequest, request_rag: RAG, is_deep_research: bool, research_iteration: int, query: str, input_too_large: bool) -> str:
     """
@@ -311,6 +284,7 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
         logger.error(f"Error in WebSocket handler: {str(e)}")
         try:
             await websocket.send_text(f"Error: {str(e)}")
-            await websocket.close()
         except:
             pass
+    finally:
+        await websocket.close()
