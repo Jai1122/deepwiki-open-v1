@@ -3,6 +3,9 @@ import adalflow as adal
 from api.config import configs
 
 
+import logging
+import adal
+
 def get_embedder() -> adal.Embedder:
     embedder_config = configs["embedder"]
 
@@ -16,4 +19,5 @@ def get_embedder() -> adal.Embedder:
         model_client=model_client,
         model_kwargs=embedder_config["model_kwargs"],
     )
+    logging.info(f"Embedder methods: {dir(adal.Embedder)}")
     return embedder
