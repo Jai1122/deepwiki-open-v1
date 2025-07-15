@@ -206,7 +206,7 @@ async def build_prompt_for_request(request: ChatCompletionRequest, request_rag: 
                 rag_query = f"Contexts related to {request.filePath}"
 
             retrieved_docs_result = request_rag(rag_query, language=request.language)
-            if retrieved_docs_result and retrieved_docs_result[0].documents:
+            if retrieved_docs_result and retrieved_docs_result[0] and retrieved_docs_result[0].documents:
                 retrieved_documents = retrieved_docs_result[0].documents
         except Exception as e:
             logger.error(f"Error during RAG retrieval: {str(e)}")
