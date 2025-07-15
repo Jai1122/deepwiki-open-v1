@@ -1,7 +1,7 @@
 import adalflow as adal
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import ToEmbeddings
-from adalflow.core.components import Component
+from adalflow.core import Component
 # Use RecursiveCharacterTextSplitter for better code chunking
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
