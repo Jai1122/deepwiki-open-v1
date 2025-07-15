@@ -392,6 +392,7 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
     # Adalflow components usually have a 'call' method that takes data.
     class LangchainSplitterWrapper(Component):
         def __init__(self, splitter_instance):
+            super().__init__()
             self.splitter = splitter_instance
 
         def __call__(self, documents: List[Document]) -> List[Document]:
