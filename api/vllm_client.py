@@ -9,6 +9,7 @@ class VllmEmbeddings(OpenAIEmbeddings):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.api_key = kwargs.get("api_key")
+        self.base_url = kwargs.get("base_url")
 
     def embed_documents(self, texts, chunk_size=0):
         logger.info(f"Sending {len(texts)} texts to VLLM for embedding.")
