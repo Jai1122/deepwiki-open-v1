@@ -13,8 +13,7 @@ class VllmEmbeddings(OpenAIEmbeddings):
             if response and response.data:
                 return [r.embedding for r in response.data]
             else:
-                logger.error("VLLM response is None or has no data.")
-                return []
+                raise ValueError("VLLM response is None or has no data.")
         except Exception as e:
             logger.error(f"Error calling VLLM: {e}")
-            return []
+            raise e
