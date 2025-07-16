@@ -1,5 +1,5 @@
 from langchain_community.embeddings import OllamaEmbeddings
-from langchain_openai import OpenAIEmbeddings
+from api.vllm_client import VllmEmbeddings
 from api.config import configs
 import logging
 import os
@@ -12,6 +12,6 @@ def get_embedder():
     if provider == "vllm":
         base_url = os.environ.get("VLLM_API_BASE_URL")
         api_key = os.environ.get("VLLM_API_KEY")
-        return OpenAIEmbeddings(model=model, base_url=base_url, api_key=api_key)
+        return VllmEmbeddings(model=model, base_url=base_url, api_key=api_key)
     else:
         return OllamaEmbeddings(model=model)
