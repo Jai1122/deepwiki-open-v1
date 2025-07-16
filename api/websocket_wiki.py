@@ -99,6 +99,14 @@ async def handle_websocket_chat(websocket: WebSocket):
     """
     await websocket.accept()
     try:
+        # Check if the Ollama server is running
+        try:
+            import httpx
+            httpx.get("http://localhost:11434")
+        except httpx.ConnectError:
+            await websocket.send_text("Error: Could not connect to the Ollama server. Please make sure that the Ollama server is running.")
+            return
+
         logger.info("WebSocket connection accepted.")
         request_data = await websocket.receive_json()
         logger.info(f"Received request data: {request_data}")
