@@ -1,6 +1,7 @@
 from langchain_openai import OpenAIEmbeddings
 import logging
-import json
+import httpx
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -8,20 +9,24 @@ class VllmEmbeddings(OpenAIEmbeddings):
     def embed_documents(self, texts, chunk_size=0):
         logger.info(f"Sending {len(texts)} texts to VLLM for embedding.")
 
-        # Manually construct the request body
-        request_body = {
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        json_data = {
             "input": texts,
             "model": self.model,
         }
 
-        logger.info(f"VLLM request body: {request_body}")
-
         try:
-            # Use the raw httpx client to send the request
-            response = self.client.post(
-                "/embeddings",
-                json=request_body,
-            )
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{self.base_url}/embeddings",
+                    headers=headers,
+                    json=json_data,
+                )
 
             response.raise_for_status()
 
