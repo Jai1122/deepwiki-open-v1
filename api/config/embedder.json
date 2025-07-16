@@ -1,5 +1,6 @@
 {
   "embedder": {
+    "provider": "vllm",
     "client_class": "OpenAIClient",
     "batch_size": 500,
     "model_kwargs": {

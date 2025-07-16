@@ -362,7 +362,7 @@ def create_vector_store(documents, embedder):
     )
     split_documents = splitter.split_documents(documents)
 
-    return FAISS.from_documents(split_documents, embedder)
+    return FAISS.from_documents(documents=split_documents, embedding=embedder)
 
 def get_github_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
     """
