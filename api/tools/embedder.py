@@ -12,6 +12,8 @@ def get_embedder():
     if provider == "vllm":
         base_url = os.environ.get("VLLM_API_BASE_URL")
         api_key = os.environ.get("VLLM_API_KEY")
-        return VllmEmbeddings(model=model, base_url=base_url, api_key=api_key)
+        embedder = VllmEmbeddings(model=model, base_url=base_url, api_key=api_key)
+        logging.info(f"Embedder attributes: {dir(embedder)}")
+        return embedder
     else:
         return OllamaEmbeddings(model=model)
