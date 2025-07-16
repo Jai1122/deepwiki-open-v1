@@ -12,8 +12,8 @@ class VllmEmbeddings(OpenAIEmbeddings):
         headers = {
             "Content-Type": "application/json",
         }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.client.api_key:
+            headers["Authorization"] = f"Bearer {self.client.api_key}"
 
         json_data = {
             "input": texts,
