@@ -35,6 +35,9 @@ class VllmEmbeddings(OpenAIEmbeddings):
             response.raise_for_status()
 
             response_json = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Error calling VLLM: {e}")
+            raise ValueError(f"The VLLM server returned an error. Please check the VLLM server logs for more information. Error: {e}")
 
             logger.info(f"Raw response from VLLM: {response_json}")
 
