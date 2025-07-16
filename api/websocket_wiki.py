@@ -160,11 +160,22 @@ async def handle_websocket_chat(websocket: WebSocket):
         # Get the query from the last message
         query = last_message.content
         logger.info("Building prompt...")
-        prompt = await build_prompt_for_request(request, request_rag, is_deep_research, research_iteration, query, input_too_large)
+        prompts = await build_prompt_for_request(request, request_rag, is_deep_research, research_iteration, query, input_too_large)
         logger.info("Prompt built successfully.")
 
-        logger.info("Calling model and streaming response...")
-        await call_model_and_stream_response(websocket, request, prompt)
+        full_response = ""
+        for i, prompt in enumerate(prompts):
+            logger.info(f"Processing prompt {i+1}/{len(prompts)}")
+            # Add a message to the user to let them know which chunk is being processed
+            await websocket.send_text(f"Processing chunk {i+1} of {len(prompts)}...\n")
+            response_chunk = await call_model_and_stream_response(websocket, request, prompt)
+            full_response += response_chunk
+            # Add a separator between the responses from each chunk
+            if i < len(prompts) - 1:
+                full_response += "\n\n---\n\n"
+
+        logger.info("All chunks processed.")
+        await websocket.send_text(full_response)
         logger.info("Model call and streaming finished.")
 
     except WebSocketDisconnect:
@@ -238,7 +249,8 @@ async def build_prompt_for_request(request: ChatCompletionRequest, request_rag: 
     model_max_tokens = resolved_model_kwargs.get("max_context_tokens", 8192)
 
     context_manager = ContextManager(model_provider=request.provider)
-    prompt = context_manager.build_prompt(
+    # This will now return a list of prompts if the content is chunked
+    prompts = context_manager.build_prompt(
         system_prompt=system_prompt,
         query=query,
         conversation_history=conversation_history,
@@ -247,10 +259,12 @@ async def build_prompt_for_request(request: ChatCompletionRequest, request_rag: 
         retrieved_documents=retrieved_documents,
         model_max_tokens=model_max_tokens
     )
-    logger.info(f"Final prompt tokens from websocket: {count_tokens(prompt, request.provider == 'ollama')}")
-    return prompt
+    # For now, we'll just log the number of prompts generated.
+    # The calling function will need to be updated to handle the list of prompts.
+    logger.info(f"Generated {len(prompts)} prompts from the content.")
+    return prompts
 
-async def call_model_and_stream_response(websocket: WebSocket, request: ChatCompletionRequest, prompt: str):
+async def call_model_and_stream_response(websocket: WebSocket, request: ChatCompletionRequest, prompt: str) -> str:
     """
     Call the model and stream the response.
     """
@@ -276,7 +290,7 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
             logger.error(error_msg)
             await websocket.send_text(f"Error: {error_msg}")
             await websocket.close()
-            return
+            return ""
         # resolved_client_class is OpenAIClient
         llm_client_instance = resolved_client_class(base_url=vllm_base_url, api_key=vllm_api_key)
 
@@ -324,8 +338,9 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
         logger.error(f"Unknown provider in websocket: {request.provider}")
         await websocket.send_text(f"Error: Unknown provider {request.provider}")
         await websocket.close()
-        return
+        return ""
 
+    full_response = ""
     try:
         if request.provider in ["vllm", "ollama", "openrouter", "openai", "azure"]:
             api_kwargs_for_call = llm_client_instance.convert_inputs_to_api_kwargs(
@@ -343,7 +358,7 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
                         if delta is not None:
                             text_content = getattr(delta, "content", None)
                             if text_content is not None:
-                                await websocket.send_text(text_content)
+                                full_response += text_content
             elif request.provider == "ollama":
                 async for chunk in response_stream:
                     text = getattr(chunk, 'response', None)
@@ -357,12 +372,12 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
 
                     if text:
                        text = text.replace('<think>', '').replace('</think>', '')
-                       await websocket.send_text(text)
+                       full_response += text
         elif request.provider == "google":
             response_stream = llm_client_instance.generate_content(prompt, stream=True)
             for chunk in response_stream:
                 if hasattr(chunk, 'text'):
-                    await websocket.send_text(chunk.text)
+                    full_response += chunk.text
 
     except Exception as e_outer:
         logger.error(f"Error in streaming response for provider {request.provider}: {str(e_outer)}")
@@ -378,3 +393,4 @@ async def call_model_and_stream_response(websocket: WebSocket, request: ChatComp
                 await websocket.send_text(f"Error: {str(e)}")
             except:
                 pass
+    return full_response

@@ -290,22 +290,43 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
 
                     # Check token count
                     token_count = count_tokens(content, is_ollama_embedder)
-                    if token_count > MAX_EMBEDDING_TOKENS * 10:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
-                        continue
-
-                    doc = Document(
-                        page_content=content,
-                        meta_data={
-                            "file_path": relative_path,
-                            "type": ext[1:],
-                            "is_code": True,
-                            "is_implementation": is_implementation,
-                            "title": relative_path,
-                            "token_count": token_count,
-                        },
-                    )
-                    documents.append(doc)
+                    if token_count > MAX_EMBEDDING_TOKENS:
+                        logger.info(f"Splitting large file {relative_path} into chunks.")
+                        text_splitter_config = configs.get("text_splitter", {})
+                        splitter = RecursiveCharacterTextSplitter(
+                            chunk_size=text_splitter_config.get("chunk_size", 1000),
+                            chunk_overlap=text_splitter_config.get("chunk_overlap", 200),
+                            length_function=len,
+                            is_separator_regex=False,
+                        )
+                        chunks = splitter.split_text(content)
+                        for i, chunk in enumerate(chunks):
+                            chunk_token_count = count_tokens(chunk, is_ollama_embedder)
+                            doc = Document(
+                                page_content=chunk,
+                                meta_data={
+                                    "file_path": f"{relative_path} (chunk {i+1}/{len(chunks)})",
+                                    "type": ext[1:],
+                                    "is_code": True,
+                                    "is_implementation": is_implementation,
+                                    "title": f"{relative_path} (chunk {i+1}/{len(chunks)})",
+                                    "token_count": chunk_token_count,
+                                },
+                            )
+                            documents.append(doc)
+                    else:
+                        doc = Document(
+                            page_content=content,
+                            meta_data={
+                                "file_path": relative_path,
+                                "type": ext[1:],
+                                "is_code": True,
+                                "is_implementation": is_implementation,
+                                "title": relative_path,
+                                "token_count": token_count,
+                            },
+                        )
+                        documents.append(doc)
             except Exception as e:
                 logger.error(f"Error reading {file_path}: {e}")
 
