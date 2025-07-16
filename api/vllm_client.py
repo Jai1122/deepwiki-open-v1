@@ -21,6 +21,8 @@ class VllmEmbeddings(OpenAIEmbeddings):
         }
 
         try:
+            logger.info(f"Request headers: {headers}")
+            logger.info(f"Request json: {json_data}")
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.openai_api_base}/embeddings",
@@ -28,6 +30,8 @@ class VllmEmbeddings(OpenAIEmbeddings):
                     json=json_data,
                 )
 
+            logger.info(f"Response status code: {response.status_code}")
+            logger.info(f"Response content: {response.text}")
             response.raise_for_status()
 
             response_json = response.json()
