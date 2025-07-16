@@ -14,5 +14,6 @@ def get_embedder():
         api_key = os.environ.get("VLLM_API_KEY")
         return OpenAIEmbeddings(model=model, base_url=base_url, api_key=api_key)
     else:
-        base_url = os.environ.get("OLLAMA_HOST")
-        return OllamaEmbeddings(model=model, base_url=base_url)
+        # The base_url parameter is not supported in the OllamaEmbeddings constructor.
+        # The Ollama client reads the OLLAMA_HOST environment variable automatically.
+        return OllamaEmbeddings(model=model)
