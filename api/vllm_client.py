@@ -6,14 +6,18 @@ import os
 logger = logging.getLogger(__name__)
 
 class VllmEmbeddings(OpenAIEmbeddings):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.api_key = kwargs.get("api_key")
+
     def embed_documents(self, texts, chunk_size=0):
         logger.info(f"Sending {len(texts)} texts to VLLM for embedding.")
 
         headers = {
             "Content-Type": "application/json",
         }
-        if self.client.api_key:
-            headers["Authorization"] = f"Bearer {self.client.api_key}"
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         json_data = {
             "input": texts,
