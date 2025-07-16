@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class VllmEmbeddings(OpenAIEmbeddings):
-    def _get_len_safe_embeddings(self, texts, *, engine, chunk_size=None):
+    def embed_documents(self, texts, chunk_size=0):
         logger.info(f"Sending {len(texts)} texts to VLLM for embedding.")
         try:
             response = self.client.create(input=texts, model=self.model)
