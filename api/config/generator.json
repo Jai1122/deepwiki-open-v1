@@ -167,11 +167,9 @@
     },
     "vllm": {
       "client_class": "VLLMClient",
-      "default_model": "vllm-model",
+      "default_model": "${LLM_MODEL_ID}",
       "supportsCustomModel": true,
-      "models": {
-        "vllm-model": {}
-      }
+      "models": {}
     }
   }
 }

@@ -473,27 +473,16 @@ IMPORTANT FORMATTING RULES:
         Returns:
             List: The reranked list of documents.
         """
-        try:
-            from api.simple_chat import simple_chat
+        query_keywords = set(query.lower().split())
 
-            document_texts = [f"File: {doc.meta_data.get('file_path', '')}\nContent: {doc.text}" for doc in documents]
+        def score_document(doc):
+            doc_text = doc.text.lower()
+            doc_keywords = set(doc_text.split())
+            return len(query_keywords.intersection(doc_keywords))
 
-            prompt = f"Given the query '{query}', which of the following documents are most relevant? Please rank them by relevance.\n\n"
-            for i, text in enumerate(document_texts):
-                prompt += f"Document {i+1}:\n{text}\n\n"
+        documents.sort(key=score_document, reverse=True)
 
-            response = simple_chat(prompt, provider="google", model="gemini-1.5-flash-latest")
-
-            # Extract the ranking from the response
-            ranked_indices = [int(i) - 1 for i in re.findall(r'\d+', response)]
-
-            # Reorder the documents based on the ranking
-            reranked_documents = [documents[i] for i in ranked_indices if i < len(documents)]
-
-            return reranked_documents
-        except Exception as e:
-            logger.error(f"Error reranking documents: {e}")
-            return documents
+        return documents
 
     def call(self, query: str, language: str = "en") -> Tuple[List]:
         """

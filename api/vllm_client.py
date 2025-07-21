@@ -62,6 +62,11 @@ def get_first_message_content(completion: ChatCompletion) -> str:
     return completion.choices[0].message.content
 
 
+def _get_chat_completion_usage(completion: ChatCompletion) -> CompletionUsage:
+    """Get the token usage from the completion."""
+    return completion.usage
+
+
 # A simple heuristic to estimate token count for estimating number of tokens in a Streaming response
 def estimate_token_count(text: str) -> int:
     """
@@ -195,14 +200,32 @@ class VLLMClient(ModelClient):
     ) -> CompletionUsage:
 
         try:
-            usage: CompletionUsage = CompletionUsage(
-                completion_tokens=completion.usage.completion_tokens,
-                prompt_tokens=completion.usage.prompt_tokens,
-                total_tokens=completion.usage.total_tokens,
-            )
-            return usage
+            usage = _get_chat_completion_usage(completion)
+            if usage:
+                return usage
         except Exception as e:
-            log.error(f"Error tracking the completion usage: {e}")
+            log.warning(f"Could not get token usage from completion: {e}")
+
+        # If we can't get the usage from the completion, we'll try to estimate it
+        try:
+            completion_tokens = 0
+            prompt_tokens = 0
+            if isinstance(completion, ChatCompletion):
+                completion_text = get_first_message_content(completion)
+                completion_tokens = estimate_token_count(completion_text)
+                # We can't get the prompt tokens from the completion, so we'll just leave it as 0
+            elif isinstance(completion, Generator):
+                # We can't get the prompt tokens from the completion, so we'll just leave it as 0
+                for chunk in completion:
+                    completion_tokens += estimate_token_count(chunk)
+
+            return CompletionUsage(
+                completion_tokens=completion_tokens,
+                prompt_tokens=prompt_tokens,
+                total_tokens=completion_tokens + prompt_tokens,
+            )
+        except Exception as e:
+            log.error(f"Error estimating the completion usage: {e}")
             return CompletionUsage(
                 completion_tokens=None, prompt_tokens=None, total_tokens=None
             )

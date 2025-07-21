@@ -334,6 +334,8 @@ def get_model_config(provider="google", model=None):
             result["model_kwargs"] = {"model": model, **model_params["options"]}
         else:
             result["model_kwargs"] = {"model": model}
+    elif provider == "vllm":
+        result["model_kwargs"] = {"model": model, **model_params}
     else:
         # Standard structure for other providers
         result["model_kwargs"] = {"model": model, **model_params}
