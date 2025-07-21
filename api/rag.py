@@ -462,6 +462,39 @@ IMPORTANT FORMATTING RULES:
                 logger.error(f"Sample embedding sizes: {', '.join(sizes)}")
             raise
 
+    def rerank_documents(self, query: str, documents: List) -> List:
+        """
+        Reranks a list of documents based on their relevance to a query.
+
+        Args:
+            query (str): The user's query.
+            documents (List): The list of documents to rerank.
+
+        Returns:
+            List: The reranked list of documents.
+        """
+        try:
+            from api.simple_chat import simple_chat
+
+            document_texts = [f"File: {doc.meta_data.get('file_path', '')}\nContent: {doc.text}" for doc in documents]
+
+            prompt = f"Given the query '{query}', which of the following documents are most relevant? Please rank them by relevance.\n\n"
+            for i, text in enumerate(document_texts):
+                prompt += f"Document {i+1}:\n{text}\n\n"
+
+            response = simple_chat(prompt, provider="google", model="gemini-1.5-flash-latest")
+
+            # Extract the ranking from the response
+            ranked_indices = [int(i) - 1 for i in re.findall(r'\d+', response)]
+
+            # Reorder the documents based on the ranking
+            reranked_documents = [documents[i] for i in ranked_indices if i < len(documents)]
+
+            return reranked_documents
+        except Exception as e:
+            logger.error(f"Error reranking documents: {e}")
+            return documents
+
     def call(self, query: str, language: str = "en") -> Tuple[List]:
         """
         Process a query using RAG.
@@ -480,6 +513,10 @@ IMPORTANT FORMATTING RULES:
                 self.transformed_docs[doc_index]
                 for doc_index in retrieved_documents[0].doc_indices
             ]
+
+            # Rerank the documents if enabled in the config
+            if configs.get("repository", {}).get("rerank_documents", True):
+                retrieved_documents[0].documents = self.rerank_documents(query, retrieved_documents[0].documents)
 
             return retrieved_documents
 

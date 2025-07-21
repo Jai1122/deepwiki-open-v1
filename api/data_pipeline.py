@@ -25,6 +25,28 @@ logger = logging.getLogger(__name__)
 # Maximum token limit for OpenAI embedding models
 MAX_EMBEDDING_TOKENS = 8192
 
+# Maximum token limit for summarization
+MAX_SUMMARIZATION_TOKENS = configs.get("repository", {}).get("max_summarization_tokens", 10000)
+
+def summarize_large_file(content: str, file_path: str) -> str:
+    """
+    Summarizes the content of a large file.
+
+    Args:
+        content (str): The content of the file.
+        file_path (str): The path to the file.
+
+    Returns:
+        str: The summarized content of the file.
+    """
+    try:
+        from api.simple_chat import simple_chat
+        summary = simple_chat(f"Summarize the following file: {file_path}\n\n{content}", provider="google", model="gemini-1.5-flash-latest")
+        return summary
+    except Exception as e:
+        logger.error(f"Error summarizing file {file_path}: {e}")
+        return ""
+
 def count_tokens(text: str, is_ollama_embedder: bool = None) -> int:
     """
     Count the number of tokens in a text string using tiktoken.
@@ -296,9 +318,14 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
 
                     # Check token count
                     token_count = count_tokens(content, is_ollama_embedder)
-                    if token_count > MAX_EMBEDDING_TOKENS * 10:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
+                    if token_count > MAX_SUMMARIZATION_TOKENS:
+                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds summarization limit")
                         continue
+                    elif token_count > MAX_EMBEDDING_TOKENS:
+                        logger.warning(f"Summarizing large file {relative_path}: Token count ({token_count}) exceeds embedding limit")
+                        content = summarize_large_file(content, relative_path)
+                        if not content:
+                            continue
 
                     doc = Document(
                         text=content,
@@ -330,9 +357,14 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
 
                     # Check token count
                     token_count = count_tokens(content, is_ollama_embedder)
-                    if token_count > MAX_EMBEDDING_TOKENS:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
+                    if token_count > MAX_SUMMARIZATION_TOKENS:
+                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds summarization limit")
                         continue
+                    elif token_count > MAX_EMBEDDING_TOKENS:
+                        logger.warning(f"Summarizing large file {relative_path}: Token count ({token_count}) exceeds embedding limit")
+                        content = summarize_large_file(content, relative_path)
+                        if not content:
+                            continue
 
                     doc = Document(
                         text=content,
