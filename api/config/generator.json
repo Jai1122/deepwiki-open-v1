@@ -170,9 +170,7 @@
       "default_model": "vllm-model",
       "supportsCustomModel": true,
       "models": {
-        "vllm-model": {
-            "temperature": 0.7
-        }
+        "vllm-model": {}
       }
     }
   }
