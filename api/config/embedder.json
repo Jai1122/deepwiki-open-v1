@@ -5,7 +5,7 @@
       "api_key": "${VLLM_API_KEY}",
       "base_url": "${VLLM_EMBEDDING_BASE_URL}"
     },
-    "batch_size": 1,
+    "batch_size": 10,
     "model_kwargs": {
       "model": "YOUR_VLLM_JINA_MODEL_ID"
     }
