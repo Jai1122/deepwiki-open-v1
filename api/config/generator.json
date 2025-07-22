@@ -26,6 +26,10 @@
       "default_model": "gpt-4o",
       "supportsCustomModel": true,
       "models": {
+        "/app/models/Qwen3-14B-FP8": {
+          "temperature": 0.7,
+          "top_p": 0.8
+        },
         "gpt-4o": {
           "temperature": 0.7,
           "top_p": 0.8
