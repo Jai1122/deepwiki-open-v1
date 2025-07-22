@@ -75,13 +75,22 @@ class RAG(adal.Component):
     def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
                       excluded_dirs: List[str] = None, excluded_files: List[str] = None,
                       included_dirs: List[str] = None, included_files: List[str] = None):
+        
         self.transformed_docs = self.db_manager.prepare_database(
             repo_url_or_path, type, access_token, self.is_ollama_embedder,
             excluded_dirs, excluded_files, included_dirs, included_files
         )
+        
+        # --- DEFINITIVE FIX: SECOND LAYER OF DEFENSE ---
+        if self.transformed_docs is None:
+            logger.warning("prepare_database returned None. Defaulting to empty list.")
+            self.transformed_docs = []
+
         self.transformed_docs = self._validate_and_filter_embeddings(self.transformed_docs)
+        
         if not self.transformed_docs:
             raise ValueError("No valid documents with embeddings found after validation.")
+            
         self.retriever = FAISSRetriever(
             **configs["retriever"],
             embedder=self.embedder,
