@@ -7,7 +7,7 @@
     },
     "batch_size": 10,
     "model_kwargs": {
-      "model": "jina-embeddings-v3"
+      "model": "YOUR_VLLM_JINA_MODEL_ID"
     }
   },
   "retriever": {
