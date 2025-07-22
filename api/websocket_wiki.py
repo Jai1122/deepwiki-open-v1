@@ -549,38 +549,25 @@ This file contains...
                     await websocket.close()
                 except Exception as e_openrouter:
                     logger.error(f"Error with OpenRouter API: {str(e_openrouter)}")
-                    error_msg = f"
-Error with OpenRouter API: {str(e_openrouter)}
-
-Please check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
+                    error_msg = f" Error with OpenRouter API: {str(e_openrouter)} Please check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
                     await websocket.send_text(error_msg)
                     # Close the WebSocket connection after sending the error message
                     await websocket.close()
             elif request.provider == "openai" or request.provider == "vllm":
-                try:
-                    # Get the response and handle it properly using the previously created api_kwargs
-                    logger.info(f"Making OpenAI protocol call for provider '{request.provider}'")
-                    response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    # Handle streaming response from Openai
-                    async for chunk in response:
-                        choices = getattr(chunk, "choices", [])
-                        if len(choices) > 0:
-                            delta = getattr(choices[0], "delta", None)
-                            if delta is not None:
-                                text = getattr(delta, "content", None)
-                                if text is not None:
-                                    await websocket.send_text(text)
-                    # Explicitly close the WebSocket connection after the response is complete
-                    await websocket.close()
-                except Exception as e_openai:
-                    logger.error(f"Error with OpenAI API: {str(e_openai)}")
-                    error_msg = f"
-Error with OpenAI API: {str(e_openai)}
-
-Please check that you have set the correct API key and endpoint in your environment variables."
-                    await websocket.send_text(error_msg)
-                    # Close the WebSocket connection after sending the error message
-                    await websocket.close()
+                # Get the response and handle it properly using the previously created api_kwargs
+                logger.info(f"Making OpenAI protocol call for provider '{request.provider}'")
+                response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+                # Handle streaming response from Openai
+                async for chunk in response:
+                    choices = getattr(chunk, "choices", [])
+                    if len(choices) > 0:
+                        delta = getattr(choices[0], "delta", None)
+                        if delta is not None:
+                            text = getattr(delta, "content", None)
+                            if text is not None:
+                                await websocket.send_text(text)
+                # Explicitly close the WebSocket connection after the response is complete
+                await websocket.close()
             elif request.provider == "azure":
                 try:
                     # Get the response and handle it properly using the previously created api_kwargs
@@ -599,10 +586,7 @@ Please check that you have set the correct API key and endpoint in your environm
                     await websocket.close()
                 except Exception as e_azure:
                     logger.error(f"Error with Azure AI API: {str(e_azure)}")
-                    error_msg = f"
-Error with Azure AI API: {str(e_azure)}
-
-Please check that you have set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_VERSION environment variables with valid values."
+                    error_msg = f"Error with Azure AI API: {str(e_azure)} Please check that you have set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_VERSION environment variables with valid values."
                     await websocket.send_text(error_msg)
                     # Close the WebSocket connection after sending the error message
                     await websocket.close()
