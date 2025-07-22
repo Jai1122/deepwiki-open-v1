@@ -7,6 +7,7 @@ from uuid import uuid4
 import adalflow as adal
 
 from api.tools.embedder import get_embedder
+from api.openai_client import OpenAIClient, EmbedderClient
 
 
 # Create our own implementation of the conversation classes
