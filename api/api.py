@@ -11,7 +11,7 @@ import google.generativeai as genai
 import asyncio
 
 # Configure logging
-from api.logging_config import setup_logging
+from .logging_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ class ModelConfig(BaseModel):
 class AuthorizationConfig(BaseModel):
     code: str = Field(..., description="Authorization code")
 
-from api.config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE
+from .config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE
 
 @app.get("/lang/config")
 async def get_lang_config():
@@ -391,8 +391,8 @@ def generate_json_export(repo_url: str, pages: List[WikiPage]) -> str:
     return json.dumps(export_data, indent=2)
 
 # Import the simplified chat implementation
-from api.simple_chat import chat_completions_stream
-from api.websocket_wiki import handle_websocket_chat
+from .simple_chat import chat_completions_stream
+from .websocket_wiki import handle_websocket_chat
 
 # Add the chat_completions_stream endpoint to the main app
 app.add_api_route("/chat/completions/stream", chat_completions_stream, methods=["POST"])

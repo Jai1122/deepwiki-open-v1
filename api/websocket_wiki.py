@@ -9,15 +9,15 @@ from adalflow.core.types import ModelType
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel, Field
 
-from api.config import get_model_config, configs, OPENROUTER_API_KEY, OPENAI_API_KEY
-from api.data_pipeline import count_tokens, get_file_content
-from api.openai_client import OpenAIClient
-from api.openrouter_client import OpenRouterClient
-from api.azureai_client import AzureAIClient
-from api.rag import RAG
+from .config import get_model_config, configs, OPENROUTER_API_KEY, OPENAI_API_KEY
+from .data_pipeline import count_tokens, get_file_content
+from .openai_client import OpenAIClient
+from .openrouter_client import OpenRouterClient
+from .azureai_client import AzureAIClient
+from .rag import RAG
 
 # Configure logging
-from api.logging_config import setup_logging
+from .logging_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -549,14 +549,17 @@ This file contains...
                     await websocket.close()
                 except Exception as e_openrouter:
                     logger.error(f"Error with OpenRouter API: {str(e_openrouter)}")
-                    error_msg = f"\nError with OpenRouter API: {str(e_openrouter)}\n\nPlease check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
+                    error_msg = f"
+Error with OpenRouter API: {str(e_openrouter)}
+
+Please check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
                     await websocket.send_text(error_msg)
                     # Close the WebSocket connection after sending the error message
                     await websocket.close()
-            elif request.provider == "openai":
+            elif request.provider == "openai" or request.provider == "vllm":
                 try:
                     # Get the response and handle it properly using the previously created api_kwargs
-                    logger.info("Making Openai API call")
+                    logger.info(f"Making OpenAI protocol call for provider '{request.provider}'")
                     response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
                     # Handle streaming response from Openai
                     async for chunk in response:
@@ -570,8 +573,11 @@ This file contains...
                     # Explicitly close the WebSocket connection after the response is complete
                     await websocket.close()
                 except Exception as e_openai:
-                    logger.error(f"Error with Openai API: {str(e_openai)}")
-                    error_msg = f"\nError with Openai API: {str(e_openai)}\n\nPlease check that you have set the OPENAI_API_KEY environment variable with a valid API key."
+                    logger.error(f"Error with OpenAI API: {str(e_openai)}")
+                    error_msg = f"
+Error with OpenAI API: {str(e_openai)}
+
+Please check that you have set the correct API key and endpoint in your environment variables."
                     await websocket.send_text(error_msg)
                     # Close the WebSocket connection after sending the error message
                     await websocket.close()
@@ -593,11 +599,23 @@ This file contains...
                     await websocket.close()
                 except Exception as e_azure:
                     logger.error(f"Error with Azure AI API: {str(e_azure)}")
-                    error_msg = f"\nError with Azure AI API: {str(e_azure)}\n\nPlease check that you have set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_VERSION environment variables with valid values."
+                    error_msg = f"
+Error with Azure AI API: {str(e_azure)}
+
+Please check that you have set the AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_VERSION environment variables with valid values."
                     await websocket.send_text(error_msg)
                     # Close the WebSocket connection after sending the error message
                     await websocket.close()
             else:
+                # Initialize Google Generative AI model
+                model = genai.GenerativeModel(
+                    model_name=model_config["model"],
+                    generation_config={
+                        "temperature": model_config["temperature"],
+                        "top_p": model_config["top_p"],
+                        "top_k": model_config["top_k"]
+                    }
+                )
                 # Generate streaming response
                 response = model.generate_content(prompt, stream=True)
                 # Stream the response

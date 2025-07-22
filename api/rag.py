@@ -38,8 +38,8 @@ class CustomConversation:
 
 # Import other adalflow components
 from adalflow.components.retriever.faiss_retriever import FAISSRetriever
-from api.config import configs
-from api.data_pipeline import DatabaseManager
+from .config import configs
+from .data_pipeline import DatabaseManager
 
 # Configure logging
 logger = logging.getLogger(__name__)
