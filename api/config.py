@@ -340,3 +340,32 @@ def get_model_config(provider="google", model=None):
         result["model_kwargs"] = {"model": model, **model_params}
 
     return result
+
+def get_max_tokens_for_model(provider: str, model: str) -> int:
+    """
+    Get the maximum context window size for a given model.
+    
+    Args:
+        provider (str): The model provider.
+        model (str): The model name.
+        
+    Returns:
+        int: The maximum number of tokens.
+    """
+    try:
+        provider_config = configs.get("providers", {}).get(provider, {})
+        model_config = provider_config.get("models", {}).get(model, {})
+        
+        # Look for a 'max_tokens' key in the model's config.
+        # The structure might be model_config['max_tokens'] or model_config['options']['num_ctx'] for Ollama.
+        if 'max_tokens' in model_config:
+            return model_config['max_tokens']
+        if 'options' in model_config and 'num_ctx' in model_config['options']:
+            return model_config['options']['num_ctx']
+            
+        # Fallback to a default value if not specified.
+        logger.warning(f"max_tokens not configured for {provider}/{model}. Falling back to default of 40960.")
+        return 40960
+    except Exception:
+        logger.exception(f"Error getting max_tokens for {provider}/{model}. Falling back to default of 40960.")
+        return 40960

@@ -25,6 +25,66 @@ logger = logging.getLogger(__name__)
 # Maximum token limit for OpenAI embedding models
 MAX_EMBEDDING_TOKENS = 8192
 
+def truncate_prompt_to_fit(
+    max_tokens: int,
+    system_prompt: str,
+    conversation_history: str,
+    file_content: str,
+    context_text: str,
+    query: str,
+    is_ollama: bool = False
+) -> (str, str):
+    """
+    Intelligently truncates file_content and context_text to fit within the model's max_token limit.
+    """
+    # Calculate the token count of fixed components
+    fixed_components = [system_prompt, conversation_history, query]
+    fixed_tokens = sum(count_tokens(text, is_ollama) for text in fixed_components)
+    
+    # Reserve some tokens for the model's response and template overhead
+    reserved_tokens = 1024 
+    available_tokens = max_tokens - fixed_tokens - reserved_tokens
+    
+    if available_tokens <= 0:
+        logger.warning("Not enough tokens for context and file content after reserving space.")
+        return "", ""
+
+    file_tokens = count_tokens(file_content, is_ollama)
+    context_tokens = count_tokens(context_text, is_ollama)
+    total_variable_tokens = file_tokens + context_tokens
+
+    if total_variable_tokens <= available_tokens:
+        # Everything fits, no truncation needed
+        return file_content, context_text
+
+    # Prioritize file_content over context_text if both are present
+    if file_content and context_text:
+        # Allocate 70% to file_content, 30% to context_text
+        file_alloc = int(available_tokens * 0.7)
+        context_alloc = available_tokens - file_alloc
+    elif file_content:
+        file_alloc = available_tokens
+        context_alloc = 0
+    else:
+        file_alloc = 0
+        context_alloc = available_tokens
+
+    # Truncate each part
+    truncated_file_content = file_content
+    if count_tokens(truncated_file_content, is_ollama) > file_alloc:
+        # Simple text-based truncation from the end
+        while count_tokens(truncated_file_content, is_ollama) > file_alloc:
+            truncated_file_content = truncated_file_content[:int(len(truncated_file_content) * 0.9)]
+        logger.warning(f"Truncated file_content to fit token limit.")
+
+    truncated_context_text = context_text
+    if count_tokens(truncated_context_text, is_ollama) > context_alloc:
+        while count_tokens(truncated_context_text, is_ollama) > context_alloc:
+            truncated_context_text = truncated_context_text[:int(len(truncated_context_text) * 0.9)]
+        logger.warning(f"Truncated context_text to fit token limit.")
+
+    return truncated_file_content, truncated_context_text
+
 def count_tokens(text: str, is_ollama_embedder: bool = None) -> int:
     """
     Count the number of tokens in a text string using tiktoken.
