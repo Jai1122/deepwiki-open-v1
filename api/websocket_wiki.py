@@ -730,7 +730,7 @@ This file contains...
                         # Initialize Google Generative AI model
                         model_config = get_model_config(request.provider, request.model)
                         fallback_model = genai.GenerativeModel(
-                            model_name=model_config["model"],
+                            model_name=model_config["model_kwargs"]["model"],
                             generation_config={
                                 "temperature": model_config["model_kwargs"].get("temperature", 0.7),
                                 "top_p": model_config["model_kwargs"].get("top_p", 0.8),
