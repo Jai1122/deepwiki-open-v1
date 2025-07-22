@@ -426,12 +426,14 @@ This file contains...
 
         prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
 
-        model_config = get_model_config(request.provider, request.model)["model_kwargs"]
+        full_model_config = get_model_config(request.provider, request.model)
+        model_config = full_model_config["model_kwargs"]
+        init_kwargs = full_model_config.get("initialize_kwargs", {})
 
         if request.provider == "ollama":
             prompt += " /no_think"
 
-            model = OllamaClient()
+            model = OllamaClient(**init_kwargs)
             model_kwargs = {
                 "model": model_config["model"],
                 "stream": True,
@@ -455,7 +457,7 @@ This file contains...
                 logger.warning("OPENROUTER_API_KEY not configured, but continuing with request")
                 # We'll let the OpenRouterClient handle this and return a friendly error message
 
-            model = OpenRouterClient()
+            model = OpenRouterClient(**init_kwargs)
             model_kwargs = {
                 "model": request.model,
                 "stream": True,
@@ -470,16 +472,16 @@ This file contains...
                 model_kwargs=model_kwargs,
                 model_type=ModelType.LLM
             )
-        elif request.provider == "openai":
-            logger.info(f"Using Openai protocol with model: {request.model}")
+        elif request.provider == "openai" or request.provider == "vllm":
+            logger.info(f"Using OpenAI protocol with provider '{request.provider}' and model: {request.model}")
 
             # Check if an API key is set for Openai
-            if not OPENAI_API_KEY:
+            if not OPENAI_API_KEY and not init_kwargs.get("api_key"):
                 logger.warning("OPENAI_API_KEY not configured, but continuing with request")
                 # We'll let the OpenAIClient handle this and return an error message
 
             # Initialize Openai client
-            model = OpenAIClient()
+            model = OpenAIClient(**init_kwargs)
             model_kwargs = {
                 "model": request.model,
                 "stream": True,
