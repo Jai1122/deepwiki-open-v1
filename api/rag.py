@@ -184,7 +184,7 @@ You: {{dialog_turn.assistant_response.response_str}}
 <START_OF_CONTEXT>
 {% for context in contexts %}
 {{loop.index }}.
-File Path: {{context.meta_data.get('file_path', 'unknown')}}
+File Path: {{context.meta_data.get('file_path', 'unknown')}}{% if context.meta_data.get('chunk_number') %} (Chunk {{context.meta_data.get('chunk_number')}} of {{context.meta_data.get('total_chunks')}}){% endif %}
 Content: {{context.text}}
 {% endfor %}
 <END_OF_CONTEXT>

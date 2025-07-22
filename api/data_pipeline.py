@@ -129,6 +129,60 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
 # Alias for backward compatibility
 download_github_repo = download_repo
 
+def chunk_document(document: Document, max_tokens: int, is_ollama_embedder: bool) -> List[Document]:
+    """
+    Splits a document into smaller chunks based on the max_tokens limit.
+
+    Args:
+        document (Document): The document to split.
+        max_tokens (int): The maximum number of tokens per chunk.
+        is_ollama_embedder (bool): Whether using Ollama embeddings for token counting.
+
+    Returns:
+        List[Document]: A list of document chunks.
+    """
+    chunks = []
+    text = document.text
+    token_count = count_tokens(text, is_ollama_embedder)
+
+    if token_count <= max_tokens:
+        return [document]
+
+    # Simple chunking by splitting the text into smaller pieces
+    lines = text.split('\n')
+    current_chunk = ""
+    current_token_count = 0
+    chunk_number = 1
+
+    for line in lines:
+        line_token_count = count_tokens(line, is_ollama_embedder)
+        if current_token_count + line_token_count > max_tokens:
+            # Create a new chunk
+            chunk_meta_data = document.meta_data.copy()
+            chunk_meta_data["chunk_number"] = chunk_number
+            chunk_meta_data["total_chunks"] = 0  # Will be updated later
+            chunks.append(Document(text=current_chunk, meta_data=chunk_meta_data))
+            current_chunk = ""
+            current_token_count = 0
+            chunk_number += 1
+
+        current_chunk += line + '\n'
+        current_token_count += line_token_count
+
+    # Add the last chunk
+    if current_chunk:
+        chunk_meta_data = document.meta_data.copy()
+        chunk_meta_data["chunk_number"] = chunk_number
+        chunk_meta_data["total_chunks"] = 0  # Will be updated later
+        chunks.append(Document(text=current_chunk, meta_data=chunk_meta_data))
+
+    # Update total_chunks in each chunk
+    total_chunks = len(chunks)
+    for chunk in chunks:
+        chunk.meta_data["total_chunks"] = total_chunks
+
+    return chunks
+
 def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs: List[str] = None, excluded_files: List[str] = None,
                       included_dirs: List[str] = None, included_files: List[str] = None):
     """
@@ -294,12 +348,6 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                         and "test" not in relative_path.lower()
                     )
 
-                    # Check token count
-                    token_count = count_tokens(content, is_ollama_embedder)
-                    if token_count > MAX_EMBEDDING_TOKENS * 10:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
-                        continue
-
                     doc = Document(
                         text=content,
                         meta_data={
@@ -308,10 +356,10 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                             "is_code": True,
                             "is_implementation": is_implementation,
                             "title": relative_path,
-                            "token_count": token_count,
                         },
                     )
-                    documents.append(doc)
+                    chunks = chunk_document(doc, MAX_EMBEDDING_TOKENS, is_ollama_embedder)
+                    documents.extend(chunks)
             except Exception as e:
                 logger.error(f"Error reading {file_path}: {e}")
 
@@ -328,12 +376,6 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                     content = f.read()
                     relative_path = os.path.relpath(file_path, path)
 
-                    # Check token count
-                    token_count = count_tokens(content, is_ollama_embedder)
-                    if token_count > MAX_EMBEDDING_TOKENS:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
-                        continue
-
                     doc = Document(
                         text=content,
                         meta_data={
@@ -342,10 +384,10 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                             "is_code": False,
                             "is_implementation": False,
                             "title": relative_path,
-                            "token_count": token_count,
                         },
                     )
-                    documents.append(doc)
+                    chunks = chunk_document(doc, MAX_EMBEDDING_TOKENS, is_ollama_embedder)
+                    documents.extend(chunks)
             except Exception as e:
                 logger.error(f"Error reading {file_path}: {e}")
 

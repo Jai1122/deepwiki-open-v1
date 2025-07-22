@@ -164,7 +164,7 @@ class OpenAIClient(ModelClient):
         chat_completion_parser: Callable[[Completion], Any] = None,
         input_type: Literal["text", "messages"] = "text",
         base_url: Optional[str] = None,
-        env_base_url_name: str = "OPENAI_BASE_URL",
+        env_base_url_name: str = "OPENAI_API_BASE_URL",
         env_api_key_name: str = "OPENAI_API_KEY",
     ):
         r"""It is recommended to set the OPENAI_API_KEY environment variable instead of passing it as an argument.
@@ -178,7 +178,9 @@ class OpenAIClient(ModelClient):
         self._api_key = api_key
         self._env_api_key_name = env_api_key_name
         self._env_base_url_name = env_base_url_name
-        self.base_url = base_url or os.getenv(self._env_base_url_name, "https://api.openai.com/v1")
+        self.base_url = base_url or os.getenv(self._env_base_url_name)
+        if not self.base_url:
+            self.base_url = "https://api.openai.com/v1"
         self.sync_client = self.init_sync_client()
         self.async_client = None  # only initialize if the async call is called
         self.chat_completion_parser = (
@@ -190,17 +192,21 @@ class OpenAIClient(ModelClient):
     def init_sync_client(self):
         api_key = self._api_key or os.getenv(self._env_api_key_name)
         if not api_key:
-            raise ValueError(
-                f"Environment variable {self._env_api_key_name} must be set"
+            log.warning(
+                f"Environment variable {self._env_api_key_name} is not set. "
+                "Assuming the API does not require an API key."
             )
+            api_key = "dummy"  # Provide a dummy key if none is set
         return OpenAI(api_key=api_key, base_url=self.base_url)
 
     def init_async_client(self):
         api_key = self._api_key or os.getenv(self._env_api_key_name)
         if not api_key:
-            raise ValueError(
-                f"Environment variable {self._env_api_key_name} must be set"
+            log.warning(
+                f"Environment variable {self._env_api_key_name} is not set. "
+                "Assuming the API does not require an API key."
             )
+            api_key = "dummy"  # Provide a dummy key if none is set
         return AsyncOpenAI(api_key=api_key, base_url=self.base_url)
 
     # def _parse_chat_completion(self, completion: ChatCompletion) -> "GeneratorOutput":
@@ -417,6 +423,8 @@ class OpenAIClient(ModelClient):
         if model_type == ModelType.EMBEDDER:
             return self.sync_client.embeddings.create(**api_kwargs)
         elif model_type == ModelType.LLM:
+            if "model" in api_kwargs and api_kwargs["model"] == "vllm":
+                api_kwargs["model"] = os.getenv("VLLM_MODEL_NAME", "vllm")
             if "stream" in api_kwargs and api_kwargs.get("stream", False):
                 log.debug("streaming call")
                 self.chat_completion_parser = handle_streaming_response

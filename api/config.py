@@ -21,6 +21,9 @@ AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION')
 AWS_ROLE_ARN = os.environ.get('AWS_ROLE_ARN')
+VLLM_API_BASE_URL = os.environ.get('VLLM_API_BASE_URL')
+VLLM_API_KEY = os.environ.get('VLLM_API_KEY')
+VLLM_MODEL_NAME = os.environ.get('VLLM_MODEL_NAME')
 
 # Set keys in environment (in case they're needed elsewhere in the code)
 if OPENAI_API_KEY:
@@ -37,6 +40,12 @@ if AWS_REGION:
     os.environ["AWS_REGION"] = AWS_REGION
 if AWS_ROLE_ARN:
     os.environ["AWS_ROLE_ARN"] = AWS_ROLE_ARN
+if VLLM_API_BASE_URL:
+    os.environ["VLLM_API_BASE_URL"] = VLLM_API_BASE_URL
+if VLLM_API_KEY:
+    os.environ["VLLM_API_KEY"] = VLLM_API_KEY
+if VLLM_MODEL_NAME:
+    os.environ["VLLM_MODEL_NAME"] = VLLM_MODEL_NAME
 
 # Wiki authentication settings
 raw_auth_mode = os.environ.get('DEEPWIKI_AUTH_MODE', 'False')
@@ -53,7 +62,8 @@ CLIENT_CLASSES = {
     "OpenRouterClient": OpenRouterClient,
     "OllamaClient": OllamaClient,
     "BedrockClient": BedrockClient,
-    "AzureAIClient": AzureAIClient
+    "AzureAIClient": AzureAIClient,
+    "VLLMClient": OpenAIClient,
 }
 
 def replace_env_placeholders(config: Union[Dict[str, Any], List[Any], str, Any]) -> Union[Dict[str, Any], List[Any], str, Any]:
@@ -121,14 +131,15 @@ def load_generator_config():
             if provider_config.get("client_class") in CLIENT_CLASSES:
                 provider_config["model_client"] = CLIENT_CLASSES[provider_config["client_class"]]
             # Fall back to default mapping based on provider_id
-            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure"]:
+            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure", "vllm"]:
                 default_map = {
                     "google": GoogleGenAIClient,
                     "openai": OpenAIClient,
                     "openrouter": OpenRouterClient,
                     "ollama": OllamaClient,
                     "bedrock": BedrockClient,
-                    "azure": AzureAIClient
+                    "azure": AzureAIClient,
+                    "vllm": OpenAIClient
                 }
                 provider_config["model_client"] = default_map[provider_id]
             else:
@@ -331,6 +342,12 @@ def get_model_config(provider="google", model=None):
             result["model_kwargs"] = {"model": model, **model_params["options"]}
         else:
             result["model_kwargs"] = {"model": model}
+    elif provider == "vllm":
+        result["model_kwargs"] = {"model": model, **model_params}
+        result["model_client"] = OpenAIClient(
+            api_key=VLLM_API_KEY,
+            base_url=VLLM_API_BASE_URL,
+        )
     else:
         # Standard structure for other providers
         result["model_kwargs"] = {"model": model, **model_params}
