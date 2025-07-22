@@ -623,16 +623,12 @@ This file contains...
                 # If we hit a token limit error, try again without context
                 logger.warning("Token limit exceeded, retrying without context")
                 try:
-                    # Create a simplified prompt without context
+                    # Create a simplified prompt without context or file content
                     simplified_prompt = f"/no_think {system_prompt}\n\n"
                     if conversation_history:
                         simplified_prompt += f"<conversation_history>\n{conversation_history}</conversation_history>\n\n"
 
-                    # Include file content in the fallback prompt if it was retrieved
-                    if request.filePath and file_content:
-                        simplified_prompt += f"<currentFileContent path=\"{request.filePath}\">\n{file_content}\n</currentFileContent>\n\n"
-
-                    simplified_prompt += "<note>Answering without retrieval augmentation due to input size constraints.</note>\n\n"
+                    simplified_prompt += "<note>Answering without RAG context or file content due to input size constraints.</note>\n\n"
                     simplified_prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
 
                     if request.provider == "ollama":
