@@ -277,6 +277,9 @@ IMPORTANT FORMATTING RULES:
         from api.config import get_model_config
         generator_config = get_model_config(self.provider, self.model)
 
+        # Get initialize_kwargs if they exist, otherwise use empty dict
+        init_kwargs = generator_config.get("initialize_kwargs", {})
+
         # Set up the main generator
         self.generator = adal.Generator(
             template=RAG_TEMPLATE,
@@ -286,7 +289,7 @@ IMPORTANT FORMATTING RULES:
                 "system_prompt": system_prompt,
                 "contexts": None,
             },
-            model_client=generator_config["model_client"](),
+            model_client=generator_config["model_client"](**init_kwargs),
             model_kwargs=generator_config["model_kwargs"],
             output_processors=data_parser,
         )

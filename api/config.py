@@ -324,6 +324,10 @@ def get_model_config(provider="google", model=None):
         "model_client": model_client,
     }
 
+    # Add initialize_kwargs if they exist for the provider
+    if "initialize_kwargs" in provider_config:
+        result["initialize_kwargs"] = provider_config["initialize_kwargs"]
+
     # Provider-specific adjustments
     if provider == "ollama":
         # Ollama uses a slightly different parameter structure
