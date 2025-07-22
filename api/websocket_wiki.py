@@ -195,7 +195,8 @@ async def handle_websocket_chat(websocket: WebSocket):
                     # This will use the actual RAG implementation
                     retrieved_documents = request_rag(rag_query, language=request.language)
 
-                    if retrieved_documents and retrieved_documents[0].documents:
+                    # Check if retrieved_documents is not None and has at least one element
+                    if retrieved_documents and len(retrieved_documents) > 0 and hasattr(retrieved_documents[0], 'documents') and retrieved_documents[0].documents:
                         # Format context for the prompt in a more structured way
                         documents = retrieved_documents[0].documents
                         logger.info(f"Retrieved {len(documents)} documents")
