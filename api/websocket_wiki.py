@@ -28,7 +28,7 @@ class ChatMessage(BaseModel):
     role: str  # 'user' or 'assistant'
     content: str
 
-class ChatCompletionRequest:
+class ChatCompletionRequest(BaseModel):
     """
     Model for requesting a chat completion.
     """
