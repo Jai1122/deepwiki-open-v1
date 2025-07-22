@@ -7,7 +7,8 @@
     },
     "batch_size": 10,
     "model_kwargs": {
-      "model": "YOUR_VLLM_JINA_MODEL_ID"
+      "model": "YOUR_VLLM_JINA_MODEL_ID",
+      "dimensions": 256
     }
   },
   "retriever": {

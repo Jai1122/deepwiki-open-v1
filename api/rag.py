@@ -14,9 +14,6 @@ from .data_pipeline import DatabaseManager
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Maximum token limit for embedding models
-MAX_INPUT_TOKENS = 7500  # Safe threshold below 8192 token limit
-
 # Corrected Conversation classes
 @dataclass
 class UserQuery:
@@ -96,12 +93,11 @@ class RAG(adal.Component):
         self.query_embedder = single_string_embedder if self.is_ollama_embedder else self.embedder
         self.initialize_db_manager()
         data_parser = adal.DataClassParser(data_class=RAGAnswer, return_data_class=True)
-        format_instructions = data_parser.get_output_format_str()
         from .config import get_model_config
         generator_config = get_model_config(self.provider, self.model)
         init_kwargs = generator_config.get("initialize_kwargs", {})
         self.generator = adal.Generator(
-            template="", # Placeholder, will be set in call
+            template="", # Placeholder
             prompt_kwargs={},
             model_client=generator_config["model_client"](**init_kwargs),
             model_kwargs=generator_config["model_kwargs"],
@@ -113,8 +109,22 @@ class RAG(adal.Component):
         self.transformed_docs = []
 
     def _validate_and_filter_embeddings(self, documents: List) -> List:
-        # ... (Implementation is correct, omitted for brevity)
-        return documents
+        if not documents:
+            return []
+        valid_documents = []
+        target_size = None
+        for i, doc in enumerate(documents):
+            if hasattr(doc, 'vector') and doc.vector is not None:
+                size = len(doc.vector)
+                if target_size is None:
+                    target_size = size
+                if size == target_size:
+                    valid_documents.append(doc)
+                else:
+                    logger.warning(f"Skipping document with mismatched embedding size. Expected {target_size}, got {size}.")
+            else:
+                logger.warning(f"Skipping document with no embedding vector.")
+        return valid_documents
 
     def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
                       excluded_dirs: List[str] = None, excluded_files: List[str] = None,
@@ -125,8 +135,12 @@ class RAG(adal.Component):
             repo_url_or_path, type, access_token, self.is_ollama_embedder,
             excluded_dirs, excluded_files, included_dirs, included_files
         )
+        
+        # --- CRITICAL FIX: RESTORED VALIDATION CALL ---
+        self.transformed_docs = self._validate_and_filter_embeddings(self.transformed_docs)
+
         if not self.transformed_docs:
-            raise ValueError("No valid documents with embeddings found.")
+            raise ValueError("No valid documents with embeddings found after validation.")
         
         retrieve_embedder = self.query_embedder if self.is_ollama_embedder else self.embedder
         self.retriever = FAISSRetriever(
@@ -150,5 +164,4 @@ class RAG(adal.Component):
                 rationale="Error during retrieval.",
                 answer="I apologize, but I encountered an error while retrieving relevant documents."
             )
-            # Return a correctly formatted tuple with an empty list for documents
             return [error_answer], []
