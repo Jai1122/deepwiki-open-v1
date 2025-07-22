@@ -199,6 +199,17 @@ async def get_model_config():
                     models=models
                 )
             )
+        if os.environ.get("VLLM_API_BASE_URL"):
+            providers.append(
+                Provider(
+                    id="vllm",
+                    name="VLLM",
+                    supportsCustomModel=True,
+                    models=[
+                        Model(id="vllm", name="vllm")
+                    ]
+                )
+            )
 
         # Create and return the full configuration
         config = ModelConfig(
