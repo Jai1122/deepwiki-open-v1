@@ -253,6 +253,10 @@ class RAG(adal.Component):
 
         # Use single string embedder for Ollama, regular embedder for others
         self.query_embedder = single_string_embedder if self.is_ollama_embedder else self.embedder
+        if isinstance(self.embedder.model_client, OpenAIClient):
+            self.embedder.model_client = EmbedderClient()
+        if isinstance(self.query_embedder.model_client, OpenAIClient):
+            self.query_embedder.model_client = EmbedderClient()
 
         self.initialize_db_manager()
 

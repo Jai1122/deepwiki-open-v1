@@ -1,5 +1,5 @@
 import adalflow as adal
-
+from api.openai_client import OpenAIClient, EmbedderClient
 from api.config import configs
 
 
@@ -9,9 +9,15 @@ def get_embedder() -> adal.Embedder:
     # --- Initialize Embedder ---
     model_client_class = embedder_config["model_client"]
     if "initialize_kwargs" in embedder_config:
-        model_client = model_client_class(**embedder_config["initialize_kwargs"])
+        if model_client_class == OpenAIClient:
+            model_client = EmbedderClient(**embedder_config["initialize_kwargs"])
+        else:
+            model_client = model_client_class(**embedder_config["initialize_kwargs"])
     else:
-        model_client = model_client_class()
+        if model_client_class == OpenAIClient:
+            model_client = EmbedderClient()
+        else:
+            model_client = model_client_class()
     embedder = adal.Embedder(
         model_client=model_client,
         model_kwargs=embedder_config["model_kwargs"],

@@ -595,6 +595,16 @@ class OpenAIClient(ModelClient):
         return image_source
 
 
+class EmbedderClient(OpenAIClient):
+    """A wrapper for the OpenAIClient to be used as an embedder."""
+
+    def call(self, api_kwargs: Dict = {}, model_type: ModelType = ModelType.UNDEFINED):
+        """
+        kwargs is the combined input and model_kwargs.  Support streaming call.
+        """
+        return super().call(api_kwargs=api_kwargs, model_type=ModelType.EMBEDDER)
+
+
 # Example usage:
 if __name__ == "__main__":
     from adalflow.core import Generator
