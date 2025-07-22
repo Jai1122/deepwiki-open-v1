@@ -429,6 +429,11 @@ This file contains...
         full_model_config = get_model_config(request.provider, request.model)
         model_config = full_model_config["model_kwargs"]
         init_kwargs = full_model_config.get("initialize_kwargs", {})
+        
+        # Define model and model_kwargs outside the try block to ensure they are in scope for the except block
+        model = None
+        model_kwargs = {}
+        api_kwargs = {}
 
         if request.provider == "ollama":
             prompt += " /no_think"
@@ -669,7 +674,7 @@ This file contains...
                             logger.error(f"Error with OpenRouter API fallback: {str(e_fallback)}")
                             error_msg = f"\nError with OpenRouter API fallback: {str(e_fallback)}\n\nPlease check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
                             await websocket.send_text(error_msg)
-                    elif request.provider == "openai":
+                    elif request.provider == "openai" or request.provider == "vllm":
                         try:
                             # Create new api_kwargs with the simplified prompt
                             fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
@@ -679,16 +684,21 @@ This file contains...
                             )
 
                             # Get the response using the simplified prompt
-                            logger.info("Making fallback Openai API call")
+                            logger.info("Making fallback OpenAI protocol call")
                             fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
 
                             # Handle streaming fallback_response from Openai
                             async for chunk in fallback_response:
-                                text = chunk if isinstance(chunk, str) else getattr(chunk, 'text', str(chunk))
-                                await websocket.send_text(text)
+                                choices = getattr(chunk, "choices", [])
+                                if len(choices) > 0:
+                                    delta = getattr(choices[0], "delta", None)
+                                    if delta is not None:
+                                        text = getattr(delta, "content", None)
+                                        if text is not None:
+                                            await websocket.send_text(text)
                         except Exception as e_fallback:
-                            logger.error(f"Error with Openai API fallback: {str(e_fallback)}")
-                            error_msg = f"\nError with Openai API fallback: {str(e_fallback)}\n\nPlease check that you have set the OPENAI_API_KEY environment variable with a valid API key."
+                            logger.error(f"Error with OpenAI API fallback: {str(e_fallback)}")
+                            error_msg = f"\nError with OpenAI API fallback: {str(e_fallback)}\n\nPlease check your API key and endpoint configuration."
                             await websocket.send_text(error_msg)
                     elif request.provider == "azure":
                         try:
