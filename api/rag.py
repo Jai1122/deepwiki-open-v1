@@ -39,8 +39,14 @@ class CustomConversation:
 
 # Import other adalflow components
 from adalflow.components.retriever.faiss_retriever import FAISSRetriever
+from adalflow.core.types import ModelType
 from api.config import configs
 from api.data_pipeline import DatabaseManager
+
+class CustomFAISSRetriever(FAISSRetriever):
+    def _get_query_embedding(self, query: str):
+        """Get the query embedding."""
+        return self.embedder(query, model_type=ModelType.EMBEDDER)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -436,13 +442,13 @@ IMPORTANT FORMATTING RULES:
         try:
             # Use the appropriate embedder for retrieval
             retrieve_embedder = self.query_embedder if self.is_ollama_embedder else self.embedder
-            self.retriever = FAISSRetriever(
+            self.retriever = CustomFAISSRetriever(
                 **configs["retriever"],
                 embedder=retrieve_embedder,
                 documents=self.transformed_docs,
                 document_map_func=lambda doc: doc.vector,
             )
-            logger.info("FAISS retriever created successfully")
+            logger.info("Custom FAISS retriever created successfully")
         except Exception as e:
             logger.error(f"Error creating FAISS retriever: {str(e)}")
             # Try to provide more specific error information
