@@ -118,20 +118,28 @@ async def stream_response(
 
 async def summarize_oversized_query(query: str, model_config: dict, model_kwargs: dict) -> str:
     """Chunks and summarizes a very large query."""
+    logger.info("Summarizing oversized query...")
     splitter_config = configs.get("text_splitter", {})
     text_splitter = TextSplitter(
         split_by=splitter_config.get("split_by", "word"),
         chunk_size=splitter_config.get("chunk_size", 2000),
         chunk_overlap=splitter_config.get("chunk_overlap", 200),
     )
-    chunks = text_splitter([Document(text=query)])
+    # Use the splitter to get text chunks directly
+    chunks = text_splitter.split_text(query)
     
     summaries = []
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
     summary_kwargs = {**model_kwargs, "stream": False}
 
-    for chunk in chunks:
-        summary_prompt = f"Summarize the following text concisely: {chunk.text}"
+    for chunk_text in chunks:
+        summary_prompt = f"Summarize the following text concisely: {chunk_text}"
+        
+        # Defensively check prompt size before sending to summarizer
+        if count_tokens(summary_prompt) >= get_context_window_for_model(model_config.get("provider"), model_kwargs.get("model")):
+            logger.warning("Skipping a chunk during summarization as it exceeds model context window.")
+            continue
+
         api_kwargs = client.convert_inputs_to_api_kwargs(input=summary_prompt, model_kwargs=summary_kwargs, model_type=ModelType.LLM)
         summary_response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
         

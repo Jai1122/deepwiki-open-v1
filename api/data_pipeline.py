@@ -69,37 +69,26 @@ def read_all_documents(
     Reads all files from a directory, splits them into chunks, and returns a list of Document objects.
     This version processes files one by one and splits them to handle large repositories gracefully.
     """
-    # Get text splitter configuration
     splitter_config = configs.get("text_splitter", {})
-    chunk_size = splitter_config.get("chunk_size", 1000)
-    chunk_overlap = splitter_config.get("chunk_overlap", 200)
-    
     text_splitter = TextSplitter(
         split_by=splitter_config.get("split_by", "word"),
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
+        chunk_size=splitter_config.get("chunk_size", 1000),
+        chunk_overlap=splitter_config.get("chunk_overlap", 200),
     )
 
-    # Final list of documents to be returned
     all_documents = []
-
-    # Combine default and user-provided exclusion patterns
     final_excluded_dirs = DEFAULT_EXCLUDED_DIRS + (excluded_dirs or [])
     final_excluded_files = DEFAULT_EXCLUDED_FILES + (excluded_files or [])
 
     for root, dirs, files in os.walk(path, topdown=True):
-        # Filter directories to exclude
         dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(os.path.join(root, d), pattern) for pattern in final_excluded_dirs)]
         
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
 
-            # Skip files based on exclusion patterns
             if any(fnmatch.fnmatch(relative_path, pattern) for pattern in final_excluded_files):
                 continue
-
-            # If inclusion patterns are provided, only include matching files
             if included_files and not any(fnmatch.fnmatch(relative_path, pattern) for pattern in included_files):
                 continue
 
@@ -108,14 +97,10 @@ def read_all_documents(
                 if not content.strip():
                     continue
 
-                # Create a single document for the whole file to pass to the splitter
-                doc_for_splitting = Document(text=content, metadata={"source": relative_path})
-                
-                # Split the document into chunks
-                chunked_docs = text_splitter([doc_for_splitting])
-                
-                # Add the chunked documents to the final list
-                all_documents.extend(chunked_docs)
+                # Manually split the content and create a Document for each chunk
+                chunks = text_splitter.split_text(content)
+                for chunk_content in chunks:
+                    all_documents.append(Document(text=chunk_content, metadata={"source": relative_path}))
 
             except Exception as e:
                 logger.warning(f"Could not process file {file_path}: {e}")
