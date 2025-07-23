@@ -13,6 +13,13 @@
       ".hg",
       ".bzr"
     ],
+    "excluded_filename_patterns": [
+      "*_test.go",
+      "*.test.js",
+      "*.spec.js",
+      "*.test.ts",
+      "*.spec.ts"
+    ],
     "excluded_files": [
       "yarn.lock",
       "pnpm-lock.yaml",

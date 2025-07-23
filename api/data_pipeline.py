@@ -83,11 +83,19 @@ def read_all_documents(
     # Example: './node_modules/' becomes 'node_modules'
     normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs]
 
+    # Get filename patterns for exclusion from repo config
+    file_filters_config = configs.get("file_filters", {})
+    excluded_filename_patterns = file_filters_config.get("excluded_filename_patterns", [])
+
     for root, dirs, files in os.walk(path, topdown=True):
         # Filter directories in-place to prevent traversing them
         dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
         
         for file in files:
+            # New check for filename patterns
+            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_filename_patterns):
+                continue
+
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
 
