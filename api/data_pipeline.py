@@ -117,8 +117,23 @@ def transform_documents_and_save_to_db(documents: List[Document], db_path: str, 
     return db
 
 def get_file_content(repo_url: str, file_path: str, type: str = "github", access_token: str = None) -> str:
-    # Implementation is correct
-    return ""
+    try:
+        root_path = get_adalflow_default_root_path()
+        repo_name = "_".join(repo_url.split("/")[-2:])
+        local_file_path = os.path.join(root_path, "repos", repo_name, file_path)
+
+        if os.path.exists(local_file_path):
+             if os.path.getsize(local_file_path) > 1 * 1024 * 1024: # 1MB limit
+                 logger.warning(f"File content request for large file blocked: {file_path}")
+                 return f"Error: File is too large to be displayed (> 1MB)."
+             with open(local_file_path, "r", encoding="utf-8", errors='ignore') as f:
+                 return f.read()
+        else:
+             logger.warning(f"File not found in local cache: {file_path}")
+             return "Error: File content not found in local cache."
+    except Exception as e:
+        logger.error(f"Error getting file content for {file_path}: {e}")
+        return "Error: Could not retrieve file content."
 
 class DatabaseManager:
     def __init__(self):
@@ -140,7 +155,7 @@ class DatabaseManager:
             try:
                 self.db = LocalDB.load_state(self.repo_paths["save_db_file"])
                 documents = self.db.get_transformed_data(key="split_and_embed")
-                if documents:
+                if documents is not None:
                     return documents
             except Exception as e:
                 logger.error(f"Error loading existing database: {e}")
@@ -153,13 +168,8 @@ class DatabaseManager:
         self.db = transform_documents_and_save_to_db(
             documents, self.repo_paths["save_db_file"], is_ollama_embedder
         )
-        
-        # --- DEFINITIVE FIX ---
         transformed_docs = self.db.get_transformed_data(key="split_and_embed")
-        if transformed_docs is None:
-            logger.warning("get_transformed_data returned None. Returning empty list.")
-            return []
-        return transformed_docs
+        return transformed_docs if transformed_docs is not None else []
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None, is_ollama_embedder: bool = None,
                        excluded_dirs: List[str] = None, excluded_files: List[str] = None,

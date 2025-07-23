@@ -75,24 +75,20 @@ class RAG(adal.Component):
     def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
                       excluded_dirs: List[str] = None, excluded_files: List[str] = None,
                       included_dirs: List[str] = None, included_files: List[str] = None):
-        
         self.transformed_docs = self.db_manager.prepare_database(
             repo_url_or_path, type, access_token, self.is_ollama_embedder,
             excluded_dirs, excluded_files, included_dirs, included_files
         )
-        
-        # --- DEFINITIVE FIX: SECOND LAYER OF DEFENSE ---
-        if self.transformed_docs is None:
-            logger.warning("prepare_database returned None. Defaulting to empty list.")
-            self.transformed_docs = []
-
         self.transformed_docs = self._validate_and_filter_embeddings(self.transformed_docs)
-        
         if not self.transformed_docs:
             raise ValueError("No valid documents with embeddings found after validation.")
-            
+        
+        retriever_config = configs.get("retriever")
+        if not isinstance(retriever_config, dict):
+            raise ValueError("Retriever configuration is missing or invalid in embedder.json.")
+
         self.retriever = FAISSRetriever(
-            **configs["retriever"],
+            **retriever_config,
             embedder=self.embedder,
             documents=self.transformed_docs,
             document_map_func=lambda doc: doc.vector,
@@ -103,6 +99,8 @@ class RAG(adal.Component):
             if not self.retriever:
                 raise RuntimeError("Retriever is not prepared.")
             retrieved_documents = self.retriever(query)
+            if retrieved_documents is None: # Defensive check
+                return ([], [])
             retrieved_documents[0].documents = [
                 self.transformed_docs[doc_index]
                 for doc_index in retrieved_documents[0].doc_indices
