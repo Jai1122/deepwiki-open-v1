@@ -1,4 +1,4 @@
-import adalflow as adal
+from adalflow.core.chain import Chain
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import TextSplitter, ToEmbeddings
 import os
@@ -129,7 +129,7 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
         return OllamaDocumentProcessor(embedder=embedder)
     else:
         # Standard pipeline for other embedders
-        return adal.Chain(
+        return Chain(
             [
                 ToEmbeddings(
                     embedder=embedder,
