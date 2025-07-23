@@ -183,7 +183,8 @@ class DatabaseManager:
         if os.path.exists(db_path):
             logger.info(f"Loading database from existing path: {db_path}")
             self.db = LocalDB(db_path)
-            return self.db.load()
+            # Treat the db object as an iterable to load documents
+            return list(self.db)
 
         # Determine the path for the repository content
         if type == "local":
@@ -204,7 +205,8 @@ class DatabaseManager:
         # Transform and save to DB
         self.db = transform_documents_and_save_to_db(documents, db_path, is_ollama_embedder)
         
-        return self.db.load() if self.db else []
+        # Treat the db object as an iterable to return the documents
+        return list(self.db) if self.db else []
 
     def reset_database(self):
         """Resets the current database instance."""
