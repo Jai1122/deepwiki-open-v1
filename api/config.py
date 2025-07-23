@@ -121,14 +121,15 @@ def load_generator_config():
             if provider_config.get("client_class") in CLIENT_CLASSES:
                 provider_config["model_client"] = CLIENT_CLASSES[provider_config["client_class"]]
             # Fall back to default mapping based on provider_id
-            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure"]:
+            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure", "vllm"]:
                 default_map = {
                     "google": GoogleGenAIClient,
                     "openai": OpenAIClient,
                     "openrouter": OpenRouterClient,
                     "ollama": OllamaClient,
                     "bedrock": BedrockClient,
-                    "azure": AzureAIClient
+                    "azure": AzureAIClient,
+                    "vllm": OpenAIClient # VLLM uses an OpenAI-compatible client
                 }
                 provider_config["model_client"] = default_map[provider_id]
             else:
@@ -287,13 +288,12 @@ def get_model_config(provider="google", model=None):
     Get configuration for the specified provider and model
 
     Parameters:
-        provider (str): Model provider ('google', 'openai', 'openrouter', 'ollama', 'bedrock')
+        provider (str): Model provider ('google', 'openai', 'openrouter', 'ollama', 'bedrock', 'vllm')
         model (str): Model name, or None to use default model
 
     Returns:
         dict: Configuration containing model_client, model and other parameters
     """
-    # Get provider configuration
     if "providers" not in configs:
         raise ValueError("Provider configuration not loaded")
 
@@ -305,67 +305,53 @@ def get_model_config(provider="google", model=None):
     if not model_client:
         raise ValueError(f"Model client not specified for provider '{provider}'")
 
-    # If model not provided, use default model for the provider
     if not model:
         model = provider_config.get("default_model")
         if not model:
             raise ValueError(f"No default model specified for provider '{provider}'")
 
-    # Get model parameters (if present)
-    model_params = {}
-    if model in provider_config.get("models", {}):
-        model_params = provider_config["models"][model]
-    else:
-        default_model = provider_config.get("default_model")
-        model_params = provider_config["models"][default_model]
+    # Get model parameters, falling back to default if specific model not found
+    model_params = provider_config.get("models", {}).get(model)
+    if model_params is None:
+        logger.warning(f"Model '{model}' not found for provider '{provider}'. Falling back to default model config.")
+        default_model_key = provider_config.get("default_model")
+        model_params = provider_config.get("models", {}).get(default_model_key, {})
 
-    # Prepare base configuration
     result = {
         "model_client": model_client,
+        "initialize_kwargs": provider_config.get("initialize_kwargs", {})
     }
 
-    # Add initialize_kwargs if they exist for the provider
-    if "initialize_kwargs" in provider_config:
-        result["initialize_kwargs"] = provider_config["initialize_kwargs"]
-
-    # Provider-specific adjustments
     if provider == "ollama":
-        # Ollama uses a slightly different parameter structure
-        if "options" in model_params:
-            result["model_kwargs"] = {"model": model, **model_params["options"]}
-        else:
-            result["model_kwargs"] = {"model": model}
+        result["model_kwargs"] = {"model": model, **model_params.get("options", {})}
     else:
-        # Standard structure for other providers
         result["model_kwargs"] = {"model": model, **model_params}
 
     return result
 
 def get_max_tokens_for_model(provider: str, model: str) -> int:
     """
-    Get the maximum context window size for a given model.
-    
-    Args:
-        provider (str): The model provider.
-        model (str): The model name.
-        
-    Returns:
-        int: The maximum number of tokens.
+    Get the maximum context window size for a given model from the configuration.
     """
     try:
         provider_config = configs.get("providers", {}).get(provider, {})
-        model_config = provider_config.get("models", {}).get(model, {})
-        
-        # Look for a 'max_tokens' key in the model's config.
-        # The structure might be model_config['max_tokens'] or model_config['options']['num_ctx'] for Ollama.
+        model_config = provider_config.get("models", {}).get(model)
+
+        # If the exact model isn't found, try the default model for the provider
+        if model_config is None:
+            default_model_key = provider_config.get("default_model")
+            model_config = provider_config.get("models", {}).get(default_model_key, {})
+
+        # Check for 'max_tokens' or ollama's 'num_ctx'
         if 'max_tokens' in model_config:
             return model_config['max_tokens']
         if 'options' in model_config and 'num_ctx' in model_config['options']:
             return model_config['options']['num_ctx']
             
-        # Fallback to a default value if not specified.
-        logger.warning(f"max_tokens not configured for {provider}/{model}. Falling back to default of 40960.")
-        return 40960
+        # Fallback to a default value if not specified in any config
+        default_max_tokens = 40960
+        logger.warning(f"max_tokens not configured for {provider}/{model}. Falling back to default of {default_max_tokens}.")
+        return default_max_tokens
     except Exception:
         logger.exception(f"Error getting max_tokens for {provider}/{model}. Falling back to default of 40960.")
         return 40960
