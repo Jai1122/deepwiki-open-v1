@@ -79,10 +79,16 @@ class RAG(adal.Component):
             repo_url_or_path, type, access_token, self.is_ollama_embedder,
             excluded_dirs, excluded_files, included_dirs, included_files
         )
+        
+        if self.transformed_docs is None:
+            logger.warning("prepare_database returned None. Defaulting to empty list.")
+            self.transformed_docs = []
+
         self.transformed_docs = self._validate_and_filter_embeddings(self.transformed_docs)
+        
         if not self.transformed_docs:
             raise ValueError("No valid documents with embeddings found after validation.")
-        
+            
         retriever_config = configs.get("retriever")
         if not isinstance(retriever_config, dict):
             raise ValueError("Retriever configuration is missing or invalid in embedder.json.")
@@ -100,7 +106,7 @@ class RAG(adal.Component):
                 raise RuntimeError("Retriever is not prepared.")
             retrieved_documents = self.retriever(query)
             if retrieved_documents is None:
-                return [], []
+                return ([], [])
             retrieved_documents[0].documents = [
                 self.transformed_docs[doc_index]
                 for doc_index in retrieved_documents[0].doc_indices
@@ -108,4 +114,4 @@ class RAG(adal.Component):
             return retrieved_documents, []
         except Exception as e:
             logger.error(f"Error in RAG call: {str(e)}")
-            return [], []
+            return ([], [])
