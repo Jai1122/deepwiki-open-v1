@@ -99,8 +99,8 @@ class RAG(adal.Component):
             if not self.retriever:
                 raise RuntimeError("Retriever is not prepared.")
             retrieved_documents = self.retriever(query)
-            if retrieved_documents is None: # Defensive check
-                return ([], [])
+            if retrieved_documents is None:
+                return [], []
             retrieved_documents[0].documents = [
                 self.transformed_docs[doc_index]
                 for doc_index in retrieved_documents[0].doc_indices
@@ -108,4 +108,4 @@ class RAG(adal.Component):
             return retrieved_documents, []
         except Exception as e:
             logger.error(f"Error in RAG call: {str(e)}")
-            return ([], [])
+            return [], []

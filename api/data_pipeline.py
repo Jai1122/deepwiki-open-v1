@@ -40,8 +40,8 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
     # This function is correct and will be preserved
     return ""
 
-def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                      included_dirs: List[str] = None, included_files: List[str] = None):
+def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs: List[str] = None, excluded_files: List[str] = None, 
+                      included_dirs: List[str] = None, included_files: List[str] = None) -> List[Document]:
     documents = []
     code_extensions = [".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".hpp", ".go", ".rs",
                        ".jsx", ".tsx", ".html", ".css", ".php", ".swift", ".cs"]
@@ -92,7 +92,7 @@ def read_all_documents(path: str, is_ollama_embedder: bool = None, excluded_dirs
                     doc = Document(text=content, meta_data={"file_path": relative_path})
                     documents.append(doc)
                 except Exception as e:
-                    logger.error(f"Error reading file {file_path}: {e}")
+                    logger.error(f"Error reading {file_path}: {e}")
 
     logger.info(f"Found and processed {len(documents)} documents")
     return documents
