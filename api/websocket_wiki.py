@@ -53,10 +53,9 @@ async def handle_websocket_chat(websocket: WebSocket):
             # Initialize RAG and model configurations
             rag_instance = RAG(provider=request.provider, model=request.model)
             model_config = get_model_config(provider=request.provider, model=request.model)
-            model_type = ModelType.STREAMING if "stream" in model_config.get("model_kwargs", {}) else ModelType.DEFAULT
 
             # Asynchronously stream the response back to the client
-            async for chunk in stream_response(request, websocket, rag_instance, model_config, model_type, request.language):
+            async for chunk in stream_response(request, websocket, rag_instance, model_config, request.language):
                 await websocket.send_text(chunk)
 
     except WebSocketDisconnect:
@@ -64,7 +63,10 @@ async def handle_websocket_chat(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Error in WebSocket handler: {e}", exc_info=True)
         # Send an error message to the client before closing
-        await websocket.send_text(json.dumps({"error": str(e)}))
+        try:
+            await websocket.send_text(json.dumps({"error": str(e)}))
+        except Exception:
+            pass # Ignore errors if the socket is already closed
         await websocket.close()
 
 async def stream_response(
@@ -72,7 +74,6 @@ async def stream_response(
     websocket: WebSocket,
     rag_instance: RAG,
     model_config: dict,
-    model_type: ModelType,
     language: str = "en"
 ) -> AsyncGenerator[str, None]:
     """
@@ -121,18 +122,39 @@ async def stream_response(
 
     # Initialize the model client
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
+    model_kwargs = model_config.get("model_kwargs", {})
     
     try:
-        # Generate and stream the response
-        response_stream = client.generate(final_prompt, **model_config["model_kwargs"])
+        # Prepare the API call arguments
+        api_kwargs = client.convert_inputs_to_api_kwargs(
+            input=final_prompt,
+            model_kwargs=model_kwargs,
+            model_type=ModelType.LLM  # Use LLM as the standard model type
+        )
         
-        if model_type == ModelType.STREAMING:
+        # Generate and stream the response
+        response_stream = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+        
+        is_streaming = model_kwargs.get("stream", False)
+        
+        if is_streaming:
             async for chunk in response_stream:
-                yield json.dumps({"content": chunk})
+                # Handle different chunk formats from various clients
+                content = ""
+                if isinstance(chunk, str):
+                    content = chunk
+                elif hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if delta and hasattr(delta, "content"):
+                        content = delta.content or ""
+                elif hasattr(chunk, "text"):
+                    content = chunk.text
+                
+                if content:
+                    yield json.dumps({"content": content})
         else:
             # Handle non-streaming responses
-            response = await response_stream
-            yield json.dumps({"content": response})
+            yield json.dumps({"content": str(response_stream)})
 
     except Exception as e:
         logger.error(f"Error in streaming response: {e}", exc_info=True)
