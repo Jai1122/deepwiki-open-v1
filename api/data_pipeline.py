@@ -109,7 +109,7 @@ def read_all_documents(
                     continue
 
                 # Create a single document for the whole file to pass to the splitter
-                doc_for_splitting = Document(content=content, metadata={"source": relative_path})
+                doc_for_splitting = Document(text=content, metadata={"source": relative_path})
                 
                 # Split the document into chunks
                 chunked_docs = text_splitter([doc_for_splitting])

@@ -93,6 +93,24 @@ async def stream_response(
         return
 
     query = request.messages[-1].content if request.messages else ""
+    
+    # --- Start of Critical Fix ---
+    # Get model configuration early to validate query size
+    model_kwargs = model_config.get("model_kwargs", {})
+    context_window = get_context_window_for_model(request.provider, request.model)
+    max_completion_tokens = model_kwargs.get("max_tokens", 4096)
+
+    # Validate query size before doing any work
+    query_tokens = count_tokens(query)
+    # Allow query to take up to 80% of the available prompt space
+    allowed_prompt_size = context_window - max_completion_tokens
+    if query_tokens > allowed_prompt_size * 0.8:
+        error_msg = f"Query is too large ({query_tokens} tokens). Please submit a shorter query (max ~{int(allowed_prompt_size * 0.8)} tokens)."
+        logger.error(error_msg)
+        yield json.dumps({"error": error_msg})
+        return
+    # --- End of Critical Fix ---
+
     retrieved_docs, _ = rag_instance.call(query, language)
     context_text = "\n\n".join([doc.content for doc in retrieved_docs]) if retrieved_docs else ""
 
