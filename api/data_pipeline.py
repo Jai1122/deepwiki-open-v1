@@ -1,4 +1,4 @@
-from adalflow.core.chain import Chain
+from adalflow.components.chain import Chain
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import TextSplitter, ToEmbeddings
 import os
