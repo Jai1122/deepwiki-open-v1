@@ -1,4 +1,3 @@
-from adalflow import Chain
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import TextSplitter, ToEmbeddings
 import os
@@ -129,13 +128,9 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
         return OllamaDocumentProcessor(embedder=embedder)
     else:
         # Standard pipeline for other embedders
-        return Chain(
-            [
-                ToEmbeddings(
-                    embedder=embedder,
-                    batch_size=configs.get("embedder", {}).get("batch_size", 10)
-                )
-            ]
+        return ToEmbeddings(
+            embedder=embedder,
+            batch_size=configs.get("embedder", {}).get("batch_size", 10)
         )
 
 def transform_documents_and_save_to_db(documents: List[Document], db_path: str, is_ollama_embedder: bool = None) -> LocalDB:
