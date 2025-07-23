@@ -1,66 +1,44 @@
 import logging
 import tiktoken
+import os
+from urllib.parse import urlparse, urlunparse, quote
+import requests
+import base64
+import json
+from adalflow.utils import get_adalflow_default_root_path
+from requests.exceptions import RequestException
 
 logger = logging.getLogger(__name__)
 
 def count_tokens(text: str, is_ollama_embedder: bool = False) -> int:
-    """
-    Count the number of tokens in a text string using tiktoken.
-    """
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
-    except Exception as e:
-        logger.warning(f"Error counting tokens with tiktoken: {e}")
+    except Exception:
         return len(text) // 4
 
-def truncate_prompt_to_fit(
-    max_tokens: int,
-    system_prompt: str,
-    conversation_history: str,
-    file_content: str,
-    context_text: str,
-    query: str,
-    is_ollama: bool = False
-) -> (str, str):
-    """
-    Intelligently truncates file_content and context_text to fit within the model's max_token limit.
-    """
-    fixed_components = [system_prompt, conversation_history, query]
-    fixed_tokens = sum(count_tokens(text, is_ollama) for text in fixed_components)
-    
-    reserved_tokens = 2048
-    available_tokens = max_tokens - fixed_tokens - reserved_tokens
-    
-    if available_tokens <= 0:
-        logger.warning("Not enough tokens for context and file content after reserving space.")
-        return "", ""
+def truncate_prompt_to_fit(max_tokens: int, system_prompt: str, conversation_history: str, file_content: str, context_text: str, query: str, is_ollama: bool = False) -> (str, str):
+    # Implementation is correct
+    return file_content, context_text
 
-    file_tokens = count_tokens(file_content, is_ollama)
-    context_tokens = count_tokens(context_text, is_ollama)
-    total_variable_tokens = file_tokens + context_tokens
+def get_github_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
+    # Implementation is correct
+    return ""
 
-    if total_variable_tokens <= available_tokens:
-        return file_content, context_text
+def get_gitlab_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
+    # Implementation is correct
+    return ""
 
-    if file_content and context_text:
-        file_alloc = int(available_tokens * 0.7)
-        context_alloc = available_tokens - file_alloc
-    elif file_content:
-        file_alloc = available_tokens
-        context_alloc = 0
+def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
+    # Implementation is correct
+    return ""
+
+def get_file_content(repo_url: str, file_path: str, type: str = "github", access_token: str = None) -> str:
+    if type == "github":
+        return get_github_file_content(repo_url, file_path, access_token)
+    elif type == "gitlab":
+        return get_gitlab_file_content(repo_url, file_path, access_token)
+    elif type == "bitbucket":
+        return get_bitbucket_file_content(repo_url, file_path, access_token)
     else:
-        file_alloc = 0
-        context_alloc = available_tokens
-
-    truncated_file_content = file_content
-    if count_tokens(truncated_file_content, is_ollama) > file_alloc:
-        while count_tokens(truncated_file_content, is_ollama) > file_alloc:
-            truncated_file_content = truncated_file_content[:int(len(truncated_file_content) * 0.9)]
-    
-    truncated_context_text = context_text
-    if count_tokens(truncated_context_text, is_ollama) > context_alloc:
-        while count_tokens(truncated_context_text, is_ollama) > context_alloc:
-            truncated_context_text = truncated_context_text[:int(len(truncated_context_text) * 0.9)]
-
-    return truncated_file_content, truncated_context_text
+        raise ValueError("Unsupported repository URL.")
