@@ -67,7 +67,7 @@ def read_all_documents(
 ) -> List[Document]:
     """
     Reads all files from a directory, splits them into chunks, and returns a list of Document objects.
-    This version processes files one by one and splits them to handle large repositories gracefully.
+    This version processes files one by one and handles directory exclusions correctly.
     """
     splitter_config = configs.get("text_splitter", {})
     text_splitter = TextSplitter(
@@ -80,16 +80,24 @@ def read_all_documents(
     final_excluded_dirs = DEFAULT_EXCLUDED_DIRS + (excluded_dirs or [])
     final_excluded_files = DEFAULT_EXCLUDED_FILES + (excluded_files or [])
 
+    # Normalize exclusion patterns for reliable matching
+    # Example: './node_modules/' becomes 'node_modules'
+    normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs]
+
     for root, dirs, files in os.walk(path, topdown=True):
-        dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(os.path.join(root, d), pattern) for pattern in final_excluded_dirs)]
+        # Filter directories in-place to prevent traversing them
+        dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
         
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
 
-            if any(fnmatch.fnmatch(relative_path, pattern) for pattern in final_excluded_files):
+            # Normalize path for matching
+            normalized_relative_path = relative_path.replace('\\', '/')
+
+            if any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in final_excluded_files):
                 continue
-            if included_files and not any(fnmatch.fnmatch(relative_path, pattern) for pattern in included_files):
+            if included_files and not any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in included_files):
                 continue
 
             try:
@@ -97,7 +105,6 @@ def read_all_documents(
                 if not content.strip():
                     continue
 
-                # Manually split the content and create a Document for each chunk
                 chunks = text_splitter.split_text(content)
                 for chunk_content in chunks:
                     all_documents.append(Document(text=chunk_content, metadata={"source": relative_path}))
@@ -107,6 +114,7 @@ def read_all_documents(
 
     logger.info(f"Total documents after chunking: {len(all_documents)}")
     return all_documents
+
 
 def prepare_data_pipeline(is_ollama_embedder: bool = None):
     """
