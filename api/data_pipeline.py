@@ -150,7 +150,7 @@ def transform_documents_and_save_to_db(documents: List[Document], db_path: str, 
 
     # Save transformed documents to the local DB
     db = LocalDB(db_path)
-    db.save(transformed_docs)
+    db.add(transformed_docs)
     logger.info(f"Saved {len(transformed_docs)} transformed documents to {db_path}")
     
     return db

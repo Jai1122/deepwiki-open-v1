@@ -7,7 +7,7 @@
     },
     "batch_size": 10,
     "model_kwargs": {
-      "model": "YOUR_VLLM_JINA_MODEL_ID",
+      "model": "REPLACE_WITH_YOUR_VLLM_EMBEDDING_MODEL_ID",
       "dimensions": 256
     }
   },
