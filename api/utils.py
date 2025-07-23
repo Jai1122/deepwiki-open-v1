@@ -27,30 +27,30 @@ def count_tokens(text: str, is_ollama_embedder: bool = False) -> int:
         return len(text) // 4
 
 def truncate_prompt_to_fit(
-    max_tokens: int,
+    context_window: int,
+    max_completion_tokens: int,
     system_prompt: str,
     conversation_history: str,
     file_content: str,
     context_text: str,
     query: str,
-    is_ollama: bool = False,
-    response_buffer: int = 1024  # Buffer for the model's response
+    is_ollama: bool = False
 ) -> (str, str):
     """
     Truncates file_content and context_text to ensure the total prompt
-    fits within the model's maximum token limit, leaving a buffer for the response.
+    fits within the model's context window, leaving space for the completion.
     """
     # Calculate the token counts for fixed parts of the prompt
     system_prompt_tokens = count_tokens(system_prompt, is_ollama)
     history_tokens = count_tokens(conversation_history, is_ollama)
     query_tokens = count_tokens(query, is_ollama)
 
-    # Calculate the available token budget for the variable parts
+    # Calculate the available token budget for the variable parts (file and RAG context)
     static_tokens = system_prompt_tokens + history_tokens + query_tokens
-    available_tokens = max_tokens - static_tokens - response_buffer
+    available_tokens = context_window - static_tokens - max_completion_tokens
 
     if available_tokens <= 0:
-        # If there's no space for dynamic content, return empty strings for them
+        logger.warning("Not enough tokens for file and RAG context. Returning empty strings.")
         return "", ""
 
     # Get token counts for the dynamic parts
@@ -62,20 +62,21 @@ def truncate_prompt_to_fit(
     if total_dynamic_tokens <= available_tokens:
         return file_content, context_text
 
-    # If not, truncate the content, prioritizing the context text
+    # If not, truncate the content. We'll prioritize RAG context over file content.
     if context_text_tokens >= available_tokens:
-        # If context alone is too big, truncate it and discard file_content
-        truncated_context = context_text[:int(len(context_text) * (available_tokens / context_text_tokens))]
+        # If RAG context alone is too big, truncate it and discard file_content
+        logger.warning(f"Truncating RAG context from {context_text_tokens} to {available_tokens} tokens.")
+        # A simple character-based truncation, assuming uniform token distribution
+        ratio = available_tokens / context_text_tokens
+        truncated_context = context_text[:int(len(context_text) * ratio)]
         return "", truncated_context
     else:
-        # If context fits, allocate remaining budget to file_content
-        remaining_tokens = available_tokens - context_text_tokens
-        if file_content_tokens > remaining_tokens:
-            truncated_file_content = file_content[:int(len(file_content) * (remaining_tokens / file_content_tokens))]
-            return truncated_file_content, context_text
-        else:
-            # This case should ideally not be reached due to the initial check, but as a fallback
-            return file_content, context_text
+        # If RAG context fits, allocate remaining budget to file_content
+        remaining_tokens_for_file = available_tokens - context_text_tokens
+        logger.warning(f"Truncating file content from {file_content_tokens} to {remaining_tokens_for_file} tokens.")
+        ratio = remaining_tokens_for_file / file_content_tokens
+        truncated_file_content = file_content[:int(len(file_content) * ratio)]
+        return truncated_file_content, context_text
 
 def get_github_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
     """

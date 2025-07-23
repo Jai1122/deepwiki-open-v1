@@ -10,7 +10,7 @@ from adalflow.core.types import ModelType, Document
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from .config import get_model_config, configs, get_max_tokens_for_model
+from .config import get_model_config, configs, get_context_window_for_model
 from .openai_client import OpenAIClient
 from .openrouter_client import OpenRouterClient
 from .azureai_client import AzureAIClient
@@ -111,10 +111,20 @@ async def stream_response(
     system_prompt = "You are a helpful assistant. Provide a detailed answer based on the context."
     conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages[:-1]])
     
+    # Get model parameters from config
+    model_kwargs = model_config.get("model_kwargs", {})
+    context_window = get_context_window_for_model(request.provider, request.model)
+    max_completion_tokens = model_kwargs.get("max_tokens", 2048) # Use max_tokens from kwargs, which is our desired completion length
+
     # Truncate prompts to fit the model's context window
-    max_tokens = get_max_tokens_for_model(request.provider, request.model)
     file_content, context_text = truncate_prompt_to_fit(
-        max_tokens, system_prompt, conversation_history, file_content, context_text, user_query
+        context_window=context_window,
+        max_completion_tokens=max_completion_tokens,
+        system_prompt=system_prompt,
+        conversation_history=conversation_history,
+        file_content=file_content,
+        context_text=context_text,
+        query=user_query
     )
 
     # Construct the final prompt
@@ -122,14 +132,13 @@ async def stream_response(
 
     # Initialize the model client
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
-    model_kwargs = model_config.get("model_kwargs", {})
     
     try:
         # Prepare the API call arguments
         api_kwargs = client.convert_inputs_to_api_kwargs(
             input=final_prompt,
             model_kwargs=model_kwargs,
-            model_type=ModelType.LLM  # Use LLM as the standard model type
+            model_type=ModelType.LLM
         )
         
         # Generate and stream the response

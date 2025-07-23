@@ -321,15 +321,28 @@ def get_model_config(provider="google", model=None):
         "model_client": model_client,
         "initialize_kwargs": provider_config.get("initialize_kwargs", {})
     }
-
+    
+    # Standardize model_kwargs, preparing for the API call
+    model_kwargs = {"model": model}
+    
     if provider == "ollama":
-        result["model_kwargs"] = {"model": model, **model_params.get("options", {})}
+        # For Ollama, parameters are nested under 'options'
+        ollama_options = model_params.get("options", {})
+        model_kwargs.update(ollama_options)
     else:
-        result["model_kwargs"] = {"model": model, **model_params}
+        # For other providers, copy parameters directly
+        # We are especially interested in 'max_completion_tokens' which will be renamed to 'max_tokens' for the API call
+        params_to_copy = ["temperature", "top_p", "top_k", "max_completion_tokens"]
+        for param in params_to_copy:
+            if param in model_params:
+                # Rename 'max_completion_tokens' to 'max_tokens' for the actual API call
+                api_param = "max_tokens" if param == "max_completion_tokens" else param
+                model_kwargs[api_param] = model_params[param]
 
+    result["model_kwargs"] = model_kwargs
     return result
 
-def get_max_tokens_for_model(provider: str, model: str) -> int:
+def get_context_window_for_model(provider: str, model: str) -> int:
     """
     Get the maximum context window size for a given model from the configuration.
     """
@@ -342,16 +355,16 @@ def get_max_tokens_for_model(provider: str, model: str) -> int:
             default_model_key = provider_config.get("default_model")
             model_config = provider_config.get("models", {}).get(default_model_key, {})
 
-        # Check for 'max_tokens' or ollama's 'num_ctx'
-        if 'max_tokens' in model_config:
-            return model_config['max_tokens']
+        # Check for 'context_window' or ollama's 'num_ctx'
+        if 'context_window' in model_config:
+            return model_config['context_window']
         if 'options' in model_config and 'num_ctx' in model_config['options']:
             return model_config['options']['num_ctx']
             
         # Fallback to a default value if not specified in any config
-        default_max_tokens = 40960
-        logger.warning(f"max_tokens not configured for {provider}/{model}. Falling back to default of {default_max_tokens}.")
-        return default_max_tokens
+        default_context_window = 8192 # A more conservative default
+        logger.warning(f"context_window not configured for {provider}/{model}. Falling back to default of {default_context_window}.")
+        return default_context_window
     except Exception:
-        logger.exception(f"Error getting max_tokens for {provider}/{model}. Falling back to default of 40960.")
-        return 40960
+        logger.exception(f"Error getting context_window for {provider}/{model}. Falling back to default of 8192.")
+        return 8192
