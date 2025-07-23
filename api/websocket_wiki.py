@@ -98,12 +98,17 @@ async def stream_response(
 
     file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token) if request.filePath else ""
 
-    system_prompt = "You are a helpful assistant..."
+    system_prompt = "You are a helpful assistant. Provide a detailed answer based on the context."
     conversation_history = "\n".join([f"{m.role}: {m.content}" for m in request.messages[:-1]])
 
     model_kwargs = model_config.get("model_kwargs", {})
     context_window = get_context_window_for_model(request.provider, request.model)
     max_completion_tokens = model_kwargs.get("max_tokens", 4096)
+
+    # --- Start of Critical Fix ---
+    # Always enforce streaming for WebSocket responses
+    model_kwargs["stream"] = True
+    # --- End of Critical Fix ---
 
     logger.info(f"Context Window: {context_window}, Max Completion Tokens: {max_completion_tokens}")
     logger.info(f"Tokens - System: {count_tokens(system_prompt)}, History: {count_tokens(conversation_history)}, Query: {count_tokens(query)}")
@@ -123,13 +128,12 @@ async def stream_response(
 
     prompt = f"{system_prompt}\n\nHistory: {conversation_history}\n\nFile Context:\n{file_content}\n\nRetrieved Context:\n{context_text}\n\nQuery: {query}"
     
-    # Final defensive check
     prompt_tokens = count_tokens(prompt)
     if prompt_tokens + max_completion_tokens > context_window:
         excess_tokens = (prompt_tokens + max_completion_tokens) - context_window
         logger.warning(f"Prompt still exceeds context window by {excess_tokens} tokens after initial truncation. Performing hard truncation.")
-        # Hard truncate the prompt itself
-        prompt = prompt[:int(len(prompt) * ((context_window - max_completion_tokens) / prompt_tokens))]
+        ratio = (context_window - max_completion_tokens) / prompt_tokens
+        prompt = prompt[:int(len(prompt) * ratio)]
 
     logger.info(f"Final prompt tokens: {count_tokens(prompt)}. Final model_kwargs: {model_kwargs}")
 
@@ -146,6 +150,9 @@ async def stream_response(
             elif hasattr(chunk, "text"): content = chunk.text
             if content: yield json.dumps({"content": content})
 
+    except TypeError as te:
+        logger.error(f"TypeError during streaming, this may indicate a non-streaming response was received: {te}", exc_info=True)
+        yield json.dumps({"error": "A non-streaming response was received from the model. Please check model configuration."})
     except Exception as e:
         logger.error(f"Error in streaming response: {e}", exc_info=True)
         yield json.dumps({"error": f"Error generating response: {e}"})
