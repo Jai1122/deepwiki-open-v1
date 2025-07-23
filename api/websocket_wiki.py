@@ -15,7 +15,7 @@ from .openai_client import OpenAIClient
 from .openrouter_client import OpenRouterClient
 from .azureai_client import AzureAIClient
 from .rag import RAG
-from .utils import count_tokens, truncate_prompt_to_fit, get_file_content
+from adalflow.components.data_process import TextSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,84 @@ async def stream_response(
 ) -> AsyncGenerator[str, None]:
     """
     Generates and streams the chat response, handling context retrieval and model interaction.
+    This version can now handle oversized queries by summarizing them first.
     """
+    query = request.messages[-1].content if request.messages else ""
+    
+    model_kwargs = model_config.get("model_kwargs", {})
+    context_window = get_context_window_for_model(request.provider, request.model)
+    max_completion_tokens = model_kwargs.get("max_tokens", 4096)
+    allowed_prompt_size = context_window - max_completion_tokens
+
+    query_tokens = count_tokens(query)
+
+    # If the query itself is too large, summarize it first.
+    if query_tokens > allowed_prompt_size * 0.8:
+        logger.warning(f"Query is too large ({query_tokens} tokens). Summarizing before proceeding.")
+        yield json.dumps({"status": "summarizing", "message": "Query is very large, summarizing its content to proceed..."})
+        
+        try:
+            # 1. Chunk the oversized query
+            splitter_config = configs.get("text_splitter", {})
+            text_splitter = TextSplitter(
+                split_by=splitter_config.get("split_by", "word"),
+                chunk_size=splitter_config.get("chunk_size", 1000),
+                chunk_overlap=splitter_config.get("chunk_overlap", 200),
+            )
+            query_doc = Document(text=query)
+            chunks = text_splitter([query_doc])
+            
+            # 2. Summarize each chunk
+            summaries = []
+            client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
+            
+            for i, chunk in enumerate(chunks):
+                yield json.dumps({"status": "summarizing", "message": f"Summarizing chunk {i+1} of {len(chunks)}..."})
+                summary_prompt = f"Summarize the following text concisely: {chunk.text}"
+                
+                # Use a non-streaming call for summarization
+                summary_kwargs = model_kwargs.copy()
+                summary_kwargs["stream"] = False
+                
+                api_kwargs = client.convert_inputs_to_api_kwargs(input=summary_prompt, model_kwargs=summary_kwargs, model_type=ModelType.LLM)
+                summary_response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+                
+                # Extract text from potentially complex response objects
+                summary_text = ""
+                if isinstance(summary_response, str):
+                    summary_text = summary_response
+                elif hasattr(summary_response, "text"):
+                    summary_text = summary_response.text
+                elif hasattr(summary_response, "choices") and summary_response.choices:
+                    summary_text = summary_response.choices[0].message.content
+                
+                summaries.append(summary_text)
+
+            # 3. Combine summaries and create a final summary
+            combined_summary = " ".join(summaries)
+            final_summary_prompt = f"Create a final, coherent summary from the following smaller summaries: {combined_summary}"
+            
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=final_summary_prompt, model_kwargs=summary_kwargs, model_type=ModelType.LLM)
+            final_summary_response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            
+            final_summary = ""
+            if isinstance(final_summary_response, str):
+                final_summary = final_summary_response
+            elif hasattr(final_summary_response, "text"):
+                final_summary = final_summary_response.text
+            elif hasattr(final_summary_response, "choices") and final_summary_response.choices:
+                final_summary = final_summary_response.choices[0].message.content
+
+            query = final_summary # Replace original query with the summary
+            logger.info(f"Original query summarized to {count_tokens(query)} tokens.")
+            yield json.dumps({"status": "summarized", "message": "Summary complete. Proceeding with context retrieval."})
+
+        except Exception as e:
+            logger.error(f"Failed to summarize oversized query: {e}", exc_info=True)
+            yield json.dumps({"error": "Failed to process the large query. Please try a shorter one."})
+            return
+
+    # Continue with the (potentially summarized) query
     try:
         rag_instance.prepare_retriever(
             request.repo_url, request.type, request.token,
@@ -92,25 +169,6 @@ async def stream_response(
         yield json.dumps({"error": f"Failed to prepare repository data: {e}"})
         return
 
-    query = request.messages[-1].content if request.messages else ""
-    
-    # --- Start of Critical Fix ---
-    # Get model configuration early to validate query size
-    model_kwargs = model_config.get("model_kwargs", {})
-    context_window = get_context_window_for_model(request.provider, request.model)
-    max_completion_tokens = model_kwargs.get("max_tokens", 4096)
-
-    # Validate query size before doing any work
-    query_tokens = count_tokens(query)
-    # Allow query to take up to 80% of the available prompt space
-    allowed_prompt_size = context_window - max_completion_tokens
-    if query_tokens > allowed_prompt_size * 0.8:
-        error_msg = f"Query is too large ({query_tokens} tokens). Please submit a shorter query (max ~{int(allowed_prompt_size * 0.8)} tokens)."
-        logger.error(error_msg)
-        yield json.dumps({"error": error_msg})
-        return
-    # --- End of Critical Fix ---
-
     retrieved_docs, _ = rag_instance.call(query, language)
     context_text = "\n\n".join([doc.content for doc in retrieved_docs]) if retrieved_docs else ""
 
@@ -119,14 +177,12 @@ async def stream_response(
     system_prompt = "You are a helpful assistant. Provide a detailed answer based on the context."
     conversation_history = "\n".join([f"{m.role}: {m.content}" for m in request.messages[:-1]])
 
-    model_kwargs = model_config.get("model_kwargs", {})
-    context_window = get_context_window_for_model(request.provider, request.model)
-    max_completion_tokens = model_kwargs.get("max_tokens", 4096)
+    # model_kwargs = model_config.get("model_kwargs", {})
+    # context_window = get_context_window_for_model(request.provider, request.model)
+    # max_completion_tokens = model_kwargs.get("max_tokens", 4096)
 
-    # --- Start of Critical Fix ---
     # Always enforce streaming for WebSocket responses
     model_kwargs["stream"] = True
-    # --- End of Critical Fix ---
 
     logger.info(f"Context Window: {context_window}, Max Completion Tokens: {max_completion_tokens}")
     logger.info(f"Tokens - System: {count_tokens(system_prompt)}, History: {count_tokens(conversation_history)}, Query: {count_tokens(query)}")
