@@ -107,7 +107,9 @@ def read_all_documents(
 
                 chunks = text_splitter.split_text(content)
                 for chunk_content in chunks:
-                    all_documents.append(Document(text=chunk_content, metadata={"source": relative_path}))
+                    doc = Document(text=chunk_content)
+                    doc.metadata = {"source": relative_path}
+                    all_documents.append(doc)
 
             except Exception as e:
                 logger.warning(f"Could not process file {file_path}: {e}")
