@@ -80,43 +80,35 @@ async def stream_response(
     Generates and streams the chat response, handling context retrieval and model interaction.
     """
     try:
-        # Prepare the retriever
         rag_instance.prepare_retriever(
-            request.repo_url,
-            request.type,
-            request.token,
-            request.excluded_dirs.split(',') if request.excluded_dirs else None,
-            request.excluded_files.split(',') if request.excluded_files else None,
-            request.included_dirs.split(',') if request.included_dirs else None,
-            request.included_files.split(',') if request.included_files else None,
+            request.repo_url, request.type, request.token,
+            [d for d in request.excluded_dirs.split(',') if d] if request.excluded_dirs else None,
+            [f for f in request.excluded_files.split(',') if f] if request.excluded_files else None,
+            [d for d in request.included_dirs.split(',') if d] if request.included_dirs else None,
+            [f for f in request.included_files.split(',') if f] if request.included_files else None,
         )
     except Exception as e:
         logger.error(f"Error preparing retriever: {e}", exc_info=True)
         yield json.dumps({"error": f"Failed to prepare repository data: {e}"})
         return
 
-    # Extract the latest user query
-    user_query = request.messages[-1].content if request.messages else ""
-    
-    # Perform RAG call to get context
-    retrieved_docs, _ = rag_instance.call(user_query, language)
+    query = request.messages[-1].content if request.messages else ""
+    retrieved_docs, _ = rag_instance.call(query, language)
     context_text = "\n\n".join([doc.content for doc in retrieved_docs]) if retrieved_docs else ""
 
-    # Get file content if a file path is provided
-    file_content = ""
-    if request.filePath:
-        file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token)
+    file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token) if request.filePath else ""
 
-    # Prepare prompts and conversation history
-    system_prompt = "You are a helpful assistant. Provide a detailed answer based on the context."
-    conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages[:-1]])
-    
-    # Get model parameters from config
+    system_prompt = "You are a helpful assistant..."
+    conversation_history = "\n".join([f"{m.role}: {m.content}" for m in request.messages[:-1]])
+
     model_kwargs = model_config.get("model_kwargs", {})
     context_window = get_context_window_for_model(request.provider, request.model)
-    max_completion_tokens = model_kwargs.get("max_tokens", 2048) # Use max_tokens from kwargs, which is our desired completion length
+    max_completion_tokens = model_kwargs.get("max_tokens", 4096)
 
-    # Truncate prompts to fit the model's context window
+    logger.info(f"Context Window: {context_window}, Max Completion Tokens: {max_completion_tokens}")
+    logger.info(f"Tokens - System: {count_tokens(system_prompt)}, History: {count_tokens(conversation_history)}, Query: {count_tokens(query)}")
+    logger.info(f"Tokens before truncation - File: {count_tokens(file_content)}, RAG: {count_tokens(context_text)}")
+
     file_content, context_text = truncate_prompt_to_fit(
         context_window=context_window,
         max_completion_tokens=max_completion_tokens,
@@ -124,50 +116,38 @@ async def stream_response(
         conversation_history=conversation_history,
         file_content=file_content,
         context_text=context_text,
-        query=user_query
+        query=query
     )
 
-    # Construct the final prompt
-    final_prompt = f"{system_prompt}\n\nHistory:\n{conversation_history}\n\nFile Context:\n{file_content}\n\nRetrieved Context:\n{context_text}\n\nQuery: {user_query}"
+    logger.info(f"Tokens after truncation - File: {count_tokens(file_content)}, RAG: {count_tokens(context_text)}")
 
-    # Initialize the model client
+    prompt = f"{system_prompt}\n\nHistory: {conversation_history}\n\nFile Context:\n{file_content}\n\nRetrieved Context:\n{context_text}\n\nQuery: {query}"
+    
+    # Final defensive check
+    prompt_tokens = count_tokens(prompt)
+    if prompt_tokens + max_completion_tokens > context_window:
+        excess_tokens = (prompt_tokens + max_completion_tokens) - context_window
+        logger.warning(f"Prompt still exceeds context window by {excess_tokens} tokens after initial truncation. Performing hard truncation.")
+        # Hard truncate the prompt itself
+        prompt = prompt[:int(len(prompt) * ((context_window - max_completion_tokens) / prompt_tokens))]
+
+    logger.info(f"Final prompt tokens: {count_tokens(prompt)}. Final model_kwargs: {model_kwargs}")
+
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
     
     try:
-        # Prepare the API call arguments
-        api_kwargs = client.convert_inputs_to_api_kwargs(
-            input=final_prompt,
-            model_kwargs=model_kwargs,
-            model_type=ModelType.LLM
-        )
-        
-        # Generate and stream the response
+        api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
         response_stream = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
         
-        is_streaming = model_kwargs.get("stream", False)
-        
-        if is_streaming:
-            async for chunk in response_stream:
-                # Handle different chunk formats from various clients
-                content = ""
-                if isinstance(chunk, str):
-                    content = chunk
-                elif hasattr(chunk, "choices") and chunk.choices:
-                    delta = chunk.choices[0].delta
-                    if delta and hasattr(delta, "content"):
-                        content = delta.content or ""
-                elif hasattr(chunk, "text"):
-                    content = chunk.text
-                
-                if content:
-                    yield json.dumps({"content": content})
-        else:
-            # Handle non-streaming responses
-            yield json.dumps({"content": str(response_stream)})
+        async for chunk in response_stream:
+            content = ""
+            if isinstance(chunk, str): content = chunk
+            elif hasattr(chunk, "choices") and chunk.choices and hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"): content = chunk.choices[0].delta.content or ""
+            elif hasattr(chunk, "text"): content = chunk.text
+            if content: yield json.dumps({"content": content})
 
     except Exception as e:
         logger.error(f"Error in streaming response: {e}", exc_info=True)
         yield json.dumps({"error": f"Error generating response: {e}"})
 
-    # Send a final message to indicate the end of the stream
     yield json.dumps({"status": "done"})
