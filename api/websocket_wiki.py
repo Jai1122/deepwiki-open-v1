@@ -99,21 +99,31 @@ async def stream_response(
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
     model_kwargs["stream"] = True
 
+    logger.info("Preparing to stream response from LLM.")
     try:
         api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
         response_stream = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
         
+        logger.info("Starting to iterate over response stream.")
+        chunk_count = 0
         async for chunk in response_stream:
+            chunk_count += 1
             content = ""
             if isinstance(chunk, str): content = chunk
             elif hasattr(chunk, "choices") and chunk.choices and hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"): content = chunk.choices[0].delta.content or ""
             elif hasattr(chunk, "text"): content = chunk.text
-            if content: yield json.dumps({"content": content})
+            
+            if content:
+                # logger.debug(f"Yielding chunk {chunk_count}: {content}")
+                yield json.dumps({"content": content})
+        
+        logger.info(f"Finished iterating over response stream after {chunk_count} chunks.")
 
     except Exception as e:
         logger.error(f"Error in streaming response: {e}", exc_info=True)
         yield json.dumps({"error": f"Error generating response: {e}"})
 
+    logger.info("Sending 'done' status.")
     yield json.dumps({"status": "done"})
 
 async def summarize_oversized_query(query: str, model_config: dict, model_kwargs: dict) -> str:
