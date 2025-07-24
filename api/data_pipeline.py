@@ -166,9 +166,10 @@ def transform_documents_and_save_to_db(documents: List[Document], db_path: str, 
 class DatabaseManager:
     """
     Manages the lifecycle of creating and loading the vector database for a repository.
+    This class is designed to be instantiated fresh for each request to ensure no stale state.
     """
     def __init__(self):
-        self.db_docs = None
+        self.db_docs: Optional[List[Document]] = None
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None, is_ollama_embedder: bool = None,
                        excluded_dirs: List[str] = None, excluded_files: List[str] = None,
@@ -186,14 +187,10 @@ class DatabaseManager:
                 self.db_docs = pickle.load(f)
             return self.db_docs
 
-        # Determine the path for the repository content
-        if type == "local":
-            repo_path = repo_url_or_path
-        else:
-            repo_path = os.path.join(get_adalflow_default_root_path(), "repos", repo_name)
+        repo_path = repo_url_or_path if type == "local" else os.path.join(get_adalflow_default_root_path(), "repos", repo_name)
+        if type != "local":
             download_repo(repo_url_or_path, repo_path, type, access_token)
 
-        # Read and process documents
         documents = read_all_documents(
             repo_path, is_ollama_embedder, excluded_dirs, excluded_files, included_dirs, included_files
         )
@@ -202,11 +199,6 @@ class DatabaseManager:
             logger.warning("No documents were read from the repository.")
             return []
 
-        # Transform and save to DB
         self.db_docs = transform_documents_and_save_to_db(documents, db_path, is_ollama_embedder)
         
         return self.db_docs
-
-    def reset_database(self):
-        """Resets the current database instance."""
-        self.db_docs = None

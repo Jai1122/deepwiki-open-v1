@@ -64,7 +64,7 @@ class RAG(adal.Component):
         from .config import is_ollama_embedder
         self.is_ollama_embedder = is_ollama_embedder()
         self.memory = Memory()
-        self.embedder = get_embedder()
+        self.embedder = get_embedder(self.is_ollama_embedder)
         self.db_manager = DatabaseManager()
         self.transformed_docs: List[Document] = []
         self.retriever: Optional[FAISSRetriever] = None
