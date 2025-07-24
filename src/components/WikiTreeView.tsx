@@ -47,9 +47,18 @@ const WikiTreeView: React.FC<WikiTreeViewProps> = ({
   currentPageId,
   onPageSelect,
 }) => {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(wikiStructure.rootSections)
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    if (wikiStructure && wikiStructure.rootSections) {
+      return new Set(wikiStructure.rootSections);
+    }
+    return new Set();
+  });
+
+  useEffect(() => {
+    if (wikiStructure && wikiStructure.rootSections) {
+      setExpandedSections(new Set(wikiStructure.rootSections));
+    }
+  }, [wikiStructure]);
 
   const toggleSection = (sectionId: string, event: React.MouseEvent) => {
     event.stopPropagation();

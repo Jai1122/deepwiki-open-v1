@@ -325,7 +325,7 @@ export default function RepoWikiPage() {
           
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(xmlMatch[0], "text/xml");
-          const-parseError = xmlDoc.querySelector('parsererror');
+          const parseError = xmlDoc.querySelector('parsererror');
           if (parseError) {
             console.error("Failed to parse wiki structure XML.", {
               xml: xmlMatch[0],
@@ -484,29 +484,29 @@ export default function RepoWikiPage() {
     return generatedPages[currentPageId] || wikiStructure.pages.find(p => p.id === currentPageId);
   }, [currentPageId, wikiStructure, generatedPages]);
 
-  if (isLoading) {
+  if (pageState !== 'ready') {
     return (
       <div className="flex flex-col items-center justify-center h-screen">
-        <div className="animate-pulse text-lg">{loadingMessage}</div>
-        {pageState === 'generating_page_content' && wikiStructure && (
-          <div className="w-full max-w-md mt-4">
-            <div className="bg-gray-200 rounded-full h-2.5">
-              <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${(1 - pagesInProgress.size / wikiStructure.pages.length) * 100}%` }}></div>
-            </div>
-            <p className="text-center mt-2">{wikiStructure.pages.length - pagesInProgress.size} / {wikiStructure.pages.length} pages complete</p>
-          </div>
+        {error ? (
+          <>
+            <div className="text-red-500 text-lg">Error: {error}</div>
+            <button onClick={handleRefresh} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded">
+              Try Again
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="animate-pulse text-lg">{loadingMessage}</div>
+            {pageState === 'generating_page_content' && wikiStructure && (
+              <div className="w-full max-w-md mt-4">
+                <div className="bg-gray-200 rounded-full h-2.5">
+                  <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${(1 - pagesInProgress.size / (wikiStructure.pages.length || 1)) * 100}%` }}></div>
+                </div>
+                <p className="text-center mt-2">{wikiStructure.pages.length - pagesInProgress.size} / {wikiStructure.pages.length} pages complete</p>
+              </div>
+            )}
+          </>
         )}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen">
-        <div className="text-red-500 text-lg">Error: {error}</div>
-        <button onClick={handleRefresh} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded">
-          Try Again
-        </button>
       </div>
     );
   }
