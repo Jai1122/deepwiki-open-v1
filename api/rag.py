@@ -147,15 +147,17 @@ class RAG(adal.Component):
             return ([], [])
             
         try:
-            # The retriever call returns a list of documents
-            retrieved_results = self.retriever(query)
+            # Manually embed the query to ensure the same embedder is used.
+            query_embedding = self.embedder.embed_query(query)
+            
+            # Pass the embedding vector directly to the retriever.
+            retrieved_results = self.retriever(query_embedding)
             
             if not retrieved_results:
                 logger.info("Retriever returned no results for the query.")
                 return ([], [])
 
             # The actual documents are in the 'documents' attribute of the first result item
-            # This assumes the retriever returns a list with one main result object
             retrieved_documents = retrieved_results[0].documents
             
             return retrieved_documents, []
