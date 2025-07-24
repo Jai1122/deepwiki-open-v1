@@ -59,20 +59,17 @@ export const createChatWebSocket = (
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      
+
       if (data.status === 'done') {
-        // If the 'done' status is received, call the close handler
-        onClose();
+        // When the server signals it's done, close the connection.
+        // This will trigger the ws.onclose handler.
+        ws.close();
       } else if (data.content) {
-        // Otherwise, call the message handler with the content
+        // Otherwise, pass the content to the message handler.
         onMessage(data.content);
       }
-      // Note: other status messages like 'summarizing' are ignored here
-      // but could be handled in the future if needed.
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
-      // Handle non-JSON messages or parsing errors if necessary
-      // For now, we'll just log the error.
     }
   };
   
