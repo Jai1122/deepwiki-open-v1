@@ -252,7 +252,48 @@ export default function RepoWikiPage() {
 
     setLoadingMessage(messages.loading?.determiningStructure || 'Determining wiki structure...');
 
-    const prompt = `Analyze this repository's file tree and README to create a wiki structure. File tree: <file_tree>${fileTree}</file_tree> README: <readme>${readme}</readme>. Return ONLY valid XML.`;
+    const prompt = `
+      Analyze the file tree and README of the repository below to create a logical wiki structure.
+      
+      File Tree:
+      <file_tree>
+      ${fileTree}
+      </file_tree>
+
+      README:
+      <readme>
+      ${readme}
+      </readme>
+
+      CRITICAL INSTRUCTIONS:
+      1. Your response MUST be ONLY the XML structure. Do not include any other text, explanations, or markdown formatting before or after the XML.
+      2. The XML must be well-formed and valid.
+      3. The root element MUST be <wiki_structure>.
+      4. Follow the specified XML schema precisely.
+
+      <wiki_structure>
+        <title>[Overall title for the wiki]</title>
+        <description>[Brief description of the repository]</description>
+        <sections>
+          <section id="section-1">
+            <title>[Section title]</title>
+            <pages>
+              <page_ref>page-1</page_ref>
+            </pages>
+          </section>
+        </sections>
+        <pages>
+          <page id="page-1">
+            <title>[Page title]</title>
+            <description>[Brief description of what this page will cover]</description>
+            <importance>high|medium|low</importance>
+            <relevant_files>
+              <file_path>[Path to a relevant file]</file_path>
+            </relevant_files>
+          </page>
+        </pages>
+      </wiki_structure>
+    `;
     const requestBody: ChatCompletionRequest = {
       repo_url: getRepoUrl(repoInfo),
       type: repoInfo.type,
@@ -273,12 +314,26 @@ export default function RepoWikiPage() {
       () => { // onComplete
         try {
           const xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
-          if (!xmlMatch) throw new Error('No valid XML structure found in response.');
+          if (!xmlMatch) {
+            console.error("Backend response did not contain valid XML structure.", {
+              response: responseBuffer,
+            });
+            throw new Error(
+              "The AI failed to generate a valid wiki structure. This can happen with complex repositories. Please try refreshing."
+            );
+          }
           
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(xmlMatch[0], "text/xml");
-          if (xmlDoc.querySelector('parsererror')) {
-            throw new Error('Failed to parse wiki structure XML.');
+          const-parseError = xmlDoc.querySelector('parsererror');
+          if (parseError) {
+            console.error("Failed to parse wiki structure XML.", {
+              xml: xmlMatch[0],
+              error: parseError.textContent,
+            });
+            throw new Error(
+              "The AI returned a malformed XML structure. Please try refreshing."
+            );
           }
 
           const pages: WikiPage[] = Array.from(xmlDoc.querySelectorAll('page')).map(p => ({
