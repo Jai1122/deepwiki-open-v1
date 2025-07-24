@@ -91,9 +91,12 @@ def read_all_documents(
     file_filters_config = configs.get("file_filters", {})
     excluded_filename_patterns = file_filters_config.get("excluded_filename_patterns", [])
 
+    logger.info(f"Starting to walk directory: {path}")
     for root, dirs, files in os.walk(path, topdown=True):
         # Filter directories in-place to prevent traversing them
         dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
+        current_dir_relative = os.path.relpath(root, path)
+        logger.info(f"Processing directory: {current_dir_relative}")
         
         for file in files:
             file_path = os.path.join(root, file)
@@ -130,6 +133,7 @@ def read_all_documents(
                 rejected_files_log.append(f"{normalized_relative_path} (error: {e})")
                 logger.warning(f"Could not process file {file_path}: {e}")
 
+    logger.info(f"Finished walking directory: {path}")
     logger.info(f"Processed {len(processed_files_log)} files.")
     logger.info(f"Rejected {len(rejected_files_log)} files.")
     # Detailed logging for transparency

@@ -155,9 +155,12 @@ async def summarize_oversized_query(query: str, model_config: dict, model_kwargs
     final_summary_response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
 
     final_summary = ""
-    if isinstance(final_summary_response, str): final_summary = final_summary_response
-    elif hasattr(final_summary_response, "text"): final_summary = final_summary_response.text
-    elif hasattr(final_summary_response, "choices") and final_summary_response.choices: final_summary = final_summary_response.choices[0].message.content
+    if isinstance(final_summary_response, str):
+        final_summary = final_summary_response
+    elif hasattr(final_summary_response, "text"):
+        final_summary = final_summary_response.text
+    elif hasattr(final_summary_response, "choices") and final_summary_response.choices:
+        final_summary = final_summary_response.choices[0].message.content
     
     logger.info(f"Original query summarized to {count_tokens(final_summary)} tokens.")
     return final_summary
