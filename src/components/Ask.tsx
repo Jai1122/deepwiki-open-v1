@@ -265,29 +265,26 @@ const Ask: React.FC<AskProps> = ({
 
   // WebSocket reference
   const webSocketRef = useRef<WebSocket | null>(null);
+  const responseBufferRef = useRef('');
 
-  const handleConfirmAsk = async () => {
+  const startRequest = (history: Message[], iteration: number) => {
     setIsLoading(true);
-    setResponse('');
-    setResearchIteration(0);
-    setResearchComplete(false);
-    setResearchStages([]);
-    setCurrentStageIndex(0);
-
-    const newHistory: Message[] = [{
-      role: 'user',
-      content: deepResearch ? `[DEEP RESEARCH] ${question}` : question
-    }];
-    setConversationHistory(newHistory);
+    setResearchIteration(iteration);
+    responseBufferRef.current = '';
+    
+    // For subsequent deep research iterations, we clear the previous response
+    if (iteration > 1) {
+        setResponse('');
+    }
 
     const requestBody: ChatCompletionRequest = {
       repo_url: getRepoUrl(repoInfo),
       type: repoInfo.type,
-      messages: newHistory.map(msg => ({ role: msg.role, content: msg.content })),
+      messages: history.map(msg => ({ role: msg.role, content: msg.content })),
       provider: selectedProvider,
       model: isCustomSelectedModel ? customSelectedModel : selectedModel,
       language: language,
-      token: repoInfo.token
+      token: repoInfo.token,
     };
 
     closeWebSocket(webSocketRef.current);
@@ -296,12 +293,12 @@ const Ask: React.FC<AskProps> = ({
       requestBody,
       // onContent
       (contentChunk) => {
-        setResponse(prev => prev + contentChunk);
+        responseBufferRef.current += contentChunk;
+        setResponse(responseBufferRef.current);
       },
       // onStatus
       (status, message) => {
         console.log(`WebSocket status: ${status} - ${message}`);
-        // You could add a state here to display status messages to the user
       },
       // onError
       (error) => {
@@ -311,85 +308,49 @@ const Ask: React.FC<AskProps> = ({
       },
       // onComplete
       () => {
-        console.log('WebSocket connection closed.');
-        setIsLoading(false);
+        const finalResponse = responseBufferRef.current;
+        const isComplete = checkIfResearchComplete(finalResponse);
+        const forceComplete = iteration >= 5;
+
+        if (deepResearch && !isComplete && !forceComplete) {
+          // Use a timeout to give the user a moment to see the last response
+          setTimeout(() => {
+            const newHistory: Message[] = [
+              ...history,
+              { role: 'assistant', content: finalResponse },
+              { role: 'user', content: '[DEEP RESEARCH] Continue the research' }
+            ];
+            setConversationHistory(newHistory);
+            startRequest(newHistory, iteration + 1);
+          }, 2000);
+        } else {
+          if (deepResearch && forceComplete && !isComplete) {
+            const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations, the deep research process has concluded. The findings presented across all iterations form the comprehensive answer.";
+            setResponse(prev => prev + completionNote);
+          }
+          setResearchComplete(true);
+          setIsLoading(false);
+        }
       }
     );
   };
 
-  // This useEffect handles the deep research continuation logic.
-  // It triggers when the loading is finished.
-  useEffect(() => {
-    if (isLoading || !deepResearch || researchComplete) {
-      return;
-    }
+  const handleConfirmAsk = () => {
+    // Reset all state for a new request
+    setResponse('');
+    setResearchIteration(0);
+    setResearchComplete(false);
+    setResearchStages([]);
+    setCurrentStageIndex(0);
 
-    // Check if the latest response marks completion
-    const isComplete = checkIfResearchComplete(response);
-    if (isComplete) {
-      setResearchComplete(true);
-      return;
-    }
+    const initialHistory: Message[] = [{
+      role: 'user',
+      content: deepResearch ? `[DEEP RESEARCH] ${question}` : question
+    }];
+    setConversationHistory(initialHistory);
     
-    const forceComplete = researchIteration >= 5;
-    if(forceComplete && !isComplete) {
-        const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations of deep research, we've gathered significant insights about this topic. This concludes our investigation process, having reached the maximum number of research iterations. The findings presented across all iterations collectively form our comprehensive answer to the original question.";
-        setResponse(prev => prev + completionNote);
-        setResearchComplete(true);
-        return;
-    }
-
-    // If we have a response and we're not complete, continue the research.
-    if (response && !isComplete) {
-      const timer = setTimeout(() => {
-        // This will trigger the next research iteration
-        const nextIteration = researchIteration + 1;
-        setResearchIteration(nextIteration);
-
-        const currentResponse = response;
-        const newHistory: Message[] = [
-          ...conversationHistory,
-          { role: 'assistant', content: currentResponse },
-          { role: 'user', content: '[DEEP RESEARCH] Continue the research' }
-        ];
-        setConversationHistory(newHistory);
-        
-        const requestBody: ChatCompletionRequest = {
-            repo_url: getRepoUrl(repoInfo),
-            type: repoInfo.type,
-            messages: newHistory.map(msg => ({ role: msg.role, content: msg.content })),
-            provider: selectedProvider,
-            model: isCustomSelectedModel ? customSelectedModel : selectedModel,
-            language: language,
-            token: repoInfo.token
-        };
-        
-        // Reset response for the new iteration and set loading
-        setResponse('');
-        setIsLoading(true);
-
-        closeWebSocket(webSocketRef.current);
-        webSocketRef.current = createChatWebSocket(
-            requestBody,
-            (contentChunk) => setResponse(prev => prev + contentChunk),
-            (status, message) => console.log(`WebSocket status: ${status} - ${message}`),
-            (error) => {
-                console.error('WebSocket error:', error);
-                setResponse(prev => prev + '\n\nError: Connection failed.');
-                setIsLoading(false);
-            },
-            () => {
-                console.log('WebSocket connection closed for iteration ' + nextIteration);
-                setIsLoading(false);
-            }
-        );
-
-      }, 2000); // Wait 2 seconds before continuing
-      return () => clearTimeout(timer);
-    }
-  // Disabling exhaustive-deps because we want this to run specifically when `isLoading` becomes false.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, response, deepResearch, researchComplete]);
+    startRequest(initialHistory, 1);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
