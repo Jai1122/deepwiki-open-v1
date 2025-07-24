@@ -1,3 +1,4 @@
+import pickle
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import TextSplitter, ToEmbeddings
 import os
@@ -9,7 +10,6 @@ import re
 import glob
 import fnmatch
 from adalflow.utils import get_adalflow_default_root_path
-from adalflow.core.db import LocalDB
 from .config import configs, DEFAULT_EXCLUDED_DIRS, DEFAULT_EXCLUDED_FILES
 from .ollama_patch import OllamaDocumentProcessor
 from urllib.parse import urlparse, urlunparse, quote
@@ -141,34 +141,34 @@ def prepare_data_pipeline(is_ollama_embedder: bool = None):
             batch_size=configs.get("embedder", {}).get("batch_size", 10)
         )
 
-def transform_documents_and_save_to_db(documents: List[Document], db_path: str, is_ollama_embedder: bool = None) -> LocalDB:
+def transform_documents_and_save_to_db(documents: List[Document], db_path: str, is_ollama_embedder: bool = None) -> List[Document]:
     """
-    Transforms documents using the data pipeline and saves them to a local database.
+    Transforms documents using the data pipeline and saves them to a pickle file.
     """
     if not documents:
         logger.warning("No documents to process.")
-        return None
+        return []
 
     pipeline = prepare_data_pipeline(is_ollama_embedder)
     transformed_docs = pipeline(documents)
 
     if not transformed_docs:
         logger.error("Transformation pipeline returned no documents.")
-        return None
+        return []
 
-    # Save transformed documents to the local DB
-    db = LocalDB(db_path)
-    db.add(transformed_docs)
+    # Save transformed documents to a pickle file
+    with open(db_path, 'wb') as f:
+        pickle.dump(transformed_docs, f)
     logger.info(f"Saved {len(transformed_docs)} transformed documents to {db_path}")
     
-    return db
+    return transformed_docs
 
 class DatabaseManager:
     """
     Manages the lifecycle of creating and loading the vector database for a repository.
     """
     def __init__(self):
-        self.db = None
+        self.db_docs = None
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None, is_ollama_embedder: bool = None,
                        excluded_dirs: List[str] = None, excluded_files: List[str] = None,
@@ -178,13 +178,13 @@ class DatabaseManager:
         or processing and saving documents.
         """
         repo_name = os.path.basename(repo_url_or_path.rstrip('/'))
-        db_path = os.path.join(get_adalflow_default_root_path(), "databases", repo_name)
+        db_path = os.path.join(get_adalflow_default_root_path(), "databases", f"{repo_name}.pkl")
 
         if os.path.exists(db_path):
             logger.info(f"Loading database from existing path: {db_path}")
-            self.db = LocalDB(db_path)
-            # Treat the db object as an iterable to load documents
-            return list(self.db)
+            with open(db_path, 'rb') as f:
+                self.db_docs = pickle.load(f)
+            return self.db_docs
 
         # Determine the path for the repository content
         if type == "local":
@@ -203,11 +203,10 @@ class DatabaseManager:
             return []
 
         # Transform and save to DB
-        self.db = transform_documents_and_save_to_db(documents, db_path, is_ollama_embedder)
+        self.db_docs = transform_documents_and_save_to_db(documents, db_path, is_ollama_embedder)
         
-        # Treat the db object as an iterable to return the documents
-        return list(self.db) if self.db else []
+        return self.db_docs
 
     def reset_database(self):
         """Resets the current database instance."""
-        self.db = None
+        self.db_docs = None
