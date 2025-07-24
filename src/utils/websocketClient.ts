@@ -33,56 +33,67 @@ export interface ChatCompletionRequest {
 }
 
 /**
- * Creates a WebSocket connection for chat completions
+ * Creates a WebSocket connection for chat completions.
+ * This version parses server messages and emits typed events.
+ *
  * @param request The chat completion request
- * @param onMessage Callback for received messages
+ * @param onContent Callback for content chunks
+ * @param onStatus Callback for status updates
  * @param onError Callback for errors
- * @param onClose Callback for when the connection closes
+ * @param onComplete Callback for when the connection closes cleanly
  * @returns The WebSocket connection
  */
 export const createChatWebSocket = (
   request: ChatCompletionRequest,
-  onMessage: (message: string) => void,
+  onContent: (content: string) => void,
+  onStatus: (status: string, message?: string) => void,
   onError: (error: Event) => void,
-  onClose: () => void
+  onComplete: () => void
 ): WebSocket => {
-  // Create WebSocket connection
   const ws = new WebSocket(getWebSocketUrl());
-  
-  // Set up event handlers
+
   ws.onopen = () => {
     console.log('WebSocket connection established');
-    // Send the request as JSON
+    onStatus('connected', 'Connection established. Sending request...');
     ws.send(JSON.stringify(request));
   };
-  
+
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
 
-      if (data.status === 'done') {
-        // When the server signals it's done, close the connection.
-        // This will trigger the ws.onclose handler.
-        ws.close();
-      } else if (data.content) {
-        // Otherwise, pass the content to the message handler.
-        onMessage(data.content);
+      if (data.content) {
+        onContent(data.content);
+      } else if (data.status) {
+        onStatus(data.status, data.message);
+        if (data.status === 'done') {
+          // The server has signaled completion. We can close the socket.
+          // The `onclose` event will fire, triggering the `onComplete` callback.
+          ws.close();
+        }
+      } else if (data.error) {
+        console.error('Received error from server:', data.error);
+        onStatus('error', data.error);
       }
     } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
+      console.error('Error parsing WebSocket message:', event.data, error);
     }
   };
-  
+
   ws.onerror = (error) => {
     console.error('WebSocket error:', error);
     onError(error);
   };
-  
-  ws.onclose = () => {
-    console.log('WebSocket connection closed');
-    onClose();
+
+  ws.onclose = (event) => {
+    if (event.wasClean) {
+      console.log('WebSocket connection closed cleanly');
+    } else {
+      console.warn('WebSocket connection died');
+    }
+    onComplete();
   };
-  
+
   return ws;
 };
 

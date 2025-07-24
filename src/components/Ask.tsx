@@ -266,354 +266,130 @@ const Ask: React.FC<AskProps> = ({
   // WebSocket reference
   const webSocketRef = useRef<WebSocket | null>(null);
 
-  // Function to continue research automatically
-  const continueResearch = async () => {
-    if (!deepResearch || researchComplete || !response || isLoading) return;
-
-    // Add a small delay to allow the user to read the current response
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    setIsLoading(true);
-
-    try {
-      // Store the current response for use in the history
-      const currentResponse = response;
-
-      // Create a new message from the AI's previous response
-      const newHistory: Message[] = [
-        ...conversationHistory,
-        {
-          role: 'assistant',
-          content: currentResponse
-        },
-        {
-          role: 'user',
-          content: '[DEEP RESEARCH] Continue the research'
-        }
-      ];
-
-      // Update conversation history
-      setConversationHistory(newHistory);
-
-      // Increment research iteration
-      const newIteration = researchIteration + 1;
-      setResearchIteration(newIteration);
-
-      // Clear previous response
-      setResponse('');
-
-      // Prepare the request body
-      const requestBody: ChatCompletionRequest = {
-        repo_url: getRepoUrl(repoInfo),
-        type: repoInfo.type,
-        messages: newHistory.map(msg => ({ role: msg.role as 'user' | 'assistant', content: msg.content })),
-        provider: selectedProvider,
-        model: isCustomSelectedModel ? customSelectedModel : selectedModel,
-        language: language
-      };
-
-      // Add tokens if available
-      if (repoInfo?.token) {
-        requestBody.token = repoInfo.token;
-      }
-
-      // Close any existing WebSocket connection
-      closeWebSocket(webSocketRef.current);
-
-      let fullResponse = '';
-
-      // Create a new WebSocket connection
-      webSocketRef.current = createChatWebSocket(
-        requestBody,
-        // Message handler
-        (message: string) => {
-          fullResponse += message;
-          setResponse(fullResponse);
-
-          // Extract research stage if this is a deep research response
-          if (deepResearch) {
-            const stage = extractResearchStage(fullResponse, newIteration);
-            if (stage) {
-              // Add the stage to the research stages if it's not already there
-              setResearchStages(prev => {
-                // Check if we already have this stage
-                const existingStageIndex = prev.findIndex(s => s.iteration === stage.iteration && s.type === stage.type);
-                if (existingStageIndex >= 0) {
-                  // Update existing stage
-                  const newStages = [...prev];
-                  newStages[existingStageIndex] = stage;
-                  return newStages;
-                } else {
-                  // Add new stage
-                  return [...prev, stage];
-                }
-              });
-
-              // Update current stage index to the latest stage
-              setCurrentStageIndex(researchStages.length);
-            }
-          }
-        },
-        // Error handler
-        (error: Event) => {
-          console.error('WebSocket error:', error);
-          setResponse(prev => prev + '\n\nError: WebSocket connection failed. Falling back to HTTP...');
-
-          // Fallback to HTTP if WebSocket fails
-          fallbackToHttp(requestBody);
-        },
-        // Close handler
-        () => {
-          // Check if research is complete when the WebSocket closes
-          const isComplete = checkIfResearchComplete(fullResponse);
-
-          // Force completion after a maximum number of iterations (5)
-          const forceComplete = newIteration >= 5;
-
-          if (forceComplete && !isComplete) {
-            // If we're forcing completion, append a comprehensive conclusion to the response
-            const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations of deep research, we've gathered significant insights about this topic. This concludes our investigation process, having reached the maximum number of research iterations. The findings presented across all iterations collectively form our comprehensive answer to the original question.";
-            fullResponse += completionNote;
-            setResponse(fullResponse);
-            setResearchComplete(true);
-          } else {
-            setResearchComplete(isComplete);
-          }
-
-          setIsLoading(false);
-        }
-      );
-    } catch (error) {
-      console.error('Error during API call:', error);
-      setResponse(prev => prev + '\n\nError: Failed to continue research. Please try again.');
-      setResearchComplete(true);
-      setIsLoading(false);
-    }
-  };
-
-  // Fallback to HTTP if WebSocket fails
-  const fallbackToHttp = async (requestBody: ChatCompletionRequest) => {
-    try {
-      // Make the API call using HTTP
-      const apiResponse = await fetch(`/api/chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!apiResponse.ok) {
-        throw new Error(`API error: ${apiResponse.status}`);
-      }
-
-      // Process the streaming response
-      const reader = apiResponse.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error('Failed to get response reader');
-      }
-
-      // Read the stream
-      let fullResponse = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        fullResponse += chunk;
-        setResponse(fullResponse);
-
-        // Extract research stage if this is a deep research response
-        if (deepResearch) {
-          const stage = extractResearchStage(fullResponse, researchIteration);
-          if (stage) {
-            // Add the stage to the research stages
-            setResearchStages(prev => {
-              const existingStageIndex = prev.findIndex(s => s.iteration === stage.iteration && s.type === stage.type);
-              if (existingStageIndex >= 0) {
-                const newStages = [...prev];
-                newStages[existingStageIndex] = stage;
-                return newStages;
-              } else {
-                return [...prev, stage];
-              }
-            });
-          }
-        }
-      }
-
-      // Check if research is complete
-      const isComplete = checkIfResearchComplete(fullResponse);
-
-      // Force completion after a maximum number of iterations (5)
-      const forceComplete = researchIteration >= 5;
-
-      if (forceComplete && !isComplete) {
-        // If we're forcing completion, append a comprehensive conclusion to the response
-        const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations of deep research, we've gathered significant insights about this topic. This concludes our investigation process, having reached the maximum number of research iterations. The findings presented across all iterations collectively form our comprehensive answer to the original question.";
-        fullResponse += completionNote;
-        setResponse(fullResponse);
-        setResearchComplete(true);
-      } else {
-        setResearchComplete(isComplete);
-      }
-    } catch (error) {
-      console.error('Error during HTTP fallback:', error);
-      setResponse(prev => prev + '\n\nError: Failed to get a response. Please try again.');
-      setResearchComplete(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Effect to continue research when response is updated
-  useEffect(() => {
-    if (deepResearch && response && !isLoading && !researchComplete) {
-      const isComplete = checkIfResearchComplete(response);
-      if (isComplete) {
-        setResearchComplete(true);
-      } else if (researchIteration > 0 && researchIteration < 5) {
-        // Only auto-continue if we're already in a research process and haven't reached max iterations
-        // Use setTimeout to avoid potential infinite loops
-        const timer = setTimeout(() => {
-          continueResearch();
-        }, 1000);
-        return () => clearTimeout(timer);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [response, isLoading, deepResearch, researchComplete, researchIteration]);
-
-  // Effect to update research stages when the response changes
-  useEffect(() => {
-    if (deepResearch && response && !isLoading) {
-      // Try to extract a research stage from the response
-      const stage = extractResearchStage(response, researchIteration);
-      if (stage) {
-        // Add or update the stage in the research stages
-        setResearchStages(prev => {
-          // Check if we already have this stage
-          const existingStageIndex = prev.findIndex(s => s.iteration === stage.iteration && s.type === stage.type);
-          if (existingStageIndex >= 0) {
-            // Update existing stage
-            const newStages = [...prev];
-            newStages[existingStageIndex] = stage;
-            return newStages;
-          } else {
-            // Add new stage
-            return [...prev, stage];
-          }
-        });
-
-        // Update current stage index to point to this stage
-        setCurrentStageIndex(prev => {
-          const newIndex = researchStages.findIndex(s => s.iteration === stage.iteration && s.type === stage.type);
-          return newIndex >= 0 ? newIndex : prev;
-        });
-      }
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [response, isLoading, deepResearch, researchIteration]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!question.trim() || isLoading) return;
-
-    handleConfirmAsk();
-  };
-
-  // Handle confirm and send request
   const handleConfirmAsk = async () => {
     setIsLoading(true);
     setResponse('');
     setResearchIteration(0);
     setResearchComplete(false);
+    setResearchStages([]);
+    setCurrentStageIndex(0);
 
-    try {
-      // Create initial message
-      const initialMessage: Message = {
-        role: 'user',
-        content: deepResearch ? `[DEEP RESEARCH] ${question}` : question
-      };
+    const newHistory: Message[] = [{
+      role: 'user',
+      content: deepResearch ? `[DEEP RESEARCH] ${question}` : question
+    }];
+    setConversationHistory(newHistory);
 
-      // Set initial conversation history
-      const newHistory: Message[] = [initialMessage];
-      setConversationHistory(newHistory);
+    const requestBody: ChatCompletionRequest = {
+      repo_url: getRepoUrl(repoInfo),
+      type: repoInfo.type,
+      messages: newHistory.map(msg => ({ role: msg.role, content: msg.content })),
+      provider: selectedProvider,
+      model: isCustomSelectedModel ? customSelectedModel : selectedModel,
+      language: language,
+      token: repoInfo.token
+    };
 
-      // Prepare request body
-      const requestBody: ChatCompletionRequest = {
-        repo_url: getRepoUrl(repoInfo),
-        type: repoInfo.type,
-        messages: newHistory.map(msg => ({ role: msg.role as 'user' | 'assistant', content: msg.content })),
-        provider: selectedProvider,
-        model: isCustomSelectedModel ? customSelectedModel : selectedModel,
-        language: language
-      };
+    closeWebSocket(webSocketRef.current);
 
-      // Add tokens if available
-      if (repoInfo?.token) {
-        requestBody.token = repoInfo.token;
+    webSocketRef.current = createChatWebSocket(
+      requestBody,
+      // onContent
+      (contentChunk) => {
+        setResponse(prev => prev + contentChunk);
+      },
+      // onStatus
+      (status, message) => {
+        console.log(`WebSocket status: ${status} - ${message}`);
+        // You could add a state here to display status messages to the user
+      },
+      // onError
+      (error) => {
+        console.error('WebSocket error:', error);
+        setResponse(prev => prev + '\n\nError: Connection failed.');
+        setIsLoading(false);
+      },
+      // onComplete
+      () => {
+        console.log('WebSocket connection closed.');
+        setIsLoading(false);
       }
-
-      // Close any existing WebSocket connection
-      closeWebSocket(webSocketRef.current);
-
-      let fullResponse = '';
-
-      // Create a new WebSocket connection
-      webSocketRef.current = createChatWebSocket(
-        requestBody,
-        // Message handler
-        (message: string) => {
-          fullResponse += message;
-          setResponse(fullResponse);
-
-          // Extract research stage if this is a deep research response
-          if (deepResearch) {
-            const stage = extractResearchStage(fullResponse, 1); // First iteration
-            if (stage) {
-              // Add the stage to the research stages
-              setResearchStages([stage]);
-              setCurrentStageIndex(0);
-            }
-          }
-        },
-        // Error handler
-        (error: Event) => {
-          console.error('WebSocket error:', error);
-          setResponse(prev => prev + '\n\nError: WebSocket connection failed. Falling back to HTTP...');
-
-          // Fallback to HTTP if WebSocket fails
-          fallbackToHttp(requestBody);
-        },
-        // Close handler
-        () => {
-          // If deep research is enabled, check if we should continue
-          if (deepResearch) {
-            const isComplete = checkIfResearchComplete(fullResponse);
-            setResearchComplete(isComplete);
-
-            // If not complete, start the research process
-            if (!isComplete) {
-              setResearchIteration(1);
-              // The continueResearch function will be triggered by the useEffect
-            }
-          }
-
-          setIsLoading(false);
-        }
-      );
-    } catch (error) {
-      console.error('Error during API call:', error);
-      setResponse(prev => prev + '\n\nError: Failed to get a response. Please try again.');
-      setResearchComplete(true);
-      setIsLoading(false);
-    }
+    );
   };
+
+  // This useEffect handles the deep research continuation logic.
+  // It triggers when the loading is finished.
+  useEffect(() => {
+    if (isLoading || !deepResearch || researchComplete) {
+      return;
+    }
+
+    // Check if the latest response marks completion
+    const isComplete = checkIfResearchComplete(response);
+    if (isComplete) {
+      setResearchComplete(true);
+      return;
+    }
+    
+    const forceComplete = researchIteration >= 5;
+    if(forceComplete && !isComplete) {
+        const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations of deep research, we've gathered significant insights about this topic. This concludes our investigation process, having reached the maximum number of research iterations. The findings presented across all iterations collectively form our comprehensive answer to the original question.";
+        setResponse(prev => prev + completionNote);
+        setResearchComplete(true);
+        return;
+    }
+
+    // If we have a response and we're not complete, continue the research.
+    if (response && !isComplete) {
+      const timer = setTimeout(() => {
+        // This will trigger the next research iteration
+        const nextIteration = researchIteration + 1;
+        setResearchIteration(nextIteration);
+
+        const currentResponse = response;
+        const newHistory: Message[] = [
+          ...conversationHistory,
+          { role: 'assistant', content: currentResponse },
+          { role: 'user', content: '[DEEP RESEARCH] Continue the research' }
+        ];
+        setConversationHistory(newHistory);
+        
+        const requestBody: ChatCompletionRequest = {
+            repo_url: getRepoUrl(repoInfo),
+            type: repoInfo.type,
+            messages: newHistory.map(msg => ({ role: msg.role, content: msg.content })),
+            provider: selectedProvider,
+            model: isCustomSelectedModel ? customSelectedModel : selectedModel,
+            language: language,
+            token: repoInfo.token
+        };
+        
+        // Reset response for the new iteration and set loading
+        setResponse('');
+        setIsLoading(true);
+
+        closeWebSocket(webSocketRef.current);
+        webSocketRef.current = createChatWebSocket(
+            requestBody,
+            (contentChunk) => setResponse(prev => prev + contentChunk),
+            (status, message) => console.log(`WebSocket status: ${status} - ${message}`),
+            (error) => {
+                console.error('WebSocket error:', error);
+                setResponse(prev => prev + '\n\nError: Connection failed.');
+                setIsLoading(false);
+            },
+            () => {
+                console.log('WebSocket connection closed for iteration ' + nextIteration);
+                setIsLoading(false);
+            }
+        );
+
+      }, 2000); // Wait 2 seconds before continuing
+      return () => clearTimeout(timer);
+    }
+  // Disabling exhaustive-deps because we want this to run specifically when `isLoading` becomes false.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, response, deepResearch, researchComplete]);
 
   const [buttonWidth, setButtonWidth] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
