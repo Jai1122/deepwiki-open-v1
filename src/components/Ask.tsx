@@ -391,6 +391,12 @@ const Ask: React.FC<AskProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, response, deepResearch, researchComplete]);
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!question.trim() || isLoading) return;
+    handleConfirmAsk();
+  };
+
   const [buttonWidth, setButtonWidth] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
