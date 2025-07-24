@@ -184,9 +184,21 @@ class DatabaseManager:
 
         if os.path.exists(db_path):
             logger.info(f"Loading database from existing path: {db_path}")
-            with open(db_path, 'rb') as f:
-                self.db_docs = pickle.load(f)
-            return self.db_docs
+            try:
+                with open(db_path, 'rb') as f:
+                    loaded_docs = pickle.load(f)
+                
+                # Defensive check for stale cache format
+                if isinstance(loaded_docs, list):
+                    self.db_docs = loaded_docs
+                    logger.info(f"Successfully loaded {len(self.db_docs)} documents from cache.")
+                    return self.db_docs
+                else:
+                    logger.warning(f"Cache file {db_path} contains an outdated format. Regenerating database.")
+                    self.db_docs = None # Invalidate cache
+            except (pickle.UnpicklingError, EOFError) as e:
+                logger.warning(f"Could not unpickle cache file {db_path}: {e}. Regenerating database.")
+                self.db_docs = None # Invalidate cache
 
         repo_path = repo_url_or_path if type == "local" else os.path.join(get_adalflow_default_root_path(), "repos", repo_name)
         if type != "local":
