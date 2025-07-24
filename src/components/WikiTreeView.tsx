@@ -138,6 +138,11 @@ const WikiTreeView: React.FC<WikiTreeViewProps> = ({
     );
   };
 
+  // Add a guard to prevent rendering if wikiStructure is not yet defined
+  if (!wikiStructure) {
+    return null;
+  }
+
   // If there are no sections defined yet, or if sections/rootSections are empty arrays, fall back to the flat list view
   if (!wikiStructure.sections || wikiStructure.sections.length === 0 || !wikiStructure.rootSections || wikiStructure.rootSections.length === 0) {
     console.log("WikiTreeView: Falling back to flat list view due to missing or empty sections/rootSections");
