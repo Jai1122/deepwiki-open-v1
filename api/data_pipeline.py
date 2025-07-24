@@ -77,6 +77,9 @@ def read_all_documents(
     )
 
     all_documents = []
+    processed_files_log = []
+    rejected_files_log = []
+    
     final_excluded_dirs = DEFAULT_EXCLUDED_DIRS + (excluded_dirs or [])
     final_excluded_files = DEFAULT_EXCLUDED_FILES + (excluded_files or [])
 
@@ -93,26 +96,30 @@ def read_all_documents(
         dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
         
         for file in files:
-            # New check for filename patterns
-            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_filename_patterns):
-                continue
-
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
-
-            # Normalize path for matching
             normalized_relative_path = relative_path.replace('\\', '/')
 
-            if any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in final_excluded_files):
+            # New check for filename patterns
+            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_filename_patterns):
+                rejected_files_log.append(f"{normalized_relative_path} (matches filename pattern)")
                 continue
+
+            if any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in final_excluded_files):
+                rejected_files_log.append(f"{normalized_relative_path} (matches excluded file pattern)")
+                continue
+            
             if included_files and not any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in included_files):
+                rejected_files_log.append(f"{normalized_relative_path} (not in included files)")
                 continue
 
             try:
                 content = get_local_file_content(file_path)
                 if not content.strip():
+                    rejected_files_log.append(f"{normalized_relative_path} (empty content)")
                     continue
 
+                processed_files_log.append(normalized_relative_path)
                 chunks = text_splitter.split_text(content)
                 for chunk_content in chunks:
                     doc = Document(text=chunk_content)
@@ -120,10 +127,18 @@ def read_all_documents(
                     all_documents.append(doc)
 
             except Exception as e:
+                rejected_files_log.append(f"{normalized_relative_path} (error: {e})")
                 logger.warning(f"Could not process file {file_path}: {e}")
+
+    logger.info(f"Processed {len(processed_files_log)} files.")
+    logger.info(f"Rejected {len(rejected_files_log)} files.")
+    # Detailed logging for transparency
+    logger.debug(f"Processed files: {json.dumps(processed_files_log, indent=2)}")
+    logger.debug(f"Rejected files: {json.dumps(rejected_files_log, indent=2)}")
 
     logger.info(f"Total documents after chunking: {len(all_documents)}")
     return all_documents
+
 
 
 def prepare_data_pipeline(is_ollama_embedder: bool = None):
