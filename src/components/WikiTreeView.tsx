@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaChevronRight, FaChevronDown } from 'react-icons/fa';
 
 // Import interfaces from the page component
