@@ -1,4 +1,5 @@
 import pickle
+from typing import Optional
 from adalflow.core.types import Document, List
 from adalflow.components.data_process import TextSplitter, ToEmbeddings
 import os
