@@ -215,8 +215,8 @@ class DatabaseManager:
                 else:
                     logger.warning(f"Cache file {db_path} contains an outdated format. Regenerating database.")
                     self.db_docs = None # Invalidate cache
-            except (pickle.UnpicklingError, EOFError) as e:
-                logger.warning(f"Could not unpickle cache file {db_path}: {e}. Regenerating database.")
+            except (pickle.UnpicklingError, EOFError, ModuleNotFoundError) as e:
+                logger.warning(f"Could not unpickle cache file {db_path} due to '{e}'. Regenerating database.")
                 self.db_docs = None # Invalidate cache
 
         repo_path = repo_url_or_path if type == "local" else os.path.join(get_adalflow_default_root_path(), "repos", repo_name)
