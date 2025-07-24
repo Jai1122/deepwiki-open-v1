@@ -365,7 +365,6 @@ export default function RepoWikiPage() {
           setGeneratedPages({});
           setPagesInProgress(new Set(pages.map(p => p.id)));
           pageQueueRef.current = [...structure.pages];
-          setCurrentPageId(structure.pages.length > 0 ? structure.pages[0].id : undefined);
           setPageState('generating_page_content');
         } catch (err) {
           handleError(err instanceof Error ? err.message : 'Failed to process wiki structure.');
@@ -373,6 +372,13 @@ export default function RepoWikiPage() {
       }
     );
   }, [pageState, repoInfo, fileTree, readme, messages.loading, isComprehensiveView, language, selectedProvider, selectedModel, isCustomModel, customModel, token]);
+
+  // Set current page when wiki structure is ready
+  useEffect(() => {
+    if (wikiStructure && wikiStructure.pages.length > 0 && !currentPageId) {
+      setCurrentPageId(wikiStructure.pages[0].id);
+    }
+  }, [wikiStructure, currentPageId]);
 
 
   // 3. Generating Page Content
