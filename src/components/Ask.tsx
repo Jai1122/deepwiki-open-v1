@@ -1,6 +1,4 @@
-'use client';
-
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import Markdown from './Markdown';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -78,6 +76,38 @@ const Ask: React.FC<AskProps> = ({
   const responseRef = useRef<HTMLDivElement>(null);
   const providerRef = useRef(provider);
   const modelRef = useRef(model);
+  
+  // --- State Refs for stable callbacks ---
+  const stateRef = useRef({
+    response,
+    conversationHistory,
+    researchIteration,
+    deepResearch,
+    researchComplete,
+    selectedProvider,
+    selectedModel,
+    isCustomSelectedModel,
+    customSelectedModel,
+    repoInfo,
+    language
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      response,
+      conversationHistory,
+      researchIteration,
+      deepResearch,
+      researchComplete,
+      selectedProvider,
+      selectedModel,
+      isCustomSelectedModel,
+      customSelectedModel,
+      repoInfo,
+      language
+    };
+  }, [response, conversationHistory, researchIteration, deepResearch, researchComplete, selectedProvider, selectedModel, isCustomSelectedModel, customSelectedModel, repoInfo, language]);
+
 
   // Focus input on component mount
   useEffect(() => {
@@ -100,6 +130,9 @@ const Ask: React.FC<AskProps> = ({
     }
   }, [response]);
 
+  // WebSocket reference
+  const webSocketRef = useRef<WebSocket | null>(null);
+
   // Close WebSocket when component unmounts
   useEffect(() => {
     return () => {
@@ -120,7 +153,7 @@ const Ask: React.FC<AskProps> = ({
         const response = await fetch('/api/models/config');
         if (!response.ok) {
           throw new Error(`Error fetching model configurations: ${response.status}`);
-        }
+        n}
 
         const data = await response.json();
 
@@ -263,19 +296,23 @@ const Ask: React.FC<AskProps> = ({
     }
   };
 
-  // WebSocket reference
-  const webSocketRef = useRef<WebSocket | null>(null);
-  const responseBufferRef = useRef('');
-
-  const startRequest = (history: Message[], iteration: number) => {
+  const startRequest = useCallback((history: Message[], iteration: number) => {
     setIsLoading(true);
     setResearchIteration(iteration);
-    responseBufferRef.current = '';
     
-    // For subsequent deep research iterations, we clear the previous response
+    // For subsequent deep research iterations, clear the previous response
     if (iteration > 1) {
         setResponse('');
     }
+
+    const {
+      repoInfo,
+      selectedProvider,
+      isCustomSelectedModel,
+      customSelectedModel,
+      selectedModel,
+      language
+    } = stateRef.current;
 
     const requestBody: ChatCompletionRequest = {
       repo_url: getRepoUrl(repoInfo),
@@ -287,14 +324,15 @@ const Ask: React.FC<AskProps> = ({
       token: repoInfo.token,
     };
 
+    let responseBuffer = '';
     closeWebSocket(webSocketRef.current);
 
     webSocketRef.current = createChatWebSocket(
       requestBody,
       // onContent
       (contentChunk) => {
-        responseBufferRef.current += contentChunk;
-        setResponse(responseBufferRef.current);
+        responseBuffer += contentChunk;
+        setResponse(responseBuffer);
       },
       // onStatus
       (status, message) => {
@@ -308,15 +346,15 @@ const Ask: React.FC<AskProps> = ({
       },
       // onComplete
       () => {
-        const finalResponse = responseBufferRef.current;
+        const { deepResearch, conversationHistory } = stateRef.current;
+        const finalResponse = responseBuffer;
         const isComplete = checkIfResearchComplete(finalResponse);
         const forceComplete = iteration >= 5;
 
         if (deepResearch && !isComplete && !forceComplete) {
-          // Use a timeout to give the user a moment to see the last response
           setTimeout(() => {
             const newHistory: Message[] = [
-              ...history,
+              ...conversationHistory,
               { role: 'assistant', content: finalResponse },
               { role: 'user', content: '[DEEP RESEARCH] Continue the research' }
             ];
@@ -333,7 +371,7 @@ const Ask: React.FC<AskProps> = ({
         }
       }
     );
-  };
+  }, []); // This function is stable and does not depend on component state
 
   const handleConfirmAsk = () => {
     // Reset all state for a new request
