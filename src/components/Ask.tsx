@@ -51,6 +51,7 @@ const Ask: React.FC<AskProps> = ({
   const [isComprehensiveView, setIsComprehensiveView] = useState(true);
   const [researchStages, setResearchStages] = useState<ResearchStage[]>([]);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
+  const [processState, setProcessState] = useState<'idle' | 'requesting' | 'processing_completion'>('idle');
 
   // --- Refs for UI and stable callbacks ---
   const inputRef = useRef<HTMLInputElement>(null);
@@ -115,24 +116,28 @@ const Ask: React.FC<AskProps> = ({
     setResearchComplete(false);
     setResearchStages([]);
     setCurrentStageIndex(0);
+    setProcessState('idle');
+    closeWebSocket(webSocketRef.current);
     inputRef.current?.focus();
   };
 
-  // This is the new, robust function for handling all requests.
-  const startRequest = useCallback((history: Message[], iteration: number) => {
+  // Effect to handle making the WebSocket request
+  useEffect(() => {
+    if (processState !== 'requesting') return;
+
     setIsLoading(true);
-    setResearchIteration(iteration);
-    
-    // For deep research, we clear the response for the new iteration.
-    if (iteration > 1) {
+    const currentState = stateRef.current;
+    const currentIteration = currentState.researchIteration + 1;
+    setResearchIteration(currentIteration);
+
+    if (currentIteration > 1) {
       setResponse('');
     }
 
-    const currentState = stateRef.current;
     const requestBody: ChatCompletionRequest = {
       repo_url: getRepoUrl(currentState.repoInfo),
       type: currentState.repoInfo.type,
-      messages: history,
+      messages: currentState.conversationHistory,
       provider: currentState.selectedProvider,
       model: currentState.isCustomSelectedModel ? currentState.customSelectedModel : currentState.selectedModel,
       language: currentState.language,
@@ -144,48 +149,49 @@ const Ask: React.FC<AskProps> = ({
 
     webSocketRef.current = createChatWebSocket(
       requestBody,
-      // onContent
       (contentChunk) => {
         responseBuffer += contentChunk;
         setResponse(responseBuffer);
       },
-      // onStatus
       (status, message) => console.log(`WebSocket status: ${status} - ${message}`),
-      // onError
       (error) => {
         console.error('WebSocket error:', error);
         setResponse(prev => prev + '\n\nError: Connection failed.');
         setIsLoading(false);
+        setProcessState('idle');
       },
-      // onComplete - This is where the magic happens
-      () => {
-        const { deepResearch, conversationHistory: latestHistory } = stateRef.current;
-        const isCompleteByMaxIterations = iteration >= 5;
-
-        // Check if we should continue the deep research loop.
-        if (deepResearch && !isCompleteByMaxIterations) {
-          // Use a timeout to let the user read the last response
-          setTimeout(() => {
-            const newHistory: Message[] = [
-              ...latestHistory,
-              { role: 'assistant', content: responseBuffer },
-              { role: 'user', content: '[DEEP RESEARCH] Continue the research' }
-            ];
-            setConversationHistory(newHistory);
-            startRequest(newHistory, iteration + 1);
-          }, 2000);
-        } else {
-          // If we are not continuing, the process is finished.
-          if (deepResearch && isCompleteByMaxIterations) {
-            const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations, the deep research process has concluded. The findings presented across all iterations form the comprehensive answer.";
-            setResponse(prev => prev + completionNote);
-          }
-          setResearchComplete(true);
-          setIsLoading(false); // This is the single, reliable point where loading is stopped.
-        }
+      () => { // onComplete
+        const assistantMessage: Message = { role: 'assistant', content: responseBuffer };
+        setConversationHistory(prev => [...prev, assistantMessage]);
+        setProcessState('processing_completion');
       }
     );
-  }, []); // This function is stable and does not re-create on every render.
+  }, [processState]);
+
+  // Effect to handle the completion logic and looping for Deep Research
+  useEffect(() => {
+    if (processState !== 'processing_completion') return;
+
+    const { deepResearch, researchIteration: currentIteration } = stateRef.current;
+    const isCompleteByMaxIterations = currentIteration >= 5;
+
+    if (deepResearch && !isCompleteByMaxIterations) {
+      setTimeout(() => {
+        const userMessage: Message = { role: 'user', content: '[DEEP RESEARCH] Continue the research' };
+        setConversationHistory(prev => [...prev, userMessage]);
+        setProcessState('requesting'); // Loop back to make the next request
+      }, 2000);
+    } else {
+      if (deepResearch && isCompleteByMaxIterations) {
+        const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations, the deep research process has concluded. The findings presented across all iterations form the comprehensive answer.";
+        setResponse(prev => prev + completionNote);
+      }
+      setResearchComplete(true);
+      setIsLoading(false);
+      setProcessState('idle');
+    }
+  }, [processState]);
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,9 +209,7 @@ const Ask: React.FC<AskProps> = ({
       content: deepResearch ? `[DEEP RESEARCH] ${question}` : question
     }];
     setConversationHistory(initialHistory);
-    
-    // Kick off the first request.
-    startRequest(initialHistory, 1);
+    setProcessState('requesting');
   };
 
   // --- The rest of the component is for rendering the UI ---
