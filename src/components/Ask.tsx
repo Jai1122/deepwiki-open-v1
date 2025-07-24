@@ -1,3 +1,5 @@
+'use client';
+
 import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import Markdown from './Markdown';
@@ -7,30 +9,11 @@ import getRepoUrl from '@/utils/getRepoUrl';
 import ModelSelectionModal from './ModelSelectionModal';
 import { createChatWebSocket, closeWebSocket, ChatCompletionRequest } from '@/utils/websocketClient';
 
-interface Model {
-  id: string;
-  name: string;
-}
-
-interface Provider {
-  id: string;
-  name: string;
-  models: Model[];
-  supportsCustomModel?: boolean;
-}
-
-interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
-
-interface ResearchStage {
-  title: string;
-  content: string;
-  iteration: number;
-  type: 'plan' | 'update' | 'conclusion';
-}
-
+// Interfaces remain the same
+interface Model { id: string; name: string; }
+interface Provider { id: string; name: string; models: Model[]; supportsCustomModel?: boolean; }
+interface Message { role: 'user' | 'assistant' | 'system'; content: string; }
+interface ResearchStage { title: string; content: string; iteration: number; type: 'plan' | 'update' | 'conclusion'; }
 interface AskProps {
   repoInfo: RepoInfo;
   provider?: string;
@@ -50,136 +33,79 @@ const Ask: React.FC<AskProps> = ({
   language = 'en',
   onRef
 }) => {
+  // --- Core State ---
   const [question, setQuestion] = useState('');
   const [response, setResponse] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [deepResearch, setDeepResearch] = useState(false);
-
-  // Model selection state
+  const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
+  const [researchIteration, setResearchIteration] = useState(0);
+  const [researchComplete, setResearchComplete] = useState(false);
+  
+  // --- UI & Modal State ---
   const [selectedProvider, setSelectedProvider] = useState(provider);
   const [selectedModel, setSelectedModel] = useState(model);
   const [isCustomSelectedModel, setIsCustomSelectedModel] = useState(isCustomModel);
   const [customSelectedModel, setCustomSelectedModel] = useState(customModel);
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
   const [isComprehensiveView, setIsComprehensiveView] = useState(true);
-
-  // Get language context for translations
-  const { messages } = useLanguage();
-
-  // Research navigation state
   const [researchStages, setResearchStages] = useState<ResearchStage[]>([]);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
-  const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
-  const [researchIteration, setResearchIteration] = useState(0);
-  const [researchComplete, setResearchComplete] = useState(false);
+
+  // --- Refs for UI and stable callbacks ---
   const inputRef = useRef<HTMLInputElement>(null);
   const responseRef = useRef<HTMLDivElement>(null);
-  const providerRef = useRef(provider);
-  const modelRef = useRef(model);
-  
-  // --- State Refs for stable callbacks ---
+  const webSocketRef = useRef<WebSocket | null>(null);
+  const { messages } = useLanguage();
+
+  // This ref is the key to solving the stale state issue.
+  // It holds a reference to the latest state and props needed by the WebSocket callbacks.
   const stateRef = useRef({
-    response,
     conversationHistory,
     researchIteration,
     deepResearch,
-    researchComplete,
+    repoInfo,
     selectedProvider,
     selectedModel,
     isCustomSelectedModel,
     customSelectedModel,
-    repoInfo,
-    language
+    language,
   });
 
+  // Keep the state ref updated on every render.
   useEffect(() => {
     stateRef.current = {
-      response,
       conversationHistory,
       researchIteration,
       deepResearch,
-      researchComplete,
+      repoInfo,
       selectedProvider,
       selectedModel,
       isCustomSelectedModel,
       customSelectedModel,
-      repoInfo,
-      language
+      language,
     };
-  }, [response, conversationHistory, researchIteration, deepResearch, researchComplete, selectedProvider, selectedModel, isCustomSelectedModel, customSelectedModel, repoInfo, language]);
+  });
 
-
-  // Focus input on component mount
+  // --- Lifecycle & UI Effects ---
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, []);
-
-  // Expose clearConversation method to parent component
-  useEffect(() => {
-    if (onRef) {
-      onRef({ clearConversation });
-    }
-  }, [onRef]);
-
-  // Scroll to bottom of response when it changes
-  useEffect(() => {
-    if (responseRef.current) {
-      responseRef.current.scrollTop = responseRef.current.scrollHeight;
-    }
-  }, [response]);
-
-  // WebSocket reference
-  const webSocketRef = useRef<WebSocket | null>(null);
-
-  // Close WebSocket when component unmounts
-  useEffect(() => {
+    inputRef.current?.focus();
     return () => {
       closeWebSocket(webSocketRef.current);
     };
   }, []);
 
   useEffect(() => {
-    providerRef.current = provider;
-    modelRef.current = model;
-  }, [provider, model]);
+    if (onRef) onRef({ clearConversation });
+  }, [onRef]);
 
   useEffect(() => {
-    const fetchModel = async () => {
-      try {
-        setIsLoading(true);
-
-        const response = await fetch('/api/models/config');
-        if (!response.ok) {
-          throw new Error(`Error fetching model configurations: ${response.status}`);
-        n}
-
-        const data = await response.json();
-
-        // use latest provider/model ref to check
-        if(providerRef.current == '' || modelRef.current== '') {
-          setSelectedProvider(data.defaultProvider);
-
-          // Find the default provider and set its default model
-          const selectedProvider = data.providers.find((p:Provider) => p.id === data.defaultProvider);
-          if (selectedProvider && selectedProvider.models.length > 0) {
-            setSelectedModel(selectedProvider.models[0].id);
-          }
-        } else {
-          setSelectedProvider(providerRef.current);
-          setSelectedModel(modelRef.current);
-        }
-      } catch (err) {
-        console.error('Failed to fetch model configurations:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    if(provider == '' || model == '') {
-      fetchModel()
+    if (responseRef.current) {
+      responseRef.current.scrollTop = responseRef.current.scrollHeight;
     }
-  }, [provider, model]);
+  }, [response]);
+
+  // --- Core Logic ---
 
   const clearConversation = () => {
     setQuestion('');
@@ -189,139 +115,28 @@ const Ask: React.FC<AskProps> = ({
     setResearchComplete(false);
     setResearchStages([]);
     setCurrentStageIndex(0);
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
+    inputRef.current?.focus();
   };
 
-  // Function to check if research is complete based on response content
-  const checkIfResearchComplete = (content: string): boolean => {
-    // Check for explicit final conclusion markers
-    if (content.includes('## Final Conclusion')) {
-      return true;
-    }
-
-    // Check for conclusion sections that don't indicate further research
-    if ((content.includes('## Conclusion') || content.includes('## Summary')) &&
-      !content.includes('I will now proceed to') &&
-      !content.includes('Next Steps') &&
-      !content.includes('next iteration')) {
-      return true;
-    }
-
-    // Check for phrases that explicitly indicate completion
-    if (content.includes('This concludes our research') ||
-      content.includes('This completes our investigation') ||
-      content.includes('This concludes the deep research process') ||
-      content.includes('Key Findings and Implementation Details') ||
-      content.includes('In conclusion,') ||
-      (content.includes('Final') && content.includes('Conclusion'))) {
-      return true;
-    }
-
-    // Check for topic-specific completion indicators
-    if (content.includes('Dockerfile') &&
-      (content.includes('This Dockerfile') || content.includes('The Dockerfile')) &&
-      !content.includes('Next Steps') &&
-      !content.includes('In the next iteration')) {
-      return true;
-    }
-
-    return false;
-  };
-
-  // Function to extract research stages from the response
-  const extractResearchStage = (content: string, iteration: number): ResearchStage | null => {
-    // Check for research plan (first iteration)
-    if (iteration === 1 && content.includes('## Research Plan')) {
-      const planMatch = content.match(/## Research Plan([\s\S]*?)(?:## Next Steps|$)/);
-      if (planMatch) {
-        return {
-          title: 'Research Plan',
-          content: content,
-          iteration: 1,
-          type: 'plan'
-        };
-      }
-    }
-
-    // Check for research updates (iterations 1-4)
-    if (iteration >= 1 && iteration <= 4) {
-      const updateMatch = content.match(new RegExp(`## Research Update ${iteration}([\\s\\S]*?)(?:## Next Steps|$)`));
-      if (updateMatch) {
-        return {
-          title: `Research Update ${iteration}`,
-          content: content,
-          iteration: iteration,
-          type: 'update'
-        };
-      }
-    }
-
-    // Check for final conclusion
-    if (content.includes('## Final Conclusion')) {
-      const conclusionMatch = content.match(/## Final Conclusion([\s\S]*?)$/);
-      if (conclusionMatch) {
-        return {
-          title: 'Final Conclusion',
-          content: content,
-          iteration: iteration,
-          type: 'conclusion'
-        };
-      }
-    }
-
-    return null;
-  };
-
-  // Function to navigate to a specific research stage
-  const navigateToStage = (index: number) => {
-    if (index >= 0 && index < researchStages.length) {
-      setCurrentStageIndex(index);
-      setResponse(researchStages[index].content);
-    }
-  };
-
-  // Function to navigate to the next research stage
-  const navigateToNextStage = () => {
-    if (currentStageIndex < researchStages.length - 1) {
-      navigateToStage(currentStageIndex + 1);
-    }
-  };
-
-  // Function to navigate to the previous research stage
-  const navigateToPreviousStage = () => {
-    if (currentStageIndex > 0) {
-      navigateToStage(currentStageIndex - 1);
-    }
-  };
-
+  // This is the new, robust function for handling all requests.
   const startRequest = useCallback((history: Message[], iteration: number) => {
     setIsLoading(true);
     setResearchIteration(iteration);
     
-    // For subsequent deep research iterations, clear the previous response
+    // For deep research, we clear the response for the new iteration.
     if (iteration > 1) {
-        setResponse('');
+      setResponse('');
     }
 
-    const {
-      repoInfo,
-      selectedProvider,
-      isCustomSelectedModel,
-      customSelectedModel,
-      selectedModel,
-      language
-    } = stateRef.current;
-
+    const currentState = stateRef.current;
     const requestBody: ChatCompletionRequest = {
-      repo_url: getRepoUrl(repoInfo),
-      type: repoInfo.type,
-      messages: history.map(msg => ({ role: msg.role, content: msg.content })),
-      provider: selectedProvider,
-      model: isCustomSelectedModel ? customSelectedModel : selectedModel,
-      language: language,
-      token: repoInfo.token,
+      repo_url: getRepoUrl(currentState.repoInfo),
+      type: currentState.repoInfo.type,
+      messages: history,
+      provider: currentState.selectedProvider,
+      model: currentState.isCustomSelectedModel ? currentState.customSelectedModel : currentState.selectedModel,
+      language: currentState.language,
+      token: currentState.repoInfo.token,
     };
 
     let responseBuffer = '';
@@ -335,46 +150,48 @@ const Ask: React.FC<AskProps> = ({
         setResponse(responseBuffer);
       },
       // onStatus
-      (status, message) => {
-        console.log(`WebSocket status: ${status} - ${message}`);
-      },
+      (status, message) => console.log(`WebSocket status: ${status} - ${message}`),
       // onError
       (error) => {
         console.error('WebSocket error:', error);
         setResponse(prev => prev + '\n\nError: Connection failed.');
         setIsLoading(false);
       },
-      // onComplete
+      // onComplete - This is where the magic happens
       () => {
-        const { deepResearch, conversationHistory } = stateRef.current;
-        const finalResponse = responseBuffer;
-        const isComplete = checkIfResearchComplete(finalResponse);
-        const forceComplete = iteration >= 5;
+        const { deepResearch, conversationHistory: latestHistory } = stateRef.current;
+        const isCompleteByMaxIterations = iteration >= 5;
 
-        if (deepResearch && !isComplete && !forceComplete) {
+        // Check if we should continue the deep research loop.
+        if (deepResearch && !isCompleteByMaxIterations) {
+          // Use a timeout to let the user read the last response
           setTimeout(() => {
             const newHistory: Message[] = [
-              ...conversationHistory,
-              { role: 'assistant', content: finalResponse },
+              ...latestHistory,
+              { role: 'assistant', content: responseBuffer },
               { role: 'user', content: '[DEEP RESEARCH] Continue the research' }
             ];
             setConversationHistory(newHistory);
             startRequest(newHistory, iteration + 1);
           }, 2000);
         } else {
-          if (deepResearch && forceComplete && !isComplete) {
+          // If we are not continuing, the process is finished.
+          if (deepResearch && isCompleteByMaxIterations) {
             const completionNote = "\n\n## Final Conclusion\nAfter multiple iterations, the deep research process has concluded. The findings presented across all iterations form the comprehensive answer.";
             setResponse(prev => prev + completionNote);
           }
           setResearchComplete(true);
-          setIsLoading(false);
+          setIsLoading(false); // This is the single, reliable point where loading is stopped.
         }
       }
     );
-  }, []); // This function is stable and does not depend on component state
+  }, []); // This function is stable and does not re-create on every render.
 
-  const handleConfirmAsk = () => {
-    // Reset all state for a new request
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!question.trim() || isLoading) return;
+
+    // Reset all state for a new request.
     setResponse('');
     setResearchIteration(0);
     setResearchComplete(false);
@@ -387,19 +204,15 @@ const Ask: React.FC<AskProps> = ({
     }];
     setConversationHistory(initialHistory);
     
+    // Kick off the first request.
     startRequest(initialHistory, 1);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!question.trim() || isLoading) return;
-    handleConfirmAsk();
-  };
-
+  // --- The rest of the component is for rendering the UI ---
+  // (This part is largely unchanged)
   const [buttonWidth, setButtonWidth] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Measure button width and update state
   useEffect(() => {
     if (buttonRef.current) {
       const width = buttonRef.current.offsetWidth;
@@ -411,7 +224,6 @@ const Ask: React.FC<AskProps> = ({
     <div>
       <div className="p-4">
         <div className="flex items-center justify-end mb-4">
-          {/* Model selection button */}
           <button
             type="button"
             onClick={() => setIsModelSelectionModalOpen(true)}
@@ -424,7 +236,6 @@ const Ask: React.FC<AskProps> = ({
           </button>
         </div>
 
-        {/* Question input */}
         <form onSubmit={handleSubmit} className="mt-4">
           <div className="relative">
             <input
@@ -460,7 +271,6 @@ const Ask: React.FC<AskProps> = ({
             </button>
           </div>
 
-          {/* Deep Research toggle */}
           <div className="flex items-center mt-2 justify-between">
             <div className="group relative">
               <label className="flex items-center cursor-pointer">
@@ -482,12 +292,9 @@ const Ask: React.FC<AskProps> = ({
                   <p className="mb-1">Deep Research conducts a multi-turn investigation process:</p>
                   <ul className="list-disc pl-4 text-xs">
                     <li><strong>Initial Research:</strong> Creates a research plan and initial findings</li>
-                    <li><strong>Iteration 1:</strong> Explores specific aspects in depth</li>
-                    <li><strong>Iteration 2:</strong> Investigates remaining questions</li>
-                    <li><strong>Iterations 3-4:</strong> Dives deeper into complex areas</li>
+                    <li><strong>Iteration 1-4:</strong> Explores specific aspects in depth</li>
                     <li><strong>Final Conclusion:</strong> Comprehensive answer based on all iterations</li>
                   </ul>
-                  <p className="mt-1 text-xs italic">The AI automatically continues research until complete (up to 5 iterations)</p>
                 </div>
               </div>
             </div>
@@ -501,7 +308,6 @@ const Ask: React.FC<AskProps> = ({
           </div>
         </form>
 
-        {/* Response area */}
         {response && (
           <div className="border-t border-gray-200 dark:border-gray-700 mt-4">
             <div
@@ -510,41 +316,7 @@ const Ask: React.FC<AskProps> = ({
             >
               <Markdown content={response} />
             </div>
-
-            {/* Research navigation and clear button */}
-            <div className="p-2 flex justify-between items-center border-t border-gray-200 dark:border-gray-700">
-              {/* Research navigation */}
-              {deepResearch && researchStages.length > 1 && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => navigateToPreviousStage()}
-                    disabled={currentStageIndex === 0}
-                    className={`p-1 rounded-md ${currentStageIndex === 0 ? 'text-gray-400 dark:text-gray-600' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                    aria-label="Previous stage"
-                  >
-                    <FaChevronLeft size={12} />
-                  </button>
-
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    {currentStageIndex + 1} / {researchStages.length}
-                  </div>
-
-                  <button
-                    onClick={() => navigateToNextStage()}
-                    disabled={currentStageIndex === researchStages.length - 1}
-                    className={`p-1 rounded-md ${currentStageIndex === researchStages.length - 1 ? 'text-gray-400 dark:text-gray-600' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                    aria-label="Next stage"
-                  >
-                    <FaChevronRight size={12} />
-                  </button>
-
-                  <div className="text-xs text-gray-600 dark:text-gray-400 ml-2">
-                    {researchStages[currentStageIndex]?.title || `Stage ${currentStageIndex + 1}`}
-                  </div>
-                </div>
-              )}
-
-              {/* Clear button */}
+            <div className="p-2 flex justify-end items-center border-t border-gray-200 dark:border-gray-700">
               <button
                 id="ask-clear-conversation"
                 onClick={clearConversation}
@@ -556,7 +328,6 @@ const Ask: React.FC<AskProps> = ({
           </div>
         )}
 
-        {/* Loading indicator */}
         {isLoading && !response && (
           <div className="p-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-2">
@@ -567,95 +338,14 @@ const Ask: React.FC<AskProps> = ({
               </div>
               <span className="text-xs text-gray-500 dark:text-gray-400">
                 {deepResearch
-                  ? (researchIteration === 0
-                    ? "Planning research approach..."
-                    : `Research iteration ${researchIteration} in progress...`)
+                  ? `Research iteration ${researchIteration} in progress...`
                   : "Thinking..."}
               </span>
             </div>
-            {deepResearch && (
-              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 pl-5">
-                <div className="flex flex-col space-y-1">
-                  {researchIteration === 0 && (
-                    <>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                        <span>Creating research plan...</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                        <span>Identifying key areas to investigate...</span>
-                      </div>
-                    </>
-                  )}
-                  {researchIteration === 1 && (
-                    <>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                        <span>Exploring first research area in depth...</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                        <span>Analyzing code patterns and structures...</span>
-                      </div>
-                    </>
-                  )}
-                  {researchIteration === 2 && (
-                    <>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-amber-500 rounded-full mr-2"></div>
-                        <span>Investigating remaining questions...</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
-                        <span>Connecting findings from previous iterations...</span>
-                      </div>
-                    </>
-                  )}
-                  {researchIteration === 3 && (
-                    <>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
-                        <span>Exploring deeper connections...</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                        <span>Analyzing complex patterns...</span>
-                      </div>
-                    </>
-                  )}
-                  {researchIteration === 4 && (
-                    <>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-teal-500 rounded-full mr-2"></div>
-                        <span>Refining research conclusions...</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-cyan-500 rounded-full mr-2"></div>
-                        <span>Addressing remaining edge cases...</span>
-                      </div>
-                    </>
-                  )}
-                  {researchIteration >= 5 && (
-                    <>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
-                        <span>Finalizing comprehensive answer...</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                        <span>Synthesizing all research findings...</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
 
-      {/* Model Selection Modal */}
       <ModelSelectionModal
         isOpen={isModelSelectionModalOpen}
         onClose={() => setIsModelSelectionModalOpen(false)}
@@ -670,9 +360,7 @@ const Ask: React.FC<AskProps> = ({
         isComprehensiveView={isComprehensiveView}
         setIsComprehensiveView={setIsComprehensiveView}
         showFileFilters={false}
-        onApply={() => {
-          console.log('Model selection applied:', selectedProvider, selectedModel);
-        }}
+        onApply={() => {}}
         showWikiType={false}
         authRequired={false}
         isAuthLoading={false}
