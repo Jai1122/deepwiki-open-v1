@@ -173,10 +173,32 @@ CHUNK_OVERLAP=200          # Overlap between chunks
 
 If you encounter issues with vLLM configuration:
 
+#### Common Error: "Model does not exist"
+If you see errors like `"the model 'jina-embeddings-v3' does not exist"`:
+
+1. **Check available models** on your vLLM deployment:
+   ```bash
+   # Run the validation script
+   cd api && python validate_models.py
+   ```
+
+2. **Update model names** in your `.env` file to match your deployment:
+   ```bash
+   # Find the correct model names and update these:
+   EMBEDDING_MODEL_NAME=your_actual_embedding_model_name
+   VLLM_MODEL_NAME=your_actual_llm_model_name
+   EMBEDDING_DIMENSIONS=1024  # Adjust based on your model
+   ```
+
+3. **Common model names** to try:
+   - For embeddings: `jina-embeddings-v2`, `text-embedding-ada-002`, `sentence-transformers/all-MiniLM-L6-v2`
+   - For LLM: Check your vLLM deployment's model list
+
+#### General Troubleshooting:
 1. **Check API Keys**: Ensure your vLLM API keys are correctly set in `.env`
 2. **Verify Endpoints**: Confirm your vLLM base URLs are accessible
-3. **Model Names**: Make sure the model names match your vLLM deployment
-4. **Network Access**: Ensure your deployment has network access to the vLLM endpoints
+3. **Network Access**: Ensure your deployment has network access to the vLLM endpoints
+4. **Test Connectivity**: Use the validation script: `cd api && python validate_models.py`
 5. **Fallback**: You can always switch to other providers (Google, OpenAI, etc.) by updating the `default_provider` in `api/config/generator.json`
 
 ## 🔍 How It Works

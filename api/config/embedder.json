@@ -7,8 +7,8 @@
     },
     "batch_size": 10,
     "model_kwargs": {
-      "model": "jina-embeddings-v3",
-      "dimensions": 1024
+      "model": "${EMBEDDING_MODEL_NAME}",
+      "dimensions": "${EMBEDDING_DIMENSIONS}"
     }
   },
   "retriever": {
