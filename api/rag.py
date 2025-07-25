@@ -148,7 +148,8 @@ class RAG(adal.Component):
             
         try:
             # Manually embed the query to ensure the same embedder is used.
-            query_embedding = self.embedder.embed_query(query)
+            # The adal.Embedder is callable.
+            query_embedding = self.embedder(query)
             
             # Pass the embedding vector directly to the retriever.
             retrieved_results = self.retriever(query_embedding)
