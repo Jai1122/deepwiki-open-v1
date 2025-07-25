@@ -150,12 +150,11 @@ class RAG(adal.Component):
             # Manually embed the query to ensure the same embedder is used.
             embedder_output = self.embedder(query)
             
-            # The embedder returns a list of EmbedderOutput objects.
-            # We need to extract the vector from the first one.
-            if not embedder_output or not hasattr(embedder_output[0], 'vector'):
+            # The embedder returns a single EmbedderOutput object.
+            if not embedder_output or not hasattr(embedder_output, 'vector'):
                 raise ValueError("Embedder did not return a valid vector.")
             
-            query_vector = embedder_output[0].vector
+            query_vector = embedder_output.vector
 
             # Pass the embedding vector directly to the retriever.
             # The retriever expects a list of vectors.
