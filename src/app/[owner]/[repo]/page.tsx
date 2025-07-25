@@ -556,11 +556,9 @@ export default function RepoWikiPage() {
         <aside className="col-span-3">
           {wikiStructure && (
             <WikiTreeView
-              structure={wikiStructure}
-              generatedPages={generatedPages}
-              pagesInProgress={pagesInProgress}
-              onSelectPage={handlePageSelect}
-              selectedPageId={currentPageId}
+              wikiStructure={wikiStructure}
+              currentPageId={currentPageId}
+              onPageSelect={handlePageSelect}
             />
           )}
         </aside>

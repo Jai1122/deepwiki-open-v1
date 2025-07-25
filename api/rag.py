@@ -155,7 +155,7 @@ class RAG(adal.Component):
                 raise ValueError("Embedder did not return a valid vector.")
             
             # The data field is a list of Embedding objects, get the vector from the first one.
-            query_vector = embedder_output.data[0].vector
+            query_vector = embedder_output.data[0].embedding
 
             # Pass the embedding vector directly to the retriever.
             # The retriever expects a list of vectors.
