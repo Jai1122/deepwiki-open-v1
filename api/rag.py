@@ -134,7 +134,7 @@ class RAG(adal.Component):
             **retriever_config,
             embedder=self.embedder,
             documents=self.transformed_docs,
-            document_map_func=lambda doc: doc.embedding,
+            document_map_func=lambda doc: doc.vector,
         )
 
     def call(self, query: str, language: str = "en") -> Tuple[List, List]:
@@ -147,17 +147,27 @@ class RAG(adal.Component):
             return ([], [])
             
         try:
-            # Manually embed the query to ensure the same embedder is used.
-            embedder_output = self.embedder(query)
-            
-            # The embedder returns an EmbedderOutput object, and the vector is in the `data` field.
-            if not embedder_output or not hasattr(embedder_output, 'data') or not embedder_output.data:
-                raise ValueError("Embedder did not return a valid vector.")
-            
-            # The data field is a list of Embedding objects, get the vector from the first one.
-            query_vector = embedder_output.data[0].embedding
+            # To ensure the query vector is generated in the exact same way as the
+            # document vectors, we will wrap the query in a Document object and
+            # pass it through the same ToEmbeddings pipeline component.
+            from adalflow.components.data_process import ToEmbeddings
+            from adalflow.core.types import Document
 
-            # Pass the embedding vector directly to the retriever.
+            # 1. Create a single-document pipeline
+            query_pipeline = ToEmbeddings(embedder=self.embedder)
+            
+            # 2. Wrap the query string in a Document object
+            query_document = Document(text=query)
+            
+            # 3. Process the document to get the embedding
+            transformed_query_doc = query_pipeline([query_document])
+            
+            if not transformed_query_doc or not hasattr(transformed_query_doc[0], 'vector'):
+                raise ValueError("Query embedding pipeline did not return a valid vector.")
+
+            query_vector = transformed_query_doc[0].vector
+
+            # 4. Pass the embedding vector directly to the retriever.
             # The retriever expects a list of vectors.
             retrieved_results = self.retriever([query_vector])
             
