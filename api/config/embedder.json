@@ -2,13 +2,13 @@
   "embedder": {
     "client_class": "OpenAIClient",
     "initialize_kwargs": {
-      "api_key": "${VLLM_API_KEY}",
-      "base_url": "${VLLM_EMBEDDING_BASE_URL}"
+      "api_key": "${OPENAI_API_KEY}",
+      "base_url": "${OPENAI_API_BASE_URL}"
     },
     "batch_size": 10,
     "model_kwargs": {
-      "model": "REPLACE_WITH_YOUR_VLLM_EMBEDDING_MODEL_ID",
-      "dimensions": 256
+      "model": "jina-embeddings-v3",
+      "dimensions": 1024
     }
   },
   "retriever": {

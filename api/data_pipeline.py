@@ -18,7 +18,7 @@ import requests
 from requests.exceptions import RequestException
 
 from .tools.embedder import get_embedder
-from .utils import get_local_file_content, count_tokens
+from .utils import get_local_file_content, count_tokens, estimate_processing_priority, smart_chunk_text
 
 logger = logging.getLogger(__name__)
 
@@ -63,28 +63,35 @@ def read_all_documents(
     excluded_dirs: List[str] = None,
     excluded_files: List[str] = None,
     included_dirs: List[str] = None,
-    included_files: List[str] = None
+    included_files: List[str] = None,
+    max_total_tokens: int = 1000000,  # Max tokens to process across all files
+    prioritize_files: bool = True      # Whether to prioritize important files
 ) -> List[Document]:
     """
     Reads all files from a directory, splits them into chunks, and returns a list of Document objects.
-    This version processes files one by one and handles directory exclusions correctly.
+    Enhanced with smart processing for large repositories.
     """
     splitter_config = configs.get("text_splitter", {})
+    
+    # Use smarter chunking for large repos
+    chunk_size = min(splitter_config.get("chunk_size", 1000), 2000)  # Cap chunk size
+    chunk_overlap = min(splitter_config.get("chunk_overlap", 200), chunk_size // 4)
+    
     text_splitter = TextSplitter(
         split_by=splitter_config.get("split_by", "word"),
-        chunk_size=splitter_config.get("chunk_size", 1000),
-        chunk_overlap=splitter_config.get("chunk_overlap", 200),
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
     )
 
     all_documents = []
     processed_files_log = []
     rejected_files_log = []
+    file_candidates = []  # Store files with their priorities for processing
     
     final_excluded_dirs = DEFAULT_EXCLUDED_DIRS + (excluded_dirs or [])
     final_excluded_files = DEFAULT_EXCLUDED_FILES + (excluded_files or [])
 
     # Normalize exclusion patterns for reliable matching
-    # Example: './node_modules/' becomes 'node_modules'
     normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs]
 
     # Get filename patterns for exclusion from repo config
@@ -92,18 +99,19 @@ def read_all_documents(
     excluded_filename_patterns = file_filters_config.get("excluded_filename_patterns", [])
 
     logger.info(f"Starting to walk directory: {path}")
+    
+    # First pass: collect all candidate files with priorities
     for root, dirs, files in os.walk(path, topdown=True):
         # Filter directories in-place to prevent traversing them
         dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
         current_dir_relative = os.path.relpath(root, path)
-        logger.info(f"Processing directory: {current_dir_relative}")
         
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
             normalized_relative_path = relative_path.replace('\\', '/')
 
-            # New check for filename patterns
+            # Skip excluded files
             if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_filename_patterns):
                 rejected_files_log.append(f"{normalized_relative_path} (matches filename pattern)")
                 continue
@@ -116,31 +124,112 @@ def read_all_documents(
                 rejected_files_log.append(f"{normalized_relative_path} (not in included files)")
                 continue
 
+            # Estimate file size and priority
             try:
-                content = get_local_file_content(file_path)
-                if not content.strip():
-                    rejected_files_log.append(f"{normalized_relative_path} (empty content)")
+                file_size = os.path.getsize(file_path)
+                priority = estimate_processing_priority(normalized_relative_path)
+                
+                # Skip very large files early
+                if file_size > 10 * 1024 * 1024:  # 10MB
+                    rejected_files_log.append(f"{normalized_relative_path} (file too large: {file_size} bytes)")
                     continue
+                
+                file_candidates.append({
+                    'path': file_path,
+                    'relative_path': relative_path,
+                    'normalized_path': normalized_relative_path,
+                    'size': file_size,
+                    'priority': priority
+                })
+                
+            except OSError as e:
+                rejected_files_log.append(f"{normalized_relative_path} (file access error: {e})")
+                continue
 
-                processed_files_log.append(normalized_relative_path)
-                chunks = text_splitter.split_text(content)
-                for chunk_content in chunks:
-                    doc = Document(text=chunk_content)
-                    doc.metadata = {"source": relative_path}
-                    all_documents.append(doc)
+    # Sort files by priority if enabled
+    if prioritize_files:
+        file_candidates.sort(key=lambda x: (x['priority'], x['size']))
+        logger.info(f"Processing {len(file_candidates)} files in priority order")
+    
+    # Second pass: process files with token budget management
+    total_tokens_processed = 0
+    files_processed = 0
+    
+    for file_info in file_candidates:
+        if total_tokens_processed >= max_total_tokens and files_processed >= 100:
+            logger.warning(f"Reached token limit ({max_total_tokens}) or file limit. Stopping processing.")
+            break
+            
+        try:
+            content = get_local_file_content(file_info['path'])
+            if not content.strip():
+                rejected_files_log.append(f"{file_info['normalized_path']} (empty content)")
+                continue
 
-            except Exception as e:
-                rejected_files_log.append(f"{normalized_relative_path} (error: {e})")
-                logger.warning(f"Could not process file {file_path}: {e}")
+            # Estimate content tokens
+            content_tokens = count_tokens(content)
+            
+            # Skip or truncate very large files
+            if content_tokens > 50000:  # Very large file
+                if file_info['priority'] <= 2:  # Only process if high priority
+                    logger.info(f"Large file ({content_tokens} tokens): {file_info['normalized_path']}, using smart chunking")
+                    # Use smart chunking for large files
+                    smart_chunks = smart_chunk_text(content, max_tokens=2000, overlap_tokens=100)
+                    content = '\n\n'.join(smart_chunks[:3])  # Take first 3 chunks only
+                    content_tokens = count_tokens(content)
+                else:
+                    rejected_files_log.append(f"{file_info['normalized_path']} (too large and low priority)")
+                    continue
+            
+            # Check if we can afford to process this file
+            if total_tokens_processed + content_tokens > max_total_tokens:
+                if files_processed < 50:  # If we haven't processed many files yet, try smaller chunk
+                    # Truncate content to fit remaining budget
+                    remaining_budget = max_total_tokens - total_tokens_processed
+                    if remaining_budget > 1000:  # Only if meaningful budget remains
+                        ratio = remaining_budget / content_tokens
+                        content = content[:int(len(content) * ratio)]
+                        content_tokens = remaining_budget
+                    else:
+                        break
+                else:
+                    break
 
-    logger.info(f"Finished walking directory: {path}")
-    logger.info(f"Processed {len(processed_files_log)} files.")
+            processed_files_log.append(file_info['normalized_path'])
+            
+            # Process chunks
+            chunks = text_splitter.split_text(content)
+            for i, chunk_content in enumerate(chunks):
+                doc = Document(text=chunk_content)
+                doc.metadata = {
+                    "source": file_info['relative_path'],
+                    "priority": file_info['priority'],
+                    "chunk_index": i,
+                    "total_chunks": len(chunks)
+                }
+                all_documents.append(doc)
+            
+            total_tokens_processed += content_tokens
+            files_processed += 1
+            
+            # Progress logging for large repos
+            if files_processed % 100 == 0:
+                logger.info(f"Processed {files_processed} files, {total_tokens_processed} tokens")
+
+        except Exception as e:
+            rejected_files_log.append(f"{file_info['normalized_path']} (error: {e})")
+            logger.warning(f"Could not process file {file_info['path']}: {e}")
+
+    logger.info(f"Finished processing repository: {path}")
+    logger.info(f"Processed {len(processed_files_log)} files ({total_tokens_processed} tokens).")
     logger.info(f"Rejected {len(rejected_files_log)} files.")
-    # Detailed logging for transparency
-    logger.debug(f"Processed files: {json.dumps(processed_files_log, indent=2)}")
-    logger.debug(f"Rejected files: {json.dumps(rejected_files_log, indent=2)}")
-
     logger.info(f"Total documents after chunking: {len(all_documents)}")
+    
+    # Detailed logging for transparency
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"Processed files: {json.dumps(processed_files_log, indent=2)}")
+        logger.debug(f"Rejected files: {json.dumps(rejected_files_log, indent=2)}")
+
     return all_documents
 
 
@@ -193,7 +282,8 @@ class DatabaseManager:
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None, is_ollama_embedder: bool = None,
                        excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                       included_dirs: List[str] = None, included_files: List[str] = None) -> List[Document]:
+                       included_dirs: List[str] = None, included_files: List[str] = None,
+                       max_total_tokens: int = 1000000, prioritize_files: bool = True) -> List[Document]:
         """
         Main method to prepare the database. It handles cloning, loading from cache,
         or processing and saving documents.
@@ -224,7 +314,8 @@ class DatabaseManager:
             download_repo(repo_url_or_path, repo_path, type, access_token)
 
         documents = read_all_documents(
-            repo_path, is_ollama_embedder, excluded_dirs, excluded_files, included_dirs, included_files
+            repo_path, is_ollama_embedder, excluded_dirs, excluded_files, included_dirs, included_files,
+            max_total_tokens, prioritize_files
         )
         
         if not documents:

@@ -25,7 +25,9 @@
 - **Easy Navigation**: Simple, intuitive interface to explore the wiki
 - **Ask Feature**: Chat with your repository using RAG-powered AI to get accurate answers
 - **DeepResearch**: Multi-turn research process that thoroughly investigates complex topics
-- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, and local Ollama models
+- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, vLLM, and local Ollama models
+- **Large Repository Support**: Intelligent processing of large codebases with smart chunking and summarization
+- **vLLM Integration**: Full support for secured, remote vLLM deployments with configurable endpoints
 
 ## 🚀 Quick Start (Super Easy!)
 
@@ -37,16 +39,21 @@ git clone https://github.com/AsyncFuncAI/deepwiki-open.git
 cd deepwiki-open
 
 # Create a .env file with your API keys
-echo "GOOGLE_API_KEY=your_google_api_key" > .env
-echo "OPENAI_API_KEY=your_openai_api_key" >> .env
-# Optional: Add OpenRouter API key if you want to use OpenRouter models
-echo "OPENROUTER_API_KEY=your_openrouter_api_key" >> .env
-# Optional: Add Ollama host if not local. defaults to http://localhost:11434
-echo "OLLAMA_HOST=your_ollama_host" >> .env
-# Optional: Add Azure API key, endpoint and version if you want to use azure openai models
-echo "AZURE_OPENAI_API_KEY=your_azure_openai_api_key" >> .env
-echo "AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint" >> .env
-echo "AZURE_OPENAI_VERSION=your_azure_openai_version" >> .env
+# For vLLM deployment (recommended for large repositories):
+echo "VLLM_API_KEY=your_vllm_api_key" > .env
+echo "VLLM_API_BASE_URL=https://myvllm.com/qwen3-14b/v1" >> .env
+echo "VLLM_MODEL_NAME=/app/models/Qwen3-14B-FP8" >> .env
+echo "OPENAI_API_KEY=your_embedding_api_key" >> .env
+echo "OPENAI_API_BASE_URL=https://myvllm.com/jina-embeddings-v3/v1" >> .env
+
+# Or use other providers:
+# echo "GOOGLE_API_KEY=your_google_api_key" > .env
+# echo "OPENAI_API_KEY=your_openai_api_key" >> .env
+# echo "OPENROUTER_API_KEY=your_openrouter_api_key" >> .env
+# echo "OLLAMA_HOST=your_ollama_host" >> .env
+# echo "AZURE_OPENAI_API_KEY=your_azure_openai_api_key" >> .env
+# echo "AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint" >> .env
+# echo "AZURE_OPENAI_VERSION=your_azure_openai_version" >> .env
 # Run with Docker Compose
 docker-compose up
 ```
@@ -108,6 +115,70 @@ yarn dev
 3. For private repositories, click "+ Add access tokens" and enter your GitHub or GitLab personal access token
 4. Click "Generate Wiki" and watch the magic happen!
 
+## 🏗️ vLLM Configuration for Large Repositories
+
+DeepWiki now includes enhanced support for secured, remote vLLM deployments and robust handling of large repositories. This is particularly useful for complex enterprise codebases.
+
+### vLLM Setup
+
+1. **Configure your vLLM endpoints** in `.env`:
+   ```bash
+   # vLLM LLM Service
+   VLLM_API_KEY=your_vllm_api_key
+   VLLM_API_BASE_URL=https://myvllm.com/qwen3-14b/v1
+   VLLM_MODEL_NAME=/app/models/Qwen3-14B-FP8
+
+   # vLLM Embedding Service (OpenAI-compatible)
+   OPENAI_API_KEY=your_embedding_api_key
+   OPENAI_API_BASE_URL=https://myvllm.com/jina-embeddings-v3/v1
+   ```
+
+2. **Model Configuration**: The system automatically uses:
+   - **LLM Model**: `Qwen3-14B-FP8` (or your configured model)
+   - **Embedding Model**: `jina-embeddings-v3`
+   - **Context Window**: Up to 131K tokens
+   - **Max Completion**: Up to 8K tokens
+
+### Large Repository Handling
+
+DeepWiki includes several enhancements for processing large codebases:
+
+#### Smart File Prioritization
+- **High Priority**: Core source files (`/src/`, `/lib/`, `/app/`, `main.*`, `index.*`)
+- **Medium Priority**: Configuration files, documentation
+- **Lower Priority**: Tests, generated files, vendor code
+
+#### Intelligent Chunking
+- **Token Budget Management**: Configurable token limits prevent memory issues
+- **Smart Text Splitting**: Preserves semantic structure at natural boundaries
+- **Hierarchical Summarization**: Large files are intelligently summarized before processing
+
+#### Configuration Options
+```bash
+# Optional: Adjust processing limits
+MAX_TOTAL_TOKENS=1000000    # Total tokens across all files
+PRIORITIZE_FILES=true       # Enable smart file prioritization
+CHUNK_SIZE=1000            # Size of text chunks
+CHUNK_OVERLAP=200          # Overlap between chunks
+```
+
+### Benefits for Large Repositories
+- ✅ **No Token Overflow**: Robust handling prevents crashes from large codebases
+- ✅ **Smart Processing**: Prioritizes important files over generated/vendor code
+- ✅ **Memory Efficient**: Streaming and chunking keep memory usage low
+- ✅ **Fast Processing**: Parallel processing and smart caching reduce wait times
+- ✅ **Quality Output**: Hierarchical summarization maintains code understanding
+
+### Troubleshooting vLLM Setup
+
+If you encounter issues with vLLM configuration:
+
+1. **Check API Keys**: Ensure your vLLM API keys are correctly set in `.env`
+2. **Verify Endpoints**: Confirm your vLLM base URLs are accessible
+3. **Model Names**: Make sure the model names match your vLLM deployment
+4. **Network Access**: Ensure your deployment has network access to the vLLM endpoints
+5. **Fallback**: You can always switch to other providers (Google, OpenAI, etc.) by updating the `default_provider` in `api/config/generator.json`
+
 ## 🔍 How It Works
 
 DeepWiki uses AI to:
@@ -135,12 +206,14 @@ graph TD
     M -->|OpenRouter| E3[Generate with OpenRouter]
     M -->|Local Ollama| E4[Generate with Ollama]
     M -->|Azure| E5[Generate with Azure]
+    M -->|vLLM| E6[Generate with vLLM]
 
     E1 --> E[Generate Documentation]
     E2 --> E
     E3 --> E
     E4 --> E
     E5 --> E
+    E6 --> E
 
     D --> F[Create Visual Diagrams]
     E --> G[Organize as Wiki]

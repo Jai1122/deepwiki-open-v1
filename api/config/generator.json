@@ -5,16 +5,16 @@
       "client_class": "OpenAIClient",
       "initialize_kwargs": {
         "api_key": "${VLLM_API_KEY}",
-        "base_url": "${VLLM_GENERATION_BASE_URL}"
+        "base_url": "${VLLM_API_BASE_URL}"
       },
-      "default_model": "/app/models/Qwen3-14B-FP8",
+      "default_model": "${VLLM_MODEL_NAME}",
       "supportsCustomModel": true,
       "models": {
         "/app/models/Qwen3-14B-FP8": {
           "temperature": 0.7,
           "top_p": 0.8,
-          "context_window": 40960,
-          "max_completion_tokens": 4096
+          "context_window": 131072,
+          "max_completion_tokens": 8192
         }
       }
     },

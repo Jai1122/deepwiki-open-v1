@@ -22,6 +22,12 @@ AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION')
 AWS_ROLE_ARN = os.environ.get('AWS_ROLE_ARN')
 
+# vLLM Configuration
+VLLM_API_KEY = os.environ.get('VLLM_API_KEY')
+VLLM_API_BASE_URL = os.environ.get('VLLM_API_BASE_URL')
+VLLM_MODEL_NAME = os.environ.get('VLLM_MODEL_NAME')
+OPENAI_API_BASE_URL = os.environ.get('OPENAI_API_BASE_URL')
+
 # Set keys in environment (in case they're needed elsewhere in the code)
 if OPENAI_API_KEY:
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
@@ -37,6 +43,14 @@ if AWS_REGION:
     os.environ["AWS_REGION"] = AWS_REGION
 if AWS_ROLE_ARN:
     os.environ["AWS_ROLE_ARN"] = AWS_ROLE_ARN
+if VLLM_API_KEY:
+    os.environ["VLLM_API_KEY"] = VLLM_API_KEY
+if VLLM_API_BASE_URL:
+    os.environ["VLLM_API_BASE_URL"] = VLLM_API_BASE_URL
+if VLLM_MODEL_NAME:
+    os.environ["VLLM_MODEL_NAME"] = VLLM_MODEL_NAME
+if OPENAI_API_BASE_URL:
+    os.environ["OPENAI_API_BASE_URL"] = OPENAI_API_BASE_URL
 
 # Wiki authentication settings
 raw_auth_mode = os.environ.get('DEEPWIKI_AUTH_MODE', 'False')
@@ -368,3 +382,70 @@ def get_context_window_for_model(provider: str, model: str) -> int:
     except Exception:
         logger.exception(f"Error getting context_window for {provider}/{model}. Falling back to default of 8192.")
         return 8192
+
+def validate_provider_config(provider: str) -> bool:
+    """
+    Validate that a provider has the necessary configuration and credentials.
+    """
+    if provider not in configs.get("providers", {}):
+        logger.error(f"Provider '{provider}' not found in configuration")
+        return False
+    
+    provider_config = configs["providers"][provider]
+    
+    # Check if model_client is set
+    if "model_client" not in provider_config:
+        logger.error(f"Provider '{provider}' missing model_client configuration")
+        return False
+    
+    # Validate vLLM specific configuration
+    if provider == "vllm":
+        init_kwargs = provider_config.get("initialize_kwargs", {})
+        api_key = init_kwargs.get("api_key", "").replace("${VLLM_API_KEY}", os.environ.get("VLLM_API_KEY", ""))
+        base_url = init_kwargs.get("base_url", "").replace("${VLLM_API_BASE_URL}", os.environ.get("VLLM_API_BASE_URL", ""))
+        
+        if not api_key:
+            logger.error("vLLM API key not configured. Set VLLM_API_KEY environment variable.")
+            return False
+        if not base_url:
+            logger.error("vLLM base URL not configured. Set VLLM_API_BASE_URL environment variable.")
+            return False
+    
+    # Validate embedder for OpenAI base URL
+    embedder_config = configs.get("embedder", {})
+    if embedder_config:
+        init_kwargs = embedder_config.get("initialize_kwargs", {})
+        openai_base_url = init_kwargs.get("base_url", "").replace("${OPENAI_API_BASE_URL}", os.environ.get("OPENAI_API_BASE_URL", ""))
+        openai_api_key = init_kwargs.get("api_key", "").replace("${OPENAI_API_KEY}", os.environ.get("OPENAI_API_KEY", ""))
+        
+        if not openai_base_url:
+            logger.error("Embedder base URL not configured. Set OPENAI_API_BASE_URL environment variable.")
+            return False
+        if not openai_api_key:
+            logger.error("Embedder API key not configured. Set OPENAI_API_KEY environment variable.")
+            return False
+    
+    return True
+
+def get_max_tokens_for_model(provider: str, model: str) -> int:
+    """
+    Get the maximum completion tokens for a given model from the configuration.
+    """
+    try:
+        provider_config = configs.get("providers", {}).get(provider, {})
+        model_config = provider_config.get("models", {}).get(model)
+        
+        if model_config is None:
+            default_model_key = provider_config.get("default_model")
+            model_config = provider_config.get("models", {}).get(default_model_key, {})
+        
+        if 'max_completion_tokens' in model_config:
+            return model_config['max_completion_tokens']
+        
+        # Fallback to a default value
+        default_max_tokens = 4096
+        logger.warning(f"max_completion_tokens not configured for {provider}/{model}. Falling back to default of {default_max_tokens}.")
+        return default_max_tokens
+    except Exception:
+        logger.exception(f"Error getting max_completion_tokens for {provider}/{model}. Falling back to default of 4096.")
+        return 4096
