@@ -134,7 +134,7 @@ class RAG(adal.Component):
             **retriever_config,
             embedder=self.embedder,
             documents=self.transformed_docs,
-            document_map_func=lambda doc: doc.vector,
+            document_map_func=lambda doc: doc.embedding,
         )
 
     def call(self, query: str, language: str = "en") -> Tuple[List, List]:
