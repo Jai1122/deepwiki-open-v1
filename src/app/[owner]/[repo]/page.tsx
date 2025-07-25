@@ -200,9 +200,14 @@ export default function RepoWikiPage() {
             const branch = repoData.default_branch || 'main';
             setDefaultBranch(branch);
 
+            // GitHub's get tree API is limited for large repos, but recursive fetch should get most things.
+            // Note: For truly massive repos, this can still be truncated. A more robust solution would use the Git Database API.
             const treeResponse = await fetch(`${githubApiBaseUrl}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, { headers: createGithubHeaders(token) });
             if (!treeResponse.ok) throw new Error(`GitHub API error: ${treeResponse.statusText}`);
             const treeData = await treeResponse.json();
+            if (treeData.truncated) {
+              console.warn("GitHub API response was truncated. The file list may be incomplete.");
+            }
             fileTreeData = treeData.tree.filter((item: any) => item.type === 'blob').map((item: any) => item.path).join('\n');
 
             const readmeResponse = await fetch(`${githubApiBaseUrl}/repos/${owner}/${repo}/readme`, { headers: createGithubHeaders(token) });
@@ -222,17 +227,36 @@ export default function RepoWikiPage() {
             const branch = projectInfo.default_branch || 'main';
             setDefaultBranch(branch);
 
-            const treeUrl = `${projectInfoUrl}/repository/tree?recursive=true&per_page=100`;
-            const treeResponse = await fetch(treeUrl, { headers });
-            if (!treeResponse.ok) throw new Error(`GitLab tree error: ${treeResponse.statusText}`);
-            const treeData = await treeResponse.json();
-            fileTreeData = treeData.filter((item: any) => item.type === 'blob').map((item: any) => item.path).join('\n');
+            // Implement pagination for GitLab tree
+            let allFiles: any[] = [];
+            let page = 1;
+            while (true) {
+              const treeUrl = `${projectInfoUrl}/repository/tree?recursive=true&per_page=100&page=${page}`;
+              const treeResponse = await fetch(treeUrl, { headers });
+              if (!treeResponse.ok) throw new Error(`GitLab tree error: ${treeResponse.statusText}`);
+              const pageData = await treeResponse.json();
+              if (pageData.length === 0) break;
+              allFiles = allFiles.concat(pageData);
+              page++;
+            }
+            
+            fileTreeData = allFiles.filter((item: any) => item.type === 'blob').map((item: any) => item.path).join('\n');
 
             const readmeUrl = `${projectInfoUrl}/repository/files/README.md/raw?ref=${branch}`;
             const readmeResponse = await fetch(readmeUrl, { headers });
             if (readmeResponse.ok) readmeContent = await readmeResponse.text();
+        } else if (repoInfo.type === 'local' && repoInfo.localPath) {
+            const response = await fetch(`/local_repo/structure?path=${encodeURIComponent(repoInfo.localPath)}`);
+            if (!response.ok) {
+                const errorData = await response.text();
+                throw new Error(`Local repository API error (${response.status}): ${errorData}`);
+            }
+            const data = await response.json();
+            fileTreeData = data.file_tree;
+            readmeContent = data.readme;
+            setDefaultBranch('main'); // Local repos don't have a concept of a remote branch
         }
-        // Add Bitbucket and Local logic here if needed...
+        // Add Bitbucket logic here if needed...
 
         setFileTree(fileTreeData);
         setReadme(readmeContent);
