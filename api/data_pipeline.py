@@ -22,6 +22,82 @@ from .utils import get_local_file_content, count_tokens, estimate_processing_pri
 
 logger = logging.getLogger(__name__)
 
+def safe_chunk_for_embedding(text: str, max_tokens: int = 6000) -> List[str]:
+    """
+    Safely chunk text to ensure no chunk exceeds the embedding model's token limit.
+    Uses recursive splitting if needed.
+    """
+    if not text or not text.strip():
+        return []
+    
+    # Quick check - if text is small enough, return as-is
+    token_count = count_tokens(text)
+    if token_count <= max_tokens:
+        return [text]
+    
+    logger.debug(f"Text has {token_count} tokens, splitting to fit {max_tokens} token limit")
+    
+    # Use smart chunking to split the text
+    chunks = smart_chunk_text(text, max_tokens=max_tokens, overlap_tokens=min(200, max_tokens//10))
+    
+    # Validate each chunk and recursively split if needed
+    safe_chunks = []
+    for chunk in chunks:
+        chunk_tokens = count_tokens(chunk)
+        if chunk_tokens <= max_tokens:
+            safe_chunks.append(chunk)
+        else:
+            # Chunk is still too large, split more aggressively
+            logger.warning(f"Chunk still too large ({chunk_tokens} tokens), splitting more aggressively")
+            
+            # Split by sentences, then by lines if needed
+            sentences = chunk.split('. ')
+            current_chunk = []
+            current_tokens = 0
+            
+            for sentence in sentences:
+                sentence_tokens = count_tokens(sentence + '. ')
+                
+                if current_tokens + sentence_tokens <= max_tokens:
+                    current_chunk.append(sentence)
+                    current_tokens += sentence_tokens
+                else:
+                    # Finalize current chunk
+                    if current_chunk:
+                        safe_chunks.append('. '.join(current_chunk) + '.')
+                    
+                    # Start new chunk
+                    if sentence_tokens <= max_tokens:
+                        current_chunk = [sentence]
+                        current_tokens = sentence_tokens
+                    else:
+                        # Even individual sentence is too large, truncate it
+                        logger.warning(f"Individual sentence too large ({sentence_tokens} tokens), truncating")
+                        truncated = sentence[:int(len(sentence) * (max_tokens / sentence_tokens))]
+                        safe_chunks.append(truncated + '...')
+                        current_chunk = []
+                        current_tokens = 0
+            
+            # Add final chunk if any
+            if current_chunk:
+                safe_chunks.append('. '.join(current_chunk) + '.')
+    
+    # Final validation
+    validated_chunks = []
+    for chunk in safe_chunks:
+        chunk_tokens = count_tokens(chunk)
+        if chunk_tokens <= max_tokens:
+            validated_chunks.append(chunk)
+        else:
+            logger.error(f"Chunk still exceeds token limit after aggressive splitting ({chunk_tokens} tokens), truncating")
+            # Last resort: character-based truncation
+            ratio = max_tokens / chunk_tokens
+            truncated = chunk[:int(len(chunk) * ratio * 0.9)]  # 0.9 for safety margin
+            validated_chunks.append(truncated + '...')
+    
+    logger.debug(f"Split {token_count} tokens into {len(validated_chunks)} safe chunks")
+    return validated_chunks
+
 def download_repo(repo_url: str, local_path: str, type: str = "github", access_token: str = None) -> str:
     """
     Clones a repository from GitHub, GitLab, or Bitbucket.
@@ -236,15 +312,38 @@ def read_all_documents(
 
             processed_files_log.append(file_info['normalized_path'])
             
-            # Process chunks
+            # Process chunks with token validation
             chunks = text_splitter.split_text(content)
-            for i, chunk_content in enumerate(chunks):
+            
+            # Get max tokens from config for embedding safety
+            max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 6000)
+            
+            safe_chunks = []
+            for chunk in chunks:
+                # Validate and potentially re-chunk if too large for embedding
+                chunk_tokens = count_tokens(chunk)
+                if chunk_tokens > max_embedding_tokens:
+                    logger.warning(f"Chunk from {file_info['normalized_path']} has {chunk_tokens} tokens, splitting further")
+                    sub_chunks = safe_chunk_for_embedding(chunk, max_embedding_tokens)
+                    safe_chunks.extend(sub_chunks)
+                else:
+                    safe_chunks.append(chunk)
+            
+            # Create documents from safe chunks
+            for i, chunk_content in enumerate(safe_chunks):
+                # Final token check before creating document
+                final_token_count = count_tokens(chunk_content)
+                if final_token_count > max_embedding_tokens:
+                    logger.error(f"Chunk still exceeds token limit ({final_token_count} tokens), skipping")
+                    continue
+                    
                 doc = Document(text=chunk_content)
                 doc.metadata = {
                     "source": file_info['relative_path'],
                     "priority": file_info['priority'],
                     "chunk_index": i,
-                    "total_chunks": len(chunks)
+                    "total_chunks": len(safe_chunks),
+                    "token_count": final_token_count
                 }
                 all_documents.append(doc)
             
@@ -313,16 +412,30 @@ def read_all_documents(
                     content = get_local_file_content(file_info['path'])
                     if content.strip():
                         chunks = text_splitter.split_text(content)
-                        for i, chunk_content in enumerate(chunks):
-                            doc = Document(text=chunk_content)
-                            doc.metadata = {
-                                "source": file_info['relative_path'],
-                                "priority": file_info['priority'],
-                                "chunk_index": i,
-                                "total_chunks": len(chunks),
-                                "emergency_recovery": True
-                            }
-                            all_documents.append(doc)
+                        max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 6000)
+                        
+                        safe_chunks = []
+                        for chunk in chunks:
+                            chunk_tokens = count_tokens(chunk)
+                            if chunk_tokens > max_embedding_tokens:
+                                sub_chunks = safe_chunk_for_embedding(chunk, max_embedding_tokens)
+                                safe_chunks.extend(sub_chunks)
+                            else:
+                                safe_chunks.append(chunk)
+                        
+                        for i, chunk_content in enumerate(safe_chunks):
+                            # Final validation
+                            if count_tokens(chunk_content) <= max_embedding_tokens:
+                                doc = Document(text=chunk_content)
+                                doc.metadata = {
+                                    "source": file_info['relative_path'],
+                                    "priority": file_info['priority'],
+                                    "chunk_index": i,
+                                    "total_chunks": len(safe_chunks),
+                                    "emergency_recovery": True,
+                                    "token_count": count_tokens(chunk_content)
+                                }
+                                all_documents.append(doc)
                 except Exception as e:
                     logger.warning(f"Emergency recovery failed for {file_info['path']}: {e}")
             

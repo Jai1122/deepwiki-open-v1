@@ -16,7 +16,8 @@
   },
   "text_splitter": {
     "split_by": "word",
-    "chunk_size": 1000,
-    "chunk_overlap": 200
+    "chunk_size": 500,
+    "chunk_overlap": 100,
+    "max_tokens_per_chunk": 6000
   }
 }

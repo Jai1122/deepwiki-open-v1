@@ -11,14 +11,19 @@
       ".git",
       ".svn",
       ".hg",
-      ".bzr"
+      ".bzr",
+      "vendor",
+      "third_party"
     ],
     "excluded_filename_patterns": [
       "*_test.go",
+      "*_mock.go",
       "*.test.js",
       "*.spec.js",
       "*.test.ts",
-      "*.spec.ts"
+      "*.spec.ts",
+      "*.mock.js",
+      "*.mock.ts"
     ],
     "excluded_files": [
       "yarn.lock",
