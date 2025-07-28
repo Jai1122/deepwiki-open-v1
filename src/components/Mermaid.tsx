@@ -273,6 +273,71 @@ mermaid.initialize({
   fontSize: 12,
 });
 
+// Function to preprocess Mermaid chart and fix common syntax errors
+const preprocessMermaidChart = (chart: string): string => {
+  let processed = chart;
+  
+  try {
+    // Fix missing closing brackets in node definitions
+    // Pattern: A[Text without closing bracket --> B
+    processed = processed.replace(/([A-Z]\[[^\]]*?)(?=\s*-->)/g, '$1]');
+    
+    // Fix malformed arrows - ensure proper spacing
+    processed = processed.replace(/([A-Z])\s*-->\s*([A-Z])/g, '$1 --> $2');
+    
+    // Fix node definitions with parentheses that might break parsing
+    // Replace parentheses in node labels with safer alternatives
+    processed = processed.replace(/\[([^\]]*)\(([^)]*)\)([^\]]*)\]/g, '[$1($2)$3]');
+    
+    // Ensure proper graph declaration
+    if (!processed.trim().startsWith('graph ') && 
+        !processed.trim().startsWith('flowchart ') && 
+        !processed.trim().startsWith('sequenceDiagram') &&
+        !processed.trim().startsWith('classDiagram') &&
+        !processed.trim().startsWith('erDiagram')) {
+      processed = `graph TD\n${processed}`;
+    }
+    
+    // Remove any trailing incomplete lines that might cause parsing errors
+    const lines = processed.split('\n');
+    const validLines = lines.filter(line => {
+      const trimmed = line.trim();
+      // Keep empty lines and comments
+      if (!trimmed || trimmed.startsWith('%%')) return true;
+      // Keep graph declarations
+      if (trimmed.startsWith('graph ') || trimmed.startsWith('flowchart ') || 
+          trimmed.startsWith('sequenceDiagram') || trimmed.startsWith('classDiagram')) return true;
+      // Keep valid arrows and node definitions
+      if (trimmed.includes('-->') || trimmed.includes('->') || 
+          trimmed.match(/^[A-Z]+\[[^\]]*\]$/) || 
+          trimmed.includes('participant ') ||
+          trimmed.includes('Note ')) return true;
+      // Keep style definitions
+      if (trimmed.startsWith('style ') || trimmed.startsWith('class ')) return true;
+      // Filter out incomplete or malformed lines
+      return false;
+    });
+    
+    processed = validLines.join('\n');
+    
+    // Final cleanup - remove any duplicate graph declarations
+    const graphDeclarations = processed.match(/^(graph |flowchart |sequenceDiagram|classDiagram)/gm);
+    if (graphDeclarations && graphDeclarations.length > 1) {
+      // Keep only the first declaration
+      const firstDeclaration = graphDeclarations[0];
+      processed = processed.replace(/^(graph |flowchart |sequenceDiagram|classDiagram).*$/gm, '');
+      processed = `${firstDeclaration}\n${processed}`;
+    }
+    
+  } catch (error) {
+    console.warn('Error preprocessing Mermaid chart:', error);
+    // Return original chart if preprocessing fails
+    return chart;
+  }
+  
+  return processed.trim();
+};
+
 interface MermaidProps {
   chart: string;
   className?: string;
@@ -465,12 +530,14 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     const renderChart = async () => {
       if (!isMounted) return;
 
+      let processedChart = '';
       try {
         setError(null);
         setSvg('');
 
-        // Render the chart directly without preprocessing
-        const { svg: renderedSvg } = await mermaid.render(idRef.current, chart);
+        // Preprocess chart to fix common syntax errors
+        processedChart = preprocessMermaidChart(chart);
+        const { svg: renderedSvg } = await mermaid.render(idRef.current, processedChart);
 
         if (!isMounted) return;
 
@@ -487,6 +554,8 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
         }, 50);
       } catch (err) {
         console.error('Mermaid rendering error:', err);
+        console.log('Original chart:', chart);
+        console.log('Processed chart:', processedChart);
 
         const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -496,7 +565,14 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
           if (mermaidRef.current) {
             mermaidRef.current.innerHTML = `
               <div class="text-red-500 dark:text-red-400 text-xs mb-1">Syntax error in diagram</div>
-              <pre class="text-xs overflow-auto p-2 bg-gray-100 dark:bg-gray-800 rounded">${chart}</pre>
+              <details class="text-xs">
+                <summary class="cursor-pointer hover:text-blue-500">Show original chart</summary>
+                <pre class="mt-2 overflow-auto p-2 bg-gray-100 dark:bg-gray-800 rounded border">${chart}</pre>
+              </details>
+              <details class="text-xs mt-2">
+                <summary class="cursor-pointer hover:text-blue-500">Show processed chart</summary>
+                <pre class="mt-2 overflow-auto p-2 bg-gray-100 dark:bg-gray-800 rounded border">${processedChart}</pre>
+              </details>
             `;
           }
         }
