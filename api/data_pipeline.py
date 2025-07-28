@@ -90,79 +90,71 @@ def read_all_documents(
     
     final_excluded_dirs = DEFAULT_EXCLUDED_DIRS + (excluded_dirs or [])
     final_excluded_files = DEFAULT_EXCLUDED_FILES + (excluded_files or [])
-
-    # Normalize exclusion patterns for reliable matching
-    normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs]
-
+    
     # Get filename patterns for exclusion from repo config
     file_filters_config = configs.get("file_filters", {})
     excluded_filename_patterns = file_filters_config.get("excluded_filename_patterns", [])
+    
+    # Also add excluded_dirs from repo config if not already included
+    repo_excluded_dirs = file_filters_config.get("excluded_dirs", [])
+    final_excluded_dirs.extend(repo_excluded_dirs)
+
+    # Normalize exclusion patterns for reliable matching
+    normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs if p.strip('./').strip('/')]
 
     logger.info(f"Starting to walk directory: {path}")
+    logger.info(f"Excluded directories: {normalized_excluded_dirs}")
+    logger.info(f"Excluded filename patterns: {excluded_filename_patterns}")
+    logger.info(f"Total excluded file patterns: {len(final_excluded_files)}")
     
     # First pass: collect all candidate files with priorities
     for root, dirs, files in os.walk(path, topdown=True):
-        # Get the current directory relative to the base path
-        current_dir_relative = os.path.relpath(root, path)
-        normalized_current_dir = current_dir_relative.replace('\\', '/').strip('./')
+        # Get current directory relative to the base path
+        current_dir_relative = os.path.relpath(root, path) 
+        normalized_current_dir = current_dir_relative.replace('\\', '/')
         
-        # Check if current directory should be excluded (skip entire subtree)
+        # Skip the root directory case completely to avoid issues
+        if normalized_current_dir == '.':
+            normalized_current_dir = ''
+        
+        # Check if any part of the current path should cause us to skip this directory
         should_skip_dir = False
-        if normalized_current_dir and normalized_current_dir != '.':
-            # Check if any part of current path matches excluded directories
-            path_parts = normalized_current_dir.split('/')
-            for part in path_parts:
-                if part in normalized_excluded_dirs:
+        if normalized_current_dir:
+            # Split path and check each component
+            path_components = normalized_current_dir.split('/')
+            for component in path_components:
+                if component in normalized_excluded_dirs:
                     should_skip_dir = True
+                    logger.debug(f"Skipping directory '{normalized_current_dir}' due to excluded component '{component}'")
                     break
-            
-            # Also check full relative path against excluded directories
-            if normalized_current_dir in normalized_excluded_dirs:
-                should_skip_dir = True
         
         if should_skip_dir:
-            # Skip this entire directory tree
-            dirs.clear()  # Don't recurse into subdirectories
+            dirs.clear()  # Prevent recursion into this directory tree
             continue
         
-        # Filter immediate subdirectories to prevent traversing excluded ones
-        original_dirs = dirs[:]
-        dirs[:] = []
-        for d in original_dirs:
-            dir_should_be_excluded = False
-            
-            # Check if directory name itself is excluded
-            if d in normalized_excluded_dirs:
-                dir_should_be_excluded = True
-            
-            # Check if the full path to this directory would be excluded
-            if normalized_current_dir and normalized_current_dir != '.':
-                full_dir_path = f"{normalized_current_dir}/{d}"
-            else:
-                full_dir_path = d
-            
-            if full_dir_path in normalized_excluded_dirs:
-                dir_should_be_excluded = True
-                
-            if not dir_should_be_excluded:
-                dirs.append(d)
+        # Filter immediate subdirectories to prevent walking into them
+        dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
         
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
             normalized_relative_path = relative_path.replace('\\', '/')
 
-            # Skip excluded files by filename pattern (check both filename and full path)
+            # Skip excluded files by filename pattern (both filename and full path)
             filename_excluded = False
+            matched_pattern = None
             for pattern in excluded_filename_patterns:
+                # Check against both just the filename and the full relative path
                 if fnmatch.fnmatch(file, pattern) or fnmatch.fnmatch(normalized_relative_path, pattern):
-                    rejected_files_log.append(f"{normalized_relative_path} (matches filename pattern: {pattern})")
                     filename_excluded = True
+                    matched_pattern = pattern
                     break
             
             if filename_excluded:
+                rejected_files_log.append(f"{normalized_relative_path} (matches filename pattern: {matched_pattern})")
                 continue
 
+            # Skip files matching general excluded file patterns
             if any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in final_excluded_files):
                 rejected_files_log.append(f"{normalized_relative_path} (matches excluded file pattern)")
                 continue
@@ -271,6 +263,70 @@ def read_all_documents(
     logger.info(f"Processed {len(processed_files_log)} files ({total_tokens_processed} tokens).")
     logger.info(f"Rejected {len(rejected_files_log)} files.")
     logger.info(f"Total documents after chunking: {len(all_documents)}")
+    
+    # Show some examples of processed and rejected files for debugging
+    if processed_files_log:
+        logger.info(f"Example processed files: {processed_files_log[:5]}")
+    if rejected_files_log:
+        logger.info(f"Example rejected files: {rejected_files_log[:5]}")
+    
+    # Critical check: if no documents were created, log this as an error
+    if len(all_documents) == 0:
+        logger.error("❌ NO DOCUMENTS WERE CREATED! This will cause the application to fail.")
+        logger.error("This might be due to over-aggressive file filtering.")
+        logger.error(f"Repository path: {path}")
+        logger.error(f"Files found but rejected: {len(rejected_files_log)}")
+        
+        # In case of complete filtering failure, let's try to include some basic files
+        logger.warning("🔧 Attempting emergency file recovery - including basic source files...")
+        emergency_candidates = []
+        
+        # Walk again but with minimal filtering for emergency recovery
+        for root, dirs, files in os.walk(path):
+            # Only exclude the most critical directories (.git, node_modules, etc)
+            critical_exclude = ['.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build']
+            dirs[:] = [d for d in dirs if d not in critical_exclude]
+            
+            for file in files:
+                # Only include common source files
+                if any(file.endswith(ext) for ext in ['.py', '.js', '.ts', '.go', '.java', '.cpp', '.c', '.h', '.md', '.txt', '.json', '.yaml', '.yml']):
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, path)
+                    emergency_candidates.append({
+                        'path': file_path,
+                        'relative_path': relative_path,
+                        'normalized_path': relative_path.replace('\\', '/'),
+                        'size': os.path.getsize(file_path) if os.path.exists(file_path) else 0,
+                        'priority': 2  # Medium priority
+                    })
+                    
+                    if len(emergency_candidates) >= 50:  # Limit to prevent overload
+                        break
+            if len(emergency_candidates) >= 50:
+                break
+        
+        # Process emergency candidates
+        if emergency_candidates:
+            logger.warning(f"🚑 Emergency recovery: Processing {len(emergency_candidates)} basic files")
+            for file_info in emergency_candidates[:20]:  # Process only first 20
+                try:
+                    content = get_local_file_content(file_info['path'])
+                    if content.strip():
+                        chunks = text_splitter.split_text(content)
+                        for i, chunk_content in enumerate(chunks):
+                            doc = Document(text=chunk_content)
+                            doc.metadata = {
+                                "source": file_info['relative_path'],
+                                "priority": file_info['priority'],
+                                "chunk_index": i,
+                                "total_chunks": len(chunks),
+                                "emergency_recovery": True
+                            }
+                            all_documents.append(doc)
+                except Exception as e:
+                    logger.warning(f"Emergency recovery failed for {file_info['path']}: {e}")
+            
+            logger.warning(f"🚑 Emergency recovery completed: {len(all_documents)} documents created")
     
     # Detailed logging for transparency
     if logger.isEnabledFor(logging.DEBUG):
