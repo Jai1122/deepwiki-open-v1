@@ -351,8 +351,21 @@ def read_all_documents(
             
         try:
             content = get_local_file_content(file_info['path'])
-            if not content.strip():
+            if not content or not content.strip():
                 rejected_files_log.append(f"{file_info['normalized_path']} (empty content)")
+                continue
+            
+            # CRITICAL: Final check for null bytes or binary content in the pipeline
+            if '\x00' in content or '\0' in content:
+                rejected_files_log.append(f"{file_info['normalized_path']} (contains null bytes - binary content)")
+                logger.warning(f"PIPELINE SAFETY: Found null bytes in content from {file_info['path']}")
+                continue
+            
+            # Check for other indicators of binary content
+            control_char_count = sum(1 for c in content if ord(c) < 32 and c not in '\n\r\t')
+            if len(content) > 0 and control_char_count / len(content) > 0.05:
+                rejected_files_log.append(f"{file_info['normalized_path']} (excessive control characters: {control_char_count})")
+                logger.debug(f"Rejected {file_info['path']} due to {control_char_count} control characters in {len(content)} total")
                 continue
 
             # Estimate content tokens
@@ -409,6 +422,12 @@ def read_all_documents(
                 final_token_count = count_tokens(chunk_content)
                 if final_token_count > max_embedding_tokens:
                     logger.error(f"Chunk still exceeds token limit ({final_token_count} tokens), skipping")
+                    continue
+                
+                # ABSOLUTE FINAL CHECK: No null bytes in document content
+                if '\x00' in chunk_content or '\0' in chunk_content:
+                    logger.error(f"CRITICAL: Null bytes found in chunk content from {file_info['relative_path']}")
+                    logger.error(f"Chunk preview: {repr(chunk_content[:100])}")
                     continue
                     
                 doc = Document(text=chunk_content)
@@ -493,6 +512,15 @@ def read_all_documents(
             for file_info in emergency_candidates[:20]:  # Process only first 20
                 try:
                     content = get_local_file_content(file_info['path'])
+                    
+                    # Emergency recovery also needs null byte protection
+                    if not content or not content.strip():
+                        continue
+                    
+                    if '\x00' in content or '\0' in content:
+                        logger.warning(f"EMERGENCY RECOVERY: Skipping file with null bytes: {file_info['path']}")
+                        continue
+                    
                     if content.strip():
                         chunks = text_splitter.split_text(content)
                         max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 6000)

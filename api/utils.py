@@ -16,10 +16,12 @@ def is_text_file(file_path: str) -> bool:
     """
     Check if a file is likely a text file (not binary).
     This prevents binary files from being processed and causing junk characters in embeddings.
+    Enhanced with more aggressive binary detection.
     """
     try:
         # Check file extension first (fast check)
         file_ext = os.path.splitext(file_path)[1].lower()
+        filename = os.path.basename(file_path).lower()
         
         # Known text file extensions
         text_extensions = {
@@ -28,7 +30,7 @@ def is_text_file(file_path: str) -> bool:
             '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd', '.dockerfile', '.makefile',
             '.sql', '.php', '.rb', '.rs', '.kt', '.swift', '.scala', '.clj', '.hs', '.elm', '.vue',
             '.svelte', '.astro', '.r', '.m', '.tex', '.latex', '.bib', '.org', '.rst', '.adoc',
-            '.gitignore', '.gitattributes', '.editorconfig', '.prettierrc', '.eslintrc'
+            '.gitignore', '.gitattributes', '.editorconfig', '.prettierrc', '.eslintrc', '.log'
         }
         
         # Known binary extensions to definitely exclude
@@ -39,41 +41,80 @@ def is_text_file(file_path: str) -> bool:
             '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
             '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
             '.class', '.jar', '.war', '.ear', '.pyc', '.pyo', '.pyd',
-            '.woff', '.woff2', '.ttf', '.otf', '.eot'
+            '.woff', '.woff2', '.ttf', '.otf', '.eot', '.db', '.sqlite',
+            '.dat', '.idx', '.pack', '.tmp', '.cache'
         }
         
+        # Special filename patterns that are typically binary
+        binary_filename_patterns = [
+            'index', 'pack-', '.pack', 'objects/', 'refs/', 'logs/',  # Git objects
+            '.idx', '.lock', '.tmp', '.cache', '.dat'
+        ]
+        
+        # If it's a known text extension, still check content for safety
         if file_ext in text_extensions:
-            return True
-        if file_ext in binary_extensions:
+            # Even text extensions should be content-checked for safety
+            pass  # Continue to content check
+        elif file_ext in binary_extensions:
+            logger.debug(f"Excluding binary file by extension: {file_path}")
             return False
         
-        # For unknown extensions, check file content (sample first 1024 bytes)
-        with open(file_path, 'rb') as f:
-            sample = f.read(1024)
+        # Check for binary filename patterns
+        for pattern in binary_filename_patterns:
+            if pattern in filename or pattern in file_path.lower():
+                logger.debug(f"Excluding file matching binary pattern '{pattern}': {file_path}")
+                return False
+        
+        # For all files (including known text extensions), check content
+        try:
+            with open(file_path, 'rb') as f:
+                sample = f.read(2048)  # Read more bytes for better detection
+        except (IOError, OSError, PermissionError) as e:
+            logger.warning(f"Cannot read file {file_path}: {e}")
+            return False
             
         if not sample:
             return True  # Empty files are considered text
         
-        # Check for null bytes (strong indicator of binary content)
-        if b'\x00' in sample:
+        # CRITICAL: Check for null bytes (strong indicator of binary content)
+        null_count = sample.count(b'\x00')
+        if null_count > 0:
+            logger.debug(f"Excluding file with {null_count} null bytes: {file_path}")
             return False
         
-        # Check if most characters are printable ASCII or common UTF-8
+        # Check for other control characters that shouldn't be in text files
+        control_chars = sum(1 for b in sample if b < 32 and b not in [9, 10, 13])  # Exclude tab, LF, CR
+        if len(sample) > 0 and control_chars / len(sample) > 0.05:  # More than 5% control chars
+            logger.debug(f"Excluding file with excessive control characters ({control_chars}/{len(sample)}): {file_path}")
+            return False
+        
+        # Check if most characters are printable
+        printable_chars = sum(1 for b in sample if 32 <= b <= 126 or b in [9, 10, 13])
+        if len(sample) > 0 and printable_chars / len(sample) < 0.8:  # Less than 80% printable
+            logger.debug(f"Excluding file with low printable ratio ({printable_chars}/{len(sample)}): {file_path}")
+            return False
+        
+        # Try to decode as UTF-8
         try:
             sample.decode('utf-8')
             return True
         except UnicodeDecodeError:
-            # Try latin-1 as fallback
+            # Try latin-1 as fallback (more permissive)
             try:
-                sample.decode('latin-1')
-                # If it decodes as latin-1, check if it looks like text
-                printable_chars = sum(1 for b in sample if 32 <= b <= 126 or b in [9, 10, 13])
-                return printable_chars / len(sample) > 0.7  # 70% printable characters
+                decoded = sample.decode('latin-1')
+                # Even if it decodes, check if it looks like reasonable text
+                if len(decoded) > 0:
+                    reasonable_chars = sum(1 for c in decoded if ord(c) >= 32 or c in '\t\n\r')
+                    if reasonable_chars / len(decoded) < 0.8:
+                        logger.debug(f"Excluding file with unreasonable character content: {file_path}")
+                        return False
+                return True
             except:
+                logger.debug(f"Excluding file - failed all encoding attempts: {file_path}")
                 return False
                 
     except Exception as e:
-        logger.warning(f"Could not determine if {file_path} is text file: {e}")
+        logger.warning(f"Error determining if {file_path} is text file: {e}")
         return False  # When in doubt, exclude to prevent binary content
 
 def count_tokens(text: str, is_ollama_embedder: bool = False) -> int:
@@ -434,6 +475,7 @@ def get_local_file_content(file_path: str) -> str:
     """
     Reads content from a local file path.
     Enhanced to handle encoding issues and detect binary files.
+    Includes multiple safety checks to prevent binary content.
     """
     try:
         # First check if it's likely a text file
@@ -445,24 +487,50 @@ def get_local_file_content(file_path: str) -> str:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                
-            # Validate content doesn't contain too many control characters
-            if content:
-                control_chars = sum(1 for c in content if ord(c) < 32 and c not in '\n\r\t')
-                if len(content) > 0 and control_chars / len(content) > 0.1:  # More than 10% control characters
-                    logger.debug(f"Skipping file with excessive control characters: {file_path}")
-                    return ""
-                    
-            return content
-            
         except UnicodeDecodeError:
             # Fallback to latin-1 with error handling
             logger.debug(f"UTF-8 decode failed for {file_path}, trying latin-1")
-            with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
-                content = f.read()
-                # Filter out problematic characters
-                content = ''.join(c if ord(c) >= 32 or c in '\n\r\t' else ' ' for c in content)
-                return content
+            try:
+                with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
+                    content = f.read()
+            except Exception as e:
+                logger.warning(f"Failed to read {file_path} with any encoding: {e}")
+                return ""
+        
+        # CRITICAL SAFETY CHECK: Ensure no null bytes made it through
+        if '\x00' in content or '\0' in content:
+            logger.warning(f"DETECTED NULL BYTES in supposedly text file: {file_path}")
+            logger.warning(f"Content preview: {repr(content[:100])}")
+            return ""  # Reject content with null bytes
+        
+        # Additional safety checks on the content
+        if content:
+            # Check for excessive control characters
+            control_chars = sum(1 for c in content if ord(c) < 32 and c not in '\n\r\t')
+            if len(content) > 0 and control_chars / len(content) > 0.05:  # More than 5% control characters
+                logger.debug(f"Skipping file with excessive control characters ({control_chars}/{len(content)}): {file_path}")
+                return ""
+            
+            # Check for non-printable character patterns that indicate binary
+            non_printable = sum(1 for c in content if ord(c) > 127)
+            if len(content) > 0 and non_printable / len(content) > 0.3:  # More than 30% non-ASCII
+                logger.debug(f"Skipping file with excessive non-ASCII characters ({non_printable}/{len(content)}): {file_path}")
+                return ""
+            
+            # Filter out any remaining problematic characters as final safety
+            cleaned_content = ''.join(
+                c if (ord(c) >= 32 or c in '\n\r\t') else ' ' 
+                for c in content
+            )
+            
+            # Final null byte check after cleaning
+            if '\x00' in cleaned_content:
+                logger.error(f"NULL BYTES STILL PRESENT after cleaning in {file_path}!")
+                return ""
+                
+            return cleaned_content
+        
+        return content  # Empty content is fine
                 
     except Exception as e:
         logger.error(f"Error reading local file {file_path}: {e}")
