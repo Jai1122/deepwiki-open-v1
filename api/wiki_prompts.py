@@ -46,34 +46,33 @@ README:
 """
 
 WIKI_PAGE_GENERATION_PROMPT = """
-You are creating a comprehensive wiki page as part of a holistic documentation system.
+You are creating a comprehensive wiki page based on ACTUAL SOURCE CODE ANALYSIS.
 
-CRITICAL REQUIREMENTS:
-1. **Include Mermaid Diagrams**: ALWAYS include relevant mermaid diagrams (architecture, sequence, flowchart, or component diagrams)
-2. **Show Relationships**: Explicitly reference and link to related components and pages
-3. **Provide Context**: Explain not just what this component does, but how it fits into the larger system
-4. **Use Logical Grouping**: Focus on functional cohesion rather than technical artifact separation
+🚨 CRITICAL: The context below should contain ACTUAL CODE from multiple source files, NOT just README content. If you only see README content, this indicates a data retrieval issue that needs to be flagged.
 
-MERMAID DIAGRAM TYPES TO CONSIDER:
-- System architecture: `graph TD` for showing component relationships
-- Process flow: `sequenceDiagram` for showing interaction sequences
-- Data flow: `flowchart LR` for showing data movement
-- Class relationships: `classDiagram` for showing object relationships
+REQUIREMENTS FOR CODE-BASED WIKI GENERATION:
+1. **Analyze Actual Source Code**: Base your documentation on the provided source code from multiple files
+2. **Include Mermaid Diagrams**: Create diagrams based on actual code structure and flow
+3. **Show Real Implementation**: Document actual functions, classes, and their relationships as found in the code
+4. **Provide Code Examples**: Include relevant code snippets from the analyzed files
+5. **Cross-Reference Files**: Show how different source files interact with each other
 
-CONTENT STRUCTURE:
-1. **Overview & Purpose** - What this component/module does in the context of the larger system
-2. **Architecture Diagram** - Mermaid diagram showing how this fits into the system
-3. **Key Components** - Main classes, functions, or modules with their responsibilities
-4. **Interactions** - How this component interacts with other parts of the system
-5. **Implementation Details** - Important patterns, algorithms, or design decisions
-6. **Related Pages** - Links to other relevant wiki pages
+CONTENT STRUCTURE (Based on Actual Code):
+1. **Component Overview** - What this component does based on code analysis
+2. **Architecture Diagram** - Mermaid diagram showing actual code relationships
+3. **Key Implementation Details** - Actual functions, classes, and methods found in code
+4. **Code Flow** - How the code executes based on source analysis
+5. **File Dependencies** - How files import and interact with each other
+6. **API/Interface Documentation** - Based on actual function signatures and endpoints
 
-Remember: Create interconnected, comprehensive documentation that shows the forest, not just the trees.
+⚠️  VALIDATION CHECK: 
+- Confirm that the context contains actual source code files (not just README.md)
+- If only README content is provided, start your response with "❌ ERROR: Only README content provided, need actual source code for comprehensive wiki generation."
 
-Context:
+Context from Repository (should contain actual source code):
 {context}
 
-File Content:
+Additional File Content:
 {file_content}
 
 Page Topic:
@@ -81,48 +80,51 @@ Page Topic:
 """
 
 ARCHITECTURE_OVERVIEW_PROMPT = """
-Create a comprehensive System Architecture Overview page for this codebase.
+Create a comprehensive System Architecture Overview page based on ACTUAL SOURCE CODE ANALYSIS.
 
-This should be the main entry point to your wiki that provides:
+🚨 CRITICAL: This analysis should be based on ACTUAL CODE from the repository, not just README content. You should be analyzing real implementation files.
 
-1. **High-Level Architecture Diagram** (using mermaid)
-   - Show major system components
-   - Include external dependencies
-   - Show data flow between components
+⚠️  VALIDATION CHECK: 
+- Confirm that you have access to actual source code files across the repository
+- If you only have README/documentation content, start with "❌ ERROR: Insufficient source code access for comprehensive architecture analysis."
 
-2. **System Overview**
-   - What this system does
-   - Key architectural decisions
-   - Technology stack and rationale
+ARCHITECTURE ANALYSIS REQUIREMENTS:
+1. **Code-Based Architecture Diagram** (using mermaid)
+   - Analyze actual imports, dependencies, and call flows
+   - Show real components found in the source code
+   - Include data flow based on actual function calls
 
-3. **Component Breakdown**
-   - Brief description of each major component
-   - Links to detailed pages for each component
+2. **Implementation-Based System Overview**
+   - What this system does based on code analysis
+   - Actual technology stack found in source files
+   - Real architectural patterns discovered in code
 
-4. **Key Workflows** (with sequence diagrams)
-   - Most important user journeys or data processing flows
-   - Cross-cutting concerns (logging, authentication, etc.)
+3. **Source Code Component Breakdown**
+   - Components identified from actual source files
+   - Real functions, classes, and modules
+   - Actual file organization and structure
 
-5. **Development Context**
-   - How to get started
-   - Key development patterns
-   - Testing approach
+4. **Real Workflow Analysis** (with sequence diagrams)
+   - Workflows traced through actual code execution paths
+   - Real API endpoints and their implementations
+   - Actual error handling and logging patterns
 
-EXAMPLE MERMAID ARCHITECTURE:
+5. **Development Context from Code**
+   - Real build/deployment configuration found
+   - Actual testing framework and patterns used
+   - Real development dependencies and tools
+
+EXAMPLE MERMAID (should reflect actual code structure):
 ```mermaid
 graph TD
-    A[User Interface] --> B[API Gateway]
-    B --> C[Business Logic]
-    C --> D[Data Layer]
-    D --> E[Database]
-    
-    C --> F[External APIs]
-    B --> G[Authentication]
-    C --> H[Background Jobs]
+    A[Frontend Components] --> B[API Routes]
+    B --> C[Business Logic Layer]
+    C --> D[Data Access Layer]
+    D --> E[Database/Storage]
 ```
 
-Base your analysis on:
-File Tree: {file_tree}
-README: {readme}
-Repository Context: {context}
+COMPREHENSIVE SOURCE CODE CONTEXT:
+Repository Context (should contain actual source code): {context}
+File Tree Structure: {file_tree}
+README Documentation: {readme}
 """

@@ -85,8 +85,78 @@ async def stream_response(
         yield json.dumps({"error": f"Failed to prepare repository data: {e}"})
         return
 
-    retrieved_docs, _ = rag_instance.call(query, language=request.language)
-    context_text = "\n\n".join([doc.text for doc in retrieved_docs]) if retrieved_docs else ""
+    # For wiki generation, we need comprehensive repository content, not just query-specific matches
+    # Use multiple broad queries to get comprehensive codebase coverage
+    comprehensive_queries = [
+        query,  # Original user query
+        "main application code functions classes implementation",  # Core functionality
+        "API endpoints routes handlers controllers", # API/web layer
+        "database models data structures schemas", # Data layer  
+        "configuration settings environment setup", # Configuration
+        "utility functions helpers common code", # Utilities
+    ]
+    
+    all_retrieved_docs = []
+    seen_sources = set()  # Avoid duplicate content from same source
+    
+    for broad_query in comprehensive_queries:
+        try:
+            docs, _ = rag_instance.call(broad_query, language=request.language)
+            for doc in docs:
+                source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
+                if source not in seen_sources:
+                    all_retrieved_docs.append(doc)
+                    seen_sources.add(source)
+        except Exception as e:
+            logger.warning(f"Failed to retrieve docs for query '{broad_query}': {e}")
+            continue
+    
+    # If we still don't have enough content, try to get more documents with a very broad query
+    if len(all_retrieved_docs) < 10:
+        try:
+            # Use a very broad query to capture more of the codebase
+            broad_docs, _ = rag_instance.call("source code implementation functions classes", language=request.language)
+            for doc in broad_docs[:15]:  # Add up to 15 more docs
+                source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
+                if source not in seen_sources:
+                    all_retrieved_docs.append(doc)
+                    seen_sources.add(source)
+        except Exception as e:
+            logger.warning(f"Failed to retrieve additional broad docs: {e}")
+    
+    # FALLBACK: If RAG didn't provide enough comprehensive content, get direct access to transformed docs
+    if len(all_retrieved_docs) < 5 or len(context_text) < 5000:
+        logger.warning(f"⚠️  RAG retrieval insufficient for wiki generation (only {len(all_retrieved_docs)} docs, {len(context_text)} chars)")
+        logger.info("🔄 Attempting direct access to repository database for comprehensive content...")
+        
+        try:
+            # Access the transformed documents directly from the RAG instance
+            if hasattr(rag_instance, 'transformed_docs') and rag_instance.transformed_docs:
+                direct_docs = rag_instance.transformed_docs
+                logger.info(f"📚 Found {len(direct_docs)} documents in repository database")
+                
+                # Add documents that weren't retrieved by similarity search
+                for doc in direct_docs[:30]:  # Limit to prevent overwhelming context
+                    source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
+                    if source not in seen_sources:
+                        all_retrieved_docs.append(doc)
+                        seen_sources.add(source)
+                        
+                logger.info(f"📈 Enhanced wiki context: Now have {len(all_retrieved_docs)} documents from direct access")
+        except Exception as e:
+            logger.warning(f"Direct document access failed: {e}")
+    
+    # Combine all retrieved content
+    context_text = "\n\n".join([doc.text for doc in all_retrieved_docs]) if all_retrieved_docs else ""
+    
+    logger.info(f"📊 Wiki generation final stats: {len(all_retrieved_docs)} documents from {len(seen_sources)} unique sources")
+    logger.info(f"📝 Total context length: {len(context_text)} characters")
+    
+    # Enhanced logging for debugging
+    if len(seen_sources) > 0:
+        logger.info(f"📁 Source files included: {list(seen_sources)[:10]}{'...' if len(seen_sources) > 10 else ''}")
+    else:
+        logger.error("❌ No source files retrieved - wiki will be generic!")
     file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token) if request.filePath else ""
     # Intelligently choose prompt based on query type
     query_lower = query.lower()
