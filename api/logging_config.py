@@ -10,7 +10,7 @@ def setup_logging(format: str = None):
     """
     Configure logging for the application.
     Reads LOG_LEVEL and LOG_FILE_PATH from environment (defaults: INFO, logs/application.log).
-    Ensures log directory exists, and configures both file and console handlers.
+    Ensures log directory exists, and configures both file and console handlers with different formats.
     """
     # Determine log directory and default file path
     base_dir = Path(__file__).parent
@@ -34,21 +34,35 @@ def setup_logging(format: str = None):
     # Ensure parent dirs exist for the log file
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Configure logging handlers and format
-    logging.basicConfig(
-        level=log_level,
-        format = format or "%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - %(message)s",
-        handlers=[
-            logging.FileHandler(resolved_path),
-            logging.StreamHandler()
-        ],
-        force=True
-    )
+    # Create formatters for different output types
+    detailed_format = format or "%(asctime)s - %(levelname)s - %(name)s - %(filename)s:%(lineno)d - %(message)s"
+    console_format = "%(asctime)s - %(levelname)s - %(message)s"
     
-    # Ignore log file's change detection
-    for handler in logging.getLogger().handlers:
-        handler.addFilter(IgnoreLogChangeDetectedFilter())
+    # Create formatters
+    file_formatter = logging.Formatter(detailed_format)
+    console_formatter = logging.Formatter(console_format)
+    
+    # Create handlers
+    file_handler = logging.FileHandler(resolved_path)
+    file_handler.setFormatter(file_formatter)
+    file_handler.addFilter(IgnoreLogChangeDetectedFilter())
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(console_formatter)
+    console_handler.addFilter(IgnoreLogChangeDetectedFilter())
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # Clear existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+    
+    # Add our handlers
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
     # Initial debug message to confirm configuration
     logger = logging.getLogger(__name__)
-    logger.debug(f"Log level set to {log_level_str}, log file: {resolved_path}")
+    logger.info(f"📝 Logging configured - Level: {log_level_str}, File: {resolved_path.name}")
+    logger.debug(f"Detailed logging path: {resolved_path}")

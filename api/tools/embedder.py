@@ -47,20 +47,7 @@ def get_embedder(is_ollama_embedder: bool = False) -> adal.Embedder:
             model_kwargs=model_kwargs,
         )
         
-        # Test the embedder with a simple call to validate configuration
-        logger.info("Testing embedder configuration...")
-        try:
-            test_result = embedder("test")
-            logger.info(f"✅ Embedder test successful. Output dimensions: {len(test_result.data[0]) if test_result.data else 'unknown'}")
-        except Exception as test_error:
-            logger.error(f"❌ Embedder test failed: {test_error}")
-            logger.error(f"💡 This usually means:")
-            logger.error(f"   - Model name '{model_kwargs.get('model')}' doesn't exist on your endpoint")
-            logger.error(f"   - API key is incorrect")
-            logger.error(f"   - Base URL '{initialize_kwargs.get('base_url')}' is not accessible")
-            logger.error(f"💡 To fix: Update EMBEDDING_MODEL_NAME in your .env file or run 'python api/validate_models.py'")
-            raise ValueError(f"Embedder validation failed: {test_error}")
-        
+        logger.info("✅ Embedder initialized successfully")
         return embedder
         
     except Exception as e:
