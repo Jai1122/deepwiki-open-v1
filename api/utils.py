@@ -100,6 +100,9 @@ def hierarchical_summarize(content: str, max_summary_tokens: int = 500, provider
         # Summarize each chunk
         chunk_summaries = []
         for i, chunk in enumerate(chunks):
+            if not chunk or not chunk.strip():
+                continue
+                
             summary_prompt = f"""Provide a concise technical summary of this code/text chunk. Focus on:
 - Main functions, classes, or concepts
 - Key logic and algorithms  
@@ -111,37 +114,70 @@ Chunk {i+1}/{len(chunks)}:
 
 Summary:"""
             
-            # Make API call to summarize chunk
-            api_kwargs = client.convert_inputs_to_api_kwargs(
-                input=summary_prompt,
-                model_kwargs={**model_kwargs, "max_tokens": 200},
-                model_type=ModelType.LLM
-            )
-            
-            response = client.call(api_kwargs, model_type=ModelType.LLM)
-            summary = client.chat_completion_parser(response)
-            chunk_summaries.append(summary)
+            try:
+                # Make API call to summarize chunk
+                api_kwargs = client.convert_inputs_to_api_kwargs(
+                    input=summary_prompt,
+                    model_kwargs={**model_kwargs, "max_tokens": 200},
+                    model_type=ModelType.LLM
+                )
+                
+                response = client.call(api_kwargs, model_type=ModelType.LLM)
+                summary = client.chat_completion_parser(response)
+                
+                # Validate summary before adding
+                if summary and summary.strip() and len(summary.strip()) > 10:
+                    chunk_summaries.append(summary.strip())
+                else:
+                    logger.warning(f"Received empty or invalid summary for chunk {i+1}")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to summarize chunk {i+1}: {e}")
+                continue
+        
+        # Check if we have any valid summaries
+        if not chunk_summaries:
+            logger.warning("No valid chunk summaries generated, returning truncated original content")
+            return content[:max_summary_tokens * 4]  # Rough char estimate
         
         # If we still have too many summaries, combine them
         combined_summaries = "\n\n".join(chunk_summaries)
         if count_tokens(combined_summaries) <= max_summary_tokens:
             return combined_summaries
         
+        # Validate combined summaries before final pass
+        if not combined_summaries or not combined_summaries.strip():
+            logger.warning("Combined summaries are empty, returning original content")
+            return content[:max_summary_tokens * 4]
+        
         # Final summarization pass
-        final_prompt = f"""Create a comprehensive technical summary by consolidating these chunk summaries:
+        final_prompt = f"""Create a comprehensive technical summary by consolidating these individual summaries into a coherent overview:
 
+Individual Summaries:
 {combined_summaries}
 
-Consolidated Summary:"""
+Please provide a consolidated technical summary that combines the key points from all the above summaries:"""
         
-        api_kwargs = client.convert_inputs_to_api_kwargs(
-            input=final_prompt,
-            model_kwargs={**model_kwargs, "max_tokens": max_summary_tokens},
-            model_type=ModelType.LLM
-        )
-        
-        response = client.call(api_kwargs, model_type=ModelType.LLM)
-        return client.chat_completion_parser(response)
+        try:
+            api_kwargs = client.convert_inputs_to_api_kwargs(
+                input=final_prompt,
+                model_kwargs={**model_kwargs, "max_tokens": max_summary_tokens},
+                model_type=ModelType.LLM
+            )
+            
+            response = client.call(api_kwargs, model_type=ModelType.LLM)
+            final_summary = client.chat_completion_parser(response)
+            
+            # Validate final summary
+            if final_summary and final_summary.strip() and len(final_summary.strip()) > 20:
+                return final_summary.strip()
+            else:
+                logger.warning("Final summary is empty or too short, returning combined summaries")
+                return combined_summaries
+                
+        except Exception as e:
+            logger.warning(f"Final summarization failed: {e}, returning combined summaries")
+            return combined_summaries
         
     except Exception as e:
         logger.error(f"Error in hierarchical summarization: {e}")
@@ -244,16 +280,22 @@ def truncate_prompt_to_fit(
     truncated_file = file_content
     if file_content_tokens > target_file_tokens:
         logger.warning(f"Truncating file content from {file_content_tokens} to {target_file_tokens} tokens.")
-        # Try hierarchical summarization for large files
-        if file_content_tokens > target_file_tokens * 3:
+        
+        # Check if hierarchical summarization is enabled (default: disabled for stability)
+        use_summarization = os.environ.get('ENABLE_HIERARCHICAL_SUMMARIZATION', 'false').lower() in ['true', '1', 't']
+        
+        # Try hierarchical summarization for very large files (only if enabled)
+        if use_summarization and file_content_tokens > target_file_tokens * 5:
             try:
+                logger.info("Attempting hierarchical summarization for large file...")
                 truncated_file = hierarchical_summarize(file_content, target_file_tokens)
             except Exception as e:
                 logger.warning(f"Summarization failed, falling back to chunking: {e}")
                 file_chunks = smart_chunk_text(file_content, target_file_tokens)
                 truncated_file = file_chunks[0] if file_chunks else ""
         else:
-            # Use smart chunking for moderately large files
+            # Use smart chunking for files (more reliable)
+            logger.info("Using smart chunking for file truncation")
             file_chunks = smart_chunk_text(file_content, target_file_tokens)
             truncated_file = file_chunks[0] if file_chunks else ""
 
