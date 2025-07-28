@@ -102,18 +102,65 @@ def read_all_documents(
     
     # First pass: collect all candidate files with priorities
     for root, dirs, files in os.walk(path, topdown=True):
-        # Filter directories in-place to prevent traversing them
-        dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
+        # Get the current directory relative to the base path
         current_dir_relative = os.path.relpath(root, path)
+        normalized_current_dir = current_dir_relative.replace('\\', '/').strip('./')
+        
+        # Check if current directory should be excluded (skip entire subtree)
+        should_skip_dir = False
+        if normalized_current_dir and normalized_current_dir != '.':
+            # Check if any part of current path matches excluded directories
+            path_parts = normalized_current_dir.split('/')
+            for part in path_parts:
+                if part in normalized_excluded_dirs:
+                    should_skip_dir = True
+                    break
+            
+            # Also check full relative path against excluded directories
+            if normalized_current_dir in normalized_excluded_dirs:
+                should_skip_dir = True
+        
+        if should_skip_dir:
+            # Skip this entire directory tree
+            dirs.clear()  # Don't recurse into subdirectories
+            continue
+        
+        # Filter immediate subdirectories to prevent traversing excluded ones
+        original_dirs = dirs[:]
+        dirs[:] = []
+        for d in original_dirs:
+            dir_should_be_excluded = False
+            
+            # Check if directory name itself is excluded
+            if d in normalized_excluded_dirs:
+                dir_should_be_excluded = True
+            
+            # Check if the full path to this directory would be excluded
+            if normalized_current_dir and normalized_current_dir != '.':
+                full_dir_path = f"{normalized_current_dir}/{d}"
+            else:
+                full_dir_path = d
+            
+            if full_dir_path in normalized_excluded_dirs:
+                dir_should_be_excluded = True
+                
+            if not dir_should_be_excluded:
+                dirs.append(d)
         
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
             normalized_relative_path = relative_path.replace('\\', '/')
 
-            # Skip excluded files
-            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_filename_patterns):
-                rejected_files_log.append(f"{normalized_relative_path} (matches filename pattern)")
+            # Skip excluded files by filename pattern (check both filename and full path)
+            filename_excluded = False
+            for pattern in excluded_filename_patterns:
+                if fnmatch.fnmatch(file, pattern) or fnmatch.fnmatch(normalized_relative_path, pattern):
+                    rejected_files_log.append(f"{normalized_relative_path} (matches filename pattern: {pattern})")
+                    filename_excluded = True
+                    break
+            
+            if filename_excluded:
                 continue
 
             if any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in final_excluded_files):
