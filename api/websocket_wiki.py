@@ -10,6 +10,7 @@ from adalflow.components.data_process import TextSplitter
 from .config import get_model_config, configs, get_context_window_for_model
 from .rag import RAG
 from .utils import count_tokens, truncate_prompt_to_fit, get_file_content
+from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,23 @@ async def stream_response(
     retrieved_docs, _ = rag_instance.call(query, language=request.language)
     context_text = "\n\n".join([doc.text for doc in retrieved_docs]) if retrieved_docs else ""
     file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token) if request.filePath else ""
-    system_prompt = "You are a helpful assistant. Provide a detailed answer based on the context."
+    # Intelligently choose prompt based on query type
+    query_lower = query.lower()
+    
+    if any(keyword in query_lower for keyword in ['architecture', 'overview', 'system', 'structure', 'file tree']):
+        # Use architecture overview prompt for system-level queries
+        system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
+            file_tree=context_text[:5000] if context_text else "File tree not available",
+            readme=file_content[:2000] if file_content else "README not available", 
+            context=context_text[:3000] if context_text else "Repository context not available"
+        )
+    else:
+        # Use detailed page generation prompt for component-specific queries
+        system_prompt = WIKI_PAGE_GENERATION_PROMPT.format(
+            context=context_text[:5000] if context_text else "Context not available",
+            file_content=file_content[:10000] if file_content else "File content not available",
+            page_topic=query
+        )
     conversation_history = "\n".join([f"{m.role}: {m.content}" for m in request.messages[:-1]])
 
     file_content, context_text = truncate_prompt_to_fit(

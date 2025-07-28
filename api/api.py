@@ -392,7 +392,45 @@ async def get_local_repo_structure(path: str = Query(None, description="Path to 
 
         file_tree_str = '\n'.join(sorted(file_tree_lines))
         logger.info(f"📊 Generated clean file tree: {len(file_tree_lines)} files for LLM analysis (excluded vendor, .git, node_modules, etc.)")
-        return {"file_tree": file_tree_str, "readme": readme_content}
+        
+        # Enhanced response with architectural context for comprehensive wiki generation
+        response = {
+            "file_tree": file_tree_str, 
+            "readme": readme_content,
+            "analysis_guidance": """
+COMPREHENSIVE WIKI GENERATION INSTRUCTIONS:
+
+When analyzing this repository structure, focus on creating a holistic, interconnected wiki that includes:
+
+1. **SYSTEM ARCHITECTURE OVERVIEW**
+   - Create a comprehensive architecture diagram using mermaid
+   - Show how major components interact
+   - Include data flow and system boundaries
+
+2. **LOGICAL GROUPINGS** (instead of fragmented pages):
+   - Core Application Logic (business logic, main workflows)
+   - Data & Infrastructure Layer (database, APIs, external integrations)
+   - User Interface & Presentation (frontend, templates, styling)
+   - Development & Operations (build, deploy, testing, configuration)
+   - Supporting Utilities (helpers, shared libraries, common tools)
+
+3. **MERMAID DIAGRAMS TO INCLUDE**:
+   - System architecture flowchart
+   - Sequence diagrams for key workflows
+   - Component relationship diagrams
+   - Data flow diagrams
+
+4. **INTERCONNECTED CONTENT**:
+   - Cross-reference related components
+   - Show dependencies and relationships
+   - Provide navigation between related concepts
+   - Link architectural decisions to implementation details
+
+Focus on creating a cohesive documentation experience rather than isolated component descriptions.
+            """
+        }
+        
+        return response
     except Exception as e:
         logger.error(f"Error processing local repository: {str(e)}")
         return JSONResponse(
