@@ -80,6 +80,20 @@ async def stream_response(
             request.included_dirs.split(',') if request.included_dirs else None,
             request.included_files.split(',') if request.included_files else None,
         )
+        
+        # Diagnostic check for retriever state
+        if not hasattr(rag_instance, 'retriever') or rag_instance.retriever is None:
+            logger.error("❌ Retriever not initialized after prepare_retriever call")
+            yield json.dumps({"error": "Repository retriever failed to initialize"})
+            return
+            
+        if not hasattr(rag_instance, 'transformed_docs') or not rag_instance.transformed_docs:
+            logger.error("❌ No transformed documents available for retrieval")
+            yield json.dumps({"error": "No repository documents available for wiki generation"})
+            return
+            
+        logger.info(f"✅ Retriever ready with {len(rag_instance.transformed_docs)} documents")
+        
     except Exception as e:
         logger.error(f"Error preparing retriever: {e}", exc_info=True)
         yield json.dumps({"error": f"Failed to prepare repository data: {e}"})
@@ -98,31 +112,74 @@ async def stream_response(
     
     all_retrieved_docs = []
     seen_sources = set()  # Avoid duplicate content from same source
+    context_text = ""  # Initialize to prevent UnboundLocalError
     
     for broad_query in comprehensive_queries:
         try:
-            docs, _ = rag_instance.call(broad_query, language=request.language)
+            result = rag_instance.call(broad_query, language=request.language)
+            logger.debug(f"RAG call result type: {type(result)}, content: {result}")
+            
+            # Handle different return formats from RAG
+            if result is None:
+                logger.warning(f"RAG returned None for query: '{broad_query}'")
+                continue
+                
+            if isinstance(result, tuple) and len(result) >= 2:
+                docs, _ = result
+            else:
+                logger.warning(f"Unexpected RAG result format: {type(result)} for query: '{broad_query}'")
+                continue
+            
+            # Ensure docs is a list
+            if docs is None:
+                logger.warning(f"RAG returned None docs for query: '{broad_query}'")
+                continue
+                
+            if not isinstance(docs, list):
+                logger.warning(f"RAG docs is not a list: {type(docs)} for query: '{broad_query}'")
+                continue
+            
+            logger.info(f"✅ Retrieved {len(docs)} docs for query: '{broad_query}'")
+            
             for doc in docs:
-                source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
+                if doc is None:
+                    continue
+                    
+                source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') and doc.metadata else 'unknown'
                 if source not in seen_sources:
                     all_retrieved_docs.append(doc)
                     seen_sources.add(source)
+                    logger.debug(f"Added doc from source: {source}")
+                    
         except Exception as e:
             logger.warning(f"Failed to retrieve docs for query '{broad_query}': {e}")
+            logger.debug(f"Exception details: {type(e).__name__}: {str(e)}")
             continue
     
     # If we still don't have enough content, try to get more documents with a very broad query
     if len(all_retrieved_docs) < 10:
         try:
             # Use a very broad query to capture more of the codebase
-            broad_docs, _ = rag_instance.call("source code implementation functions classes", language=request.language)
-            for doc in broad_docs[:15]:  # Add up to 15 more docs
-                source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
-                if source not in seen_sources:
-                    all_retrieved_docs.append(doc)
-                    seen_sources.add(source)
+            result = rag_instance.call("source code implementation functions classes", language=request.language)
+            
+            if result is not None and isinstance(result, tuple) and len(result) >= 2:
+                broad_docs, _ = result
+                if broad_docs and isinstance(broad_docs, list):
+                    logger.info(f"🔄 Fallback retrieved {len(broad_docs)} additional docs")
+                    for doc in broad_docs[:15]:  # Add up to 15 more docs
+                        if doc is None:
+                            continue
+                        source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') and doc.metadata else 'unknown'
+                        if source not in seen_sources:
+                            all_retrieved_docs.append(doc)
+                            seen_sources.add(source)
+                else:
+                    logger.warning("Fallback RAG call returned invalid docs format")
+            else:
+                logger.warning("Fallback RAG call returned invalid result format")
         except Exception as e:
             logger.warning(f"Failed to retrieve additional broad docs: {e}")
+            logger.debug(f"Fallback exception details: {type(e).__name__}: {str(e)}")
     
     # FALLBACK: If RAG didn't provide enough comprehensive content, get direct access to transformed docs
     if len(all_retrieved_docs) < 5 or len(context_text) < 5000:

@@ -211,9 +211,32 @@ class RAG(adal.Component):
                 logger.info("Retriever returned no results for the query.")
                 return ([], [])
 
+            # Enhanced error handling for retrieval results
+            if not isinstance(retrieved_results, list) or len(retrieved_results) == 0:
+                logger.warning(f"Invalid retriever results format: {type(retrieved_results)}")
+                return ([], [])
+                
+            first_result = retrieved_results[0]
+            if first_result is None:
+                logger.warning("First retrieval result is None")
+                return ([], [])
+                
+            if not hasattr(first_result, 'documents'):
+                logger.warning(f"Retrieval result missing 'documents' attribute: {type(first_result)}")
+                return ([], [])
+
             # The actual documents are in the 'documents' attribute of the first result item
-            retrieved_documents = retrieved_results[0].documents
+            retrieved_documents = first_result.documents
             
+            if retrieved_documents is None:
+                logger.warning("Retrieved documents is None")
+                return ([], [])
+                
+            if not isinstance(retrieved_documents, list):
+                logger.warning(f"Retrieved documents is not a list: {type(retrieved_documents)}")
+                return ([], [])
+            
+            logger.debug(f"Successfully retrieved {len(retrieved_documents)} documents")
             return retrieved_documents, []
         except Exception as e:
             logger.error(f"Error in RAG call: {e}", exc_info=True)
