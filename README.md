@@ -194,6 +194,29 @@ If you see errors like `"the model 'jina-embeddings-v3' does not exist"`:
    - For embeddings: `jina-embeddings-v2`, `text-embedding-ada-002`, `sentence-transformers/all-MiniLM-L6-v2`
    - For LLM: Check your vLLM deployment's model list
 
+#### Common Error: "AssertionError" in FAISS (Dimension Mismatch)
+If you see errors like `assert d == self.d` or `AssertionError` in FAISS retriever:
+
+1. **This means embedding dimensions don't match** between cached documents and current queries:
+   ```bash
+   # Clear the cache and regenerate with consistent model
+   cd api && python clear_cache.py
+   ```
+
+2. **Verify your embedding dimensions** match your model:
+   ```bash
+   # Check what dimensions your model actually produces
+   cd api && python validate_models.py
+   
+   # Update .env with correct dimensions
+   EMBEDDING_DIMENSIONS=1536  # Example: adjust to match your model
+   ```
+
+3. **Common causes**:
+   - Changed embedding model without clearing cache
+   - EMBEDDING_DIMENSIONS setting doesn't match actual model output
+   - Mixed embeddings from different models in cache
+
 #### General Troubleshooting:
 1. **Check API Keys**: Ensure your vLLM API keys are correctly set in `.env`
 2. **Verify Endpoints**: Confirm your vLLM base URLs are accessible

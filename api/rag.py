@@ -166,6 +166,30 @@ class RAG(adal.Component):
                 raise ValueError("Query embedding pipeline did not return a valid vector.")
 
             query_vector = transformed_query_doc[0].vector
+            
+            # Validate query vector dimensions
+            query_dim = len(query_vector) if query_vector else 0
+            logger.debug(f"Query vector dimensions: {query_dim}")
+            
+            # Get expected dimensions from the first stored document
+            expected_dim = None
+            if self.transformed_docs:
+                for doc in self.transformed_docs:
+                    if hasattr(doc, 'vector') and doc.vector:
+                        expected_dim = len(doc.vector)
+                        break
+            
+            logger.debug(f"Expected vector dimensions: {expected_dim}")
+            
+            # Check for dimension mismatch
+            if expected_dim and query_dim != expected_dim:
+                logger.error(f"Dimension mismatch: Query={query_dim}, Expected={expected_dim}")
+                logger.error("This usually means:")
+                logger.error("  - Different embedding models were used for documents vs queries")
+                logger.error("  - EMBEDDING_DIMENSIONS setting doesn't match your model")
+                logger.error("  - Cache contains embeddings from a different model")
+                logger.error("💡 Solution: Clear cache and regenerate with consistent model")
+                return ([], [])
 
             # 4. Pass the embedding vector directly to the retriever.
             # The retriever expects a list of vectors.

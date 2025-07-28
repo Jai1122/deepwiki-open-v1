@@ -299,15 +299,21 @@ class DatabaseManager:
                 
                 # Defensive check for stale cache format
                 if isinstance(loaded_docs, list):
-                    self.db_docs = loaded_docs
-                    logger.info(f"Successfully loaded {len(self.db_docs)} documents from cache.")
-                    return self.db_docs
+                    # Validate embedding dimensions in cached documents
+                    cache_valid = self._validate_cache_dimensions(loaded_docs)
+                    if cache_valid:
+                        self.db_docs = loaded_docs
+                        logger.info(f"Successfully loaded {len(self.db_docs)} documents from cache.")
+                        return self.db_docs
+                    else:
+                        logger.warning(f"Cache contains inconsistent embedding dimensions. Regenerating database.")
+                        self._clear_cache(db_path)
                 else:
                     logger.warning(f"Cache file {db_path} contains an outdated format. Regenerating database.")
-                    self.db_docs = None # Invalidate cache
+                    self._clear_cache(db_path)
             except (pickle.UnpicklingError, EOFError, ModuleNotFoundError) as e:
                 logger.warning(f"Could not unpickle cache file {db_path} due to '{e}'. Regenerating database.")
-                self.db_docs = None # Invalidate cache
+                self._clear_cache(db_path)
 
         repo_path = repo_url_or_path if type == "local" else os.path.join(get_adalflow_default_root_path(), "repos", repo_name)
         if type != "local":
@@ -325,3 +331,54 @@ class DatabaseManager:
         self.db_docs = transform_documents_and_save_to_db(documents, db_path, is_ollama_embedder)
         
         return self.db_docs
+    
+    def _validate_cache_dimensions(self, docs: List[Document]) -> bool:
+        """
+        Validate that cached documents have consistent embedding dimensions
+        and match the current embedding model configuration.
+        """
+        if not docs:
+            return True
+            
+        # Get current embedding model dimensions from environment
+        expected_dim = int(os.environ.get('EMBEDDING_DIMENSIONS', '1024'))
+        
+        # Check dimensions in cached documents
+        found_dimensions = set()
+        valid_docs = 0
+        
+        for doc in docs:
+            if hasattr(doc, 'vector') and doc.vector:
+                doc_dim = len(doc.vector)
+                found_dimensions.add(doc_dim)
+                valid_docs += 1
+        
+        logger.debug(f"Cache validation: Found {valid_docs} docs with embeddings")
+        logger.debug(f"Cache dimensions found: {found_dimensions}")
+        logger.debug(f"Expected dimensions: {expected_dim}")
+        
+        # Cache is valid if:
+        # 1. All documents have consistent dimensions
+        # 2. The dimensions match current model configuration
+        if len(found_dimensions) == 1 and expected_dim in found_dimensions:
+            logger.info(f"✅ Cache validation passed: {expected_dim}D embeddings")
+            return True
+        else:
+            logger.warning(f"❌ Cache validation failed:")
+            if len(found_dimensions) > 1:
+                logger.warning(f"   - Inconsistent dimensions in cache: {found_dimensions}")
+            if expected_dim not in found_dimensions:
+                logger.warning(f"   - Cache dimensions {found_dimensions} don't match expected {expected_dim}")
+            return False
+    
+    def _clear_cache(self, db_path: str):
+        """Clear the cache file safely."""
+        try:
+            if os.path.exists(db_path):
+                os.remove(db_path)
+                logger.info(f"🗑️  Cache cleared: {db_path}")
+        except Exception as e:
+            logger.warning(f"Could not clear cache {db_path}: {e}")
+        
+        # Reset internal state
+        self.db_docs = None
