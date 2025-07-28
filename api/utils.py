@@ -12,6 +12,70 @@ from requests.exceptions import RequestException
 
 logger = logging.getLogger(__name__)
 
+def is_text_file(file_path: str) -> bool:
+    """
+    Check if a file is likely a text file (not binary).
+    This prevents binary files from being processed and causing junk characters in embeddings.
+    """
+    try:
+        # Check file extension first (fast check)
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        # Known text file extensions
+        text_extensions = {
+            '.txt', '.md', '.py', '.js', '.ts', '.jsx', '.tsx', '.go', '.java', '.c', '.cpp', '.h', '.hpp',
+            '.css', '.html', '.htm', '.xml', '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+            '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd', '.dockerfile', '.makefile',
+            '.sql', '.php', '.rb', '.rs', '.kt', '.swift', '.scala', '.clj', '.hs', '.elm', '.vue',
+            '.svelte', '.astro', '.r', '.m', '.tex', '.latex', '.bib', '.org', '.rst', '.adoc',
+            '.gitignore', '.gitattributes', '.editorconfig', '.prettierrc', '.eslintrc'
+        }
+        
+        # Known binary extensions to definitely exclude
+        binary_extensions = {
+            '.exe', '.dll', '.so', '.dylib', '.bin', '.obj', '.o', '.a', '.lib',
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.ico', '.svg',
+            '.mp3', '.mp4', '.avi', '.mov', '.wav', '.flac', '.ogg',
+            '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+            '.class', '.jar', '.war', '.ear', '.pyc', '.pyo', '.pyd',
+            '.woff', '.woff2', '.ttf', '.otf', '.eot'
+        }
+        
+        if file_ext in text_extensions:
+            return True
+        if file_ext in binary_extensions:
+            return False
+        
+        # For unknown extensions, check file content (sample first 1024 bytes)
+        with open(file_path, 'rb') as f:
+            sample = f.read(1024)
+            
+        if not sample:
+            return True  # Empty files are considered text
+        
+        # Check for null bytes (strong indicator of binary content)
+        if b'\x00' in sample:
+            return False
+        
+        # Check if most characters are printable ASCII or common UTF-8
+        try:
+            sample.decode('utf-8')
+            return True
+        except UnicodeDecodeError:
+            # Try latin-1 as fallback
+            try:
+                sample.decode('latin-1')
+                # If it decodes as latin-1, check if it looks like text
+                printable_chars = sum(1 for b in sample if 32 <= b <= 126 or b in [9, 10, 13])
+                return printable_chars / len(sample) > 0.7  # 70% printable characters
+            except:
+                return False
+                
+    except Exception as e:
+        logger.warning(f"Could not determine if {file_path} is text file: {e}")
+        return False  # When in doubt, exclude to prevent binary content
+
 def count_tokens(text: str, is_ollama_embedder: bool = False) -> int:
     """
     Counts the number of tokens in a given text.
@@ -369,10 +433,37 @@ def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str 
 def get_local_file_content(file_path: str) -> str:
     """
     Reads content from a local file path.
+    Enhanced to handle encoding issues and detect binary files.
     """
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read()
+        # First check if it's likely a text file
+        if not is_text_file(file_path):
+            logger.debug(f"Skipping binary file: {file_path}")
+            return ""
+        
+        # Try UTF-8 first
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Validate content doesn't contain too many control characters
+            if content:
+                control_chars = sum(1 for c in content if ord(c) < 32 and c not in '\n\r\t')
+                if len(content) > 0 and control_chars / len(content) > 0.1:  # More than 10% control characters
+                    logger.debug(f"Skipping file with excessive control characters: {file_path}")
+                    return ""
+                    
+            return content
+            
+        except UnicodeDecodeError:
+            # Fallback to latin-1 with error handling
+            logger.debug(f"UTF-8 decode failed for {file_path}, trying latin-1")
+            with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
+                content = f.read()
+                # Filter out problematic characters
+                content = ''.join(c if ord(c) >= 32 or c in '\n\r\t' else ' ' for c in content)
+                return content
+                
     except Exception as e:
         logger.error(f"Error reading local file {file_path}: {e}")
         return ""

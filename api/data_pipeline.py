@@ -18,7 +18,7 @@ import requests
 from requests.exceptions import RequestException
 
 from .tools.embedder import get_embedder
-from .utils import get_local_file_content, count_tokens, estimate_processing_priority, smart_chunk_text
+from .utils import get_local_file_content, count_tokens, estimate_processing_priority, smart_chunk_text, is_text_file
 
 logger = logging.getLogger(__name__)
 
@@ -176,20 +176,34 @@ def read_all_documents(
     final_excluded_dirs.extend(repo_excluded_dirs)
 
     # Normalize exclusion patterns for reliable matching
-    normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs if p.strip('./').strip('/')]
+    # Handle different formats: "./dir/", "dir", ".git", etc.
+    normalized_excluded_dirs = []
+    for p in final_excluded_dirs:
+        if not p or not p.strip():
+            continue
+        # Remove leading ./ and trailing /
+        normalized = p.strip()
+        if normalized.startswith('./'):
+            normalized = normalized[2:]
+        normalized = normalized.rstrip('/')
+        if normalized and normalized not in normalized_excluded_dirs:
+            normalized_excluded_dirs.append(normalized)
 
     logger.info(f"Starting to walk directory: {path}")
     logger.info(f"Excluded directories ({len(normalized_excluded_dirs)}): {normalized_excluded_dirs}")
     logger.info(f"Excluded filename patterns: {excluded_filename_patterns}")
     logger.info(f"Total excluded file patterns: {len(final_excluded_files)}")
     
-    # Debug: Check if 'vendor' is in the exclusion list
-    if 'vendor' in normalized_excluded_dirs:
-        logger.info("✅ 'vendor' directory is in exclusion list")
-    else:
-        logger.warning("❌ 'vendor' directory is NOT in exclusion list!")
-        logger.warning(f"Repo config dirs: {repo_excluded_dirs}")
-        logger.warning(f"Default excluded dirs: {DEFAULT_EXCLUDED_DIRS[:10]}...")  # Show first 10
+    # Debug: Check if critical directories are in the exclusion list
+    critical_dirs = ['.git', 'vendor', 'node_modules', '__pycache__']
+    for critical_dir in critical_dirs:
+        if critical_dir in normalized_excluded_dirs:
+            logger.info(f"✅ '{critical_dir}' directory is in exclusion list")
+        else:
+            logger.warning(f"❌ '{critical_dir}' directory is NOT in exclusion list!")
+    
+    logger.debug(f"All normalized excluded dirs: {sorted(normalized_excluded_dirs)}")
+    logger.debug(f"Repo config dirs: {repo_excluded_dirs}")
     
     # First pass: collect all candidate files with priorities
     for root, dirs, files in os.walk(path, topdown=True):
@@ -237,7 +251,10 @@ def read_all_documents(
             filtered_subdirs = set(original_subdirs) - set(dirs)
             logger.info(f"🚫 Filtered {len(filtered_subdirs)} subdirs from '{normalized_current_dir or 'root'}': {filtered_subdirs}")
         
-        logger.debug(f"📂 Processing '{normalized_current_dir or 'root'}' - will recurse into: {dirs}")
+        if dirs:
+            logger.debug(f"📂 Processing '{normalized_current_dir or 'root'}' - will recurse into: {dirs}")
+        else:
+            logger.debug(f"📂 Processing '{normalized_current_dir or 'root'}' - no subdirs to recurse")
         
         # SAFETY CHECK: Verify we're not in an excluded directory
         if normalized_current_dir:
@@ -266,6 +283,11 @@ def read_all_documents(
                     break
             
             if file_in_excluded_dir:
+                continue
+            
+            # Check if file is binary/non-text to prevent junk characters in embeddings
+            if not is_text_file(file_path):
+                rejected_files_log.append(f"{normalized_relative_path} (binary/non-text file)")
                 continue
             
             # Skip excluded files by filename pattern (both filename and full path)
@@ -420,6 +442,15 @@ def read_all_documents(
         logger.info(f"Example processed files: {processed_files_log[:5]}")
     if rejected_files_log:
         logger.info(f"Example rejected files: {rejected_files_log[:5]}")
+        
+        # Count rejection reasons
+        rejection_reasons = {}
+        for rejected in rejected_files_log:
+            if '(' in rejected:
+                reason = rejected.split('(')[-1].rstrip(')')
+                rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+        
+        logger.info(f"Rejection reasons summary: {dict(rejection_reasons)}")
     
     # Critical check: if no documents were created, log this as an error
     if len(all_documents) == 0:
