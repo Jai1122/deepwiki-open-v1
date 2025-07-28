@@ -22,7 +22,7 @@ from .utils import get_local_file_content, count_tokens, estimate_processing_pri
 
 logger = logging.getLogger(__name__)
 
-def safe_chunk_for_embedding(text: str, max_tokens: int = 6000) -> List[str]:
+def safe_chunk_for_embedding(text: str, max_tokens: int = 4000) -> List[str]:
     """
     Safely chunk text to ensure no chunk exceeds the embedding model's token limit.
     Uses recursive splitting if needed.
@@ -403,7 +403,7 @@ def read_all_documents(
             chunks = text_splitter.split_text(content)
             
             # Get max tokens from config for embedding safety
-            max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 6000)
+            max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 4000)
             
             safe_chunks = []
             for chunk in chunks:
@@ -523,7 +523,7 @@ def read_all_documents(
                     
                     if content.strip():
                         chunks = text_splitter.split_text(content)
-                        max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 6000)
+                        max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 4000)
                         
                         safe_chunks = []
                         for chunk in chunks:
