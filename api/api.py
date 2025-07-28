@@ -289,28 +289,109 @@ async def get_local_repo_structure(path: str = Query(None, description="Path to 
 
     try:
         logger.info(f"Processing local repository at: {path}")
+        
+        # Use the same comprehensive exclusion logic as data_pipeline.py
+        from .config import configs, DEFAULT_EXCLUDED_DIRS, DEFAULT_EXCLUDED_FILES
+        import fnmatch
+        
+        # Get comprehensive exclusion lists
+        final_excluded_dirs = DEFAULT_EXCLUDED_DIRS.copy()
+        final_excluded_files = DEFAULT_EXCLUDED_FILES.copy()
+        
+        # Add exclusions from repo config
+        file_filters_config = configs.get("file_filters", {})
+        excluded_filename_patterns = file_filters_config.get("excluded_filename_patterns", [])
+        repo_excluded_dirs = file_filters_config.get("excluded_dirs", [])
+        final_excluded_dirs.extend(repo_excluded_dirs)
+        
+        # Normalize exclusion patterns (same logic as data_pipeline.py)
+        normalized_excluded_dirs = []
+        for p in final_excluded_dirs:
+            if not p or not p.strip():
+                continue
+            normalized = p.strip()
+            if normalized.startswith('./'):
+                normalized = normalized[2:]
+            normalized = normalized.rstrip('/')
+            if normalized and normalized not in normalized_excluded_dirs:
+                normalized_excluded_dirs.append(normalized)
+        
+        logger.info(f"🌳 File tree will exclude: {sorted(set(normalized_excluded_dirs))}")
+        
         file_tree_lines = []
         readme_content = ""
 
-        for root, dirs, files in os.walk(path):
-            # Exclude hidden dirs/files and virtual envs
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__' and d != 'node_modules' and d != '.venv']
+        for root, dirs, files in os.walk(path, topdown=True):
+            # Get current directory relative to base path
+            current_dir_relative = os.path.relpath(root, path)
+            normalized_current_dir = current_dir_relative.replace('\\', '/')
+            
+            if normalized_current_dir == '.':
+                normalized_current_dir = ''
+            
+            # Check if current directory should be skipped entirely
+            should_skip_dir = False
+            if normalized_current_dir:
+                path_components = normalized_current_dir.split('/')
+                for component in path_components:
+                    if component in normalized_excluded_dirs:
+                        should_skip_dir = True
+                        logger.debug(f"🚫 File tree: Skipping {normalized_current_dir} ('{component}' excluded)")
+                        break
+            
+            if should_skip_dir:
+                dirs.clear()  # Don't recurse into excluded directories
+                continue
+            
+            # Filter immediate subdirectories to prevent walking into them
+            dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
+            
+            # Process files in current directory
             for file in files:
-                if file.startswith('.') or file == '__init__.py' or file == '.DS_Store':
-                    continue
+                file_path = os.path.join(root, file)
                 rel_dir = os.path.relpath(root, path)
                 rel_file = os.path.join(rel_dir, file) if rel_dir != '.' else file
-                file_tree_lines.append(rel_file)
+                normalized_rel_file = rel_file.replace('\\', '/')
+                
+                # Check if file should be excluded by filename pattern
+                filename_excluded = False
+                for pattern in excluded_filename_patterns:
+                    if fnmatch.fnmatch(file, pattern) or fnmatch.fnmatch(normalized_rel_file, pattern):
+                        filename_excluded = True
+                        break
+                
+                if filename_excluded:
+                    continue
+                
+                # Check if file matches general excluded file patterns
+                if any(fnmatch.fnmatch(normalized_rel_file, pattern) for pattern in final_excluded_files):
+                    continue
+                
+                # Safety check: ensure file is not in excluded directory path
+                file_path_components = normalized_rel_file.split('/')
+                file_in_excluded_dir = False
+                for component in file_path_components[:-1]:
+                    if component in normalized_excluded_dirs:
+                        file_in_excluded_dir = True
+                        break
+                
+                if file_in_excluded_dir:
+                    continue
+                
+                # Add to file tree (only relevant files for LLM analysis)
+                file_tree_lines.append(normalized_rel_file)
+                
                 # Find README.md (case-insensitive)
                 if file.lower() == 'readme.md' and not readme_content:
                     try:
-                        with open(os.path.join(root, file), 'r', encoding='utf-8') as f:
+                        with open(file_path, 'r', encoding='utf-8') as f:
                             readme_content = f.read()
                     except Exception as e:
                         logger.warning(f"Could not read README.md: {str(e)}")
                         readme_content = ""
 
         file_tree_str = '\n'.join(sorted(file_tree_lines))
+        logger.info(f"📊 Generated clean file tree: {len(file_tree_lines)} files for LLM analysis (excluded vendor, .git, node_modules, etc.)")
         return {"file_tree": file_tree_str, "readme": readme_content}
     except Exception as e:
         logger.error(f"Error processing local repository: {str(e)}")
