@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from typing import List, Optional, AsyncGenerator
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -34,15 +35,57 @@ class ChatCompletionRequest(BaseModel):
 
 async def handle_websocket_chat(websocket: WebSocket):
     await websocket.accept()
+    logger.info("WebSocket connection accepted")
+    
     try:
         while True:
-            data = await websocket.receive_text()
+            # Add timeout to websocket receive to prevent indefinite waiting
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=300)  # 5 minute timeout
+            except asyncio.TimeoutError:
+                logger.warning("WebSocket receive timeout - sending heartbeat")
+                await websocket.send_text(json.dumps({"status": "heartbeat", "message": "Connection alive"}))
+                continue
+                
+            logger.info("Received WebSocket request")
             request = ChatCompletionRequest(**json.loads(data))
             rag_instance = RAG(provider=request.provider, model=request.model)
             model_config = get_model_config(provider=request.provider, model=request.model)
 
-            async for chunk in stream_response(request, rag_instance, model_config):
-                await websocket.send_text(chunk)
+            chunk_count = 0
+            start_time = asyncio.get_event_loop().time()
+            
+            try:
+                async for chunk in stream_response(request, rag_instance, model_config):
+                    chunk_count += 1
+                    
+                    # Check if websocket is still connected before sending
+                    if websocket.client_state == websocket.client_state.DISCONNECTED:
+                        logger.warning("Client disconnected during stream, stopping generation")
+                        break
+                    
+                    try:
+                        await websocket.send_text(chunk)
+                    except Exception as send_error:
+                        logger.warning(f"Failed to send chunk {chunk_count}: {send_error}")
+                        # If we can't send, client probably disconnected
+                        break
+                    
+                    # Send periodic heartbeats during long streams
+                    if chunk_count % 50 == 0:
+                        current_time = asyncio.get_event_loop().time()
+                        elapsed = current_time - start_time
+                        logger.debug(f"Stream progress: {chunk_count} chunks, {elapsed:.1f}s elapsed")
+                        
+            except Exception as stream_error:
+                logger.error(f"Error in stream processing: {stream_error}")
+                try:
+                    if websocket.client_state != websocket.client_state.DISCONNECTED:
+                        await websocket.send_text(json.dumps({"error": f"Stream processing failed: {stream_error}"}))
+                except:
+                    logger.warning("Failed to send error message - client may have disconnected")
+            
+            logger.info(f"Completed WebSocket request: {chunk_count} chunks sent")
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected.")
     except Exception as e:
@@ -246,20 +289,76 @@ async def stream_response(
     logger.info("Preparing to stream response from LLM.")
     try:
         api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
-        response_stream = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+        logger.debug(f"API kwargs prepared: {list(api_kwargs.keys())}")
+        
+        # Add timeout to the initial LLM call to prevent hanging on connection
+        try:
+            response_stream = await asyncio.wait_for(
+                client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
+                timeout=60  # 60 second timeout for initial connection
+            )
+            logger.info("Successfully connected to LLM API and received response stream")
+        except asyncio.TimeoutError:
+            logger.error("LLM API connection timeout - no response within 60 seconds")
+            yield json.dumps({"error": "LLM API connection timeout"})
+            return
         
         logger.info("Starting to iterate over response stream.")
         chunk_count = 0
-        async for chunk in response_stream:
-            chunk_count += 1
-            content = ""
-            if isinstance(chunk, str): content = chunk
-            elif hasattr(chunk, "choices") and chunk.choices and hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"): content = chunk.choices[0].delta.content or ""
-            elif hasattr(chunk, "text"): content = chunk.text
+        last_chunk_time = asyncio.get_event_loop().time()
+        stream_timeout = 120  # 2 minutes timeout for the entire stream
+        chunk_timeout = 30   # 30 seconds timeout between chunks
+        
+        try:
+            # Create an async iterator from the response stream
+            stream_iter = aiter(response_stream)
             
-            if content:
-                # logger.debug(f"Yielding chunk {chunk_count}: {content}")
-                yield json.dumps({"content": content})
+            while True:
+                try:
+                    # Use wait_for to add timeout to each chunk retrieval
+                    chunk = await asyncio.wait_for(anext(stream_iter), timeout=chunk_timeout)
+                    chunk_count += 1
+                    current_time = asyncio.get_event_loop().time()
+                    
+                    # Check if total stream time has exceeded limit
+                    if current_time - last_chunk_time > stream_timeout:
+                        logger.warning(f"Stream timeout exceeded ({stream_timeout}s), terminating")
+                        yield json.dumps({"error": "Response stream timed out"})
+                        break
+                    
+                    content = ""
+                    if isinstance(chunk, str): 
+                        content = chunk
+                    elif hasattr(chunk, "choices") and chunk.choices and hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"): 
+                        content = chunk.choices[0].delta.content or ""
+                    elif hasattr(chunk, "text"): 
+                        content = chunk.text
+                    
+                    if content:
+                        logger.debug(f"Yielding chunk {chunk_count}: {len(content)} chars")
+                        yield json.dumps({"content": content})
+                    
+                    # Update last chunk time on successful processing
+                    last_chunk_time = current_time
+                    
+                except StopAsyncIteration:
+                    # Normal end of stream
+                    logger.info(f"Stream completed normally after {chunk_count} chunks")
+                    break
+                    
+                except asyncio.TimeoutError:
+                    logger.error(f"Chunk timeout ({chunk_timeout}s) - no data received")
+                    yield json.dumps({"error": "Stream stalled - no data received within timeout"})
+                    break
+                    
+                except Exception as chunk_error:
+                    logger.error(f"Error processing chunk {chunk_count}: {chunk_error}")
+                    # Continue processing other chunks instead of failing completely
+                    continue
+        
+        except Exception as stream_error:
+            logger.error(f"Error in stream iteration: {stream_error}")
+            yield json.dumps({"error": f"Stream processing error: {stream_error}"})
         
         logger.info(f"Finished iterating over response stream after {chunk_count} chunks.")
 
