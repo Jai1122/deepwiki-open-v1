@@ -15,6 +15,67 @@ from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PRO
 
 logger = logging.getLogger(__name__)
 
+async def handle_streaming_response(response_stream):
+    """Handle streaming response from LLM with timeout protection"""
+    logger.info("Starting to iterate over response stream.")
+    chunk_count = 0
+    last_chunk_time = asyncio.get_event_loop().time()
+    stream_timeout = 120  # 2 minutes timeout for the entire stream
+    chunk_timeout = 30   # 30 seconds timeout between chunks
+    
+    try:
+        # Create an async iterator from the response stream
+        stream_iter = aiter(response_stream)
+        
+        while True:
+            try:
+                # Use wait_for to add timeout to each chunk retrieval
+                chunk = await asyncio.wait_for(anext(stream_iter), timeout=chunk_timeout)
+                chunk_count += 1
+                current_time = asyncio.get_event_loop().time()
+                
+                # Check if total stream time has exceeded limit
+                if current_time - last_chunk_time > stream_timeout:
+                    logger.warning(f"Stream timeout exceeded ({stream_timeout}s), terminating")
+                    yield json.dumps({"error": "Response stream timed out"})
+                    break
+                
+                content = ""
+                if isinstance(chunk, str): 
+                    content = chunk
+                elif hasattr(chunk, "choices") and chunk.choices and hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"): 
+                    content = chunk.choices[0].delta.content or ""
+                elif hasattr(chunk, "text"): 
+                    content = chunk.text
+                
+                if content:
+                    logger.debug(f"Yielding chunk {chunk_count}: {len(content)} chars")
+                    yield json.dumps({"content": content})
+                
+                # Update last chunk time on successful processing
+                last_chunk_time = current_time
+                
+            except StopAsyncIteration:
+                # Normal end of stream
+                logger.info(f"Stream completed normally after {chunk_count} chunks")
+                break
+                
+            except asyncio.TimeoutError:
+                logger.error(f"Chunk timeout ({chunk_timeout}s) - no data received")
+                yield json.dumps({"error": "Stream stalled - no data received within timeout"})
+                break
+                
+            except Exception as chunk_error:
+                logger.error(f"Error processing chunk {chunk_count}: {chunk_error}")
+                # Continue processing other chunks instead of failing completely
+                continue
+    
+    except Exception as stream_error:
+        logger.error(f"Error in stream iteration: {stream_error}")
+        yield json.dumps({"error": f"Stream processing error: {stream_error}"})
+    
+    logger.info(f"Finished iterating over response stream after {chunk_count} chunks.")
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -115,6 +176,48 @@ async def stream_response(
             yield json.dumps({"error": "Failed to process the large query."})
             return
 
+    # Check early if this is a structure query to skip unnecessary RAG preparation
+    is_structure_query = '<file_tree>' in query and '</file_tree>' in query
+    
+    if is_structure_query:
+        logger.info("🏗️  Detected wiki structure determination query - skipping RAG retrieval")
+        # For structure queries, we don't need RAG content, just pass through the query
+        prompt = query
+        logger.info(f"📋 Structure query prompt length: {len(prompt)} characters")
+        
+        client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
+        model_kwargs["stream"] = True
+        
+        logger.info("Preparing to stream response from LLM (structure query).")
+        try:
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
+            logger.debug(f"API kwargs prepared: {list(api_kwargs.keys())}")
+            
+            # Add timeout to the initial LLM call to prevent hanging on connection
+            try:
+                response_stream = await asyncio.wait_for(
+                    client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
+                    timeout=60  # 60 second timeout for initial connection
+                )
+                logger.info("Successfully connected to LLM API and received response stream (structure query)")
+            except asyncio.TimeoutError:
+                logger.error("LLM API connection timeout - no response within 60 seconds (structure query)")
+                yield json.dumps({"error": "LLM API connection timeout"})
+                return
+                
+            # Handle streaming response (reuse existing streaming logic)
+            async for chunk in handle_streaming_response(response_stream):
+                yield chunk
+                
+        except Exception as e:
+            logger.error(f"Error in streaming response (structure query): {e}", exc_info=True)
+            yield json.dumps({"error": f"Error generating response: {e}"})
+
+        logger.info("Sending 'done' status (structure query).")
+        yield json.dumps({"status": "done"})
+        return
+
+    # For content generation queries, continue with RAG preparation
     try:
         rag_instance.prepare_retriever(
             request.repo_url, request.type, request.token,
@@ -224,27 +327,61 @@ async def stream_response(
             logger.warning(f"Failed to retrieve additional broad docs: {e}")
             logger.debug(f"Fallback exception details: {type(e).__name__}: {str(e)}")
     
-    # FALLBACK: If RAG didn't provide enough comprehensive content, get direct access to transformed docs
-    if len(all_retrieved_docs) < 5 or len(context_text) < 5000:
-        logger.warning(f"⚠️  RAG retrieval insufficient for wiki generation (only {len(all_retrieved_docs)} docs, {len(context_text)} chars)")
-        logger.info("🔄 Attempting direct access to repository database for comprehensive content...")
-        
+    # ENHANCED FALLBACK: For wiki generation, we need comprehensive content regardless of similarity scores
+    # Start by getting more comprehensive coverage from the repository
+    if not is_structure_query:  # Only for content generation, not structure determination
         try:
-            # Access the transformed documents directly from the RAG instance
+            # Access the transformed documents directly from the RAG instance for comprehensive coverage
             if hasattr(rag_instance, 'transformed_docs') and rag_instance.transformed_docs:
                 direct_docs = rag_instance.transformed_docs
-                logger.info(f"📚 Found {len(direct_docs)} documents in repository database")
+                logger.info(f"📚 Found {len(direct_docs)} total documents in repository database")
                 
-                # Add documents that weren't retrieved by similarity search
-                for doc in direct_docs[:30]:  # Limit to prevent overwhelming context
+                # For wiki generation, we want comprehensive coverage, not just similarity matches
+                # Add more documents, prioritizing different file types for comprehensive coverage
+                doc_count_by_type = {}
+                
+                # First pass: add documents we don't already have, up to reasonable limits per file type
+                for doc in direct_docs:
+                    if len(all_retrieved_docs) >= 50:  # Reasonable upper limit
+                        break
+                        
+                    source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
+                    if source not in seen_sources:
+                        # Determine file type for balanced coverage
+                        file_ext = source.split('.')[-1].lower() if '.' in source else 'unknown'
+                        
+                        # Limit per file type to ensure diversity
+                        type_limit = 8 if file_ext in ['py', 'js', 'ts', 'go', 'java', 'cpp', 'c'] else 3
+                        current_count = doc_count_by_type.get(file_ext, 0)
+                        
+                        if current_count < type_limit:
+                            all_retrieved_docs.append(doc)
+                            seen_sources.add(source)
+                            doc_count_by_type[file_ext] = current_count + 1
+                            logger.debug(f"Added doc from source: {source} (type: {file_ext})")
+                        
+                logger.info(f"📈 Enhanced wiki context: Now have {len(all_retrieved_docs)} documents with balanced coverage")
+                logger.info(f"📊 File type distribution: {doc_count_by_type}")
+        except Exception as e:
+            logger.warning(f"Direct document access failed: {e}")
+    
+    # Final fallback check
+    if len(all_retrieved_docs) < 3:
+        logger.warning(f"⚠️  Still insufficient content after all attempts (only {len(all_retrieved_docs)} docs)")
+        logger.info("🔄 Making final attempt with very broad retrieval...")
+        
+        try:
+            # Last resort: get any available documents
+            if hasattr(rag_instance, 'transformed_docs') and rag_instance.transformed_docs:
+                for doc in rag_instance.transformed_docs[:20]:  # Just get the first 20 documents
                     source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
                     if source not in seen_sources:
                         all_retrieved_docs.append(doc)
                         seen_sources.add(source)
                         
-                logger.info(f"📈 Enhanced wiki context: Now have {len(all_retrieved_docs)} documents from direct access")
+                logger.info(f"🔄 Final fallback added {len(all_retrieved_docs)} documents")
         except Exception as e:
-            logger.warning(f"Direct document access failed: {e}")
+            logger.error(f"Final fallback failed: {e}")
     
     # Combine all retrieved content
     context_text = "\n\n".join([doc.text for doc in all_retrieved_docs]) if all_retrieved_docs else ""
@@ -258,30 +395,44 @@ async def stream_response(
     else:
         logger.error("❌ No source files retrieved - wiki will be generic!")
     file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token) if request.filePath else ""
-    # Intelligently choose prompt based on query type
-    query_lower = query.lower()
     
-    if any(keyword in query_lower for keyword in ['architecture', 'overview', 'system', 'structure', 'file tree']):
-        # Use architecture overview prompt for system-level queries
-        system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
-            file_tree=context_text[:5000] if context_text else "File tree not available",
-            readme=file_content[:2000] if file_content else "README not available", 
-            context=context_text[:3000] if context_text else "Repository context not available"
-        )
+    if is_structure_query:
+        # For structure determination, use the query as-is (it already contains file tree + README)
+        logger.info("🏗️  Processing wiki structure determination query")
+        system_prompt = query  # The query already contains the proper structure prompt
     else:
-        # Use detailed page generation prompt for component-specific queries
-        system_prompt = WIKI_PAGE_GENERATION_PROMPT.format(
-            context=context_text[:5000] if context_text else "Context not available",
-            file_content=file_content[:10000] if file_content else "File content not available",
-            page_topic=query
-        )
+        # For content generation, use intelligently chosen prompts based on query type
+        query_lower = query.lower()
+        
+        if any(keyword in query_lower for keyword in ['architecture', 'overview', 'system', 'structure']):
+            # Use architecture overview prompt for system-level queries
+            logger.info("🏛️  Using architecture overview prompt for comprehensive analysis")
+            system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
+                file_tree=context_text[:5000] if context_text else "File tree not available",
+                readme=file_content[:2000] if file_content else "README not available", 
+                context=context_text[:10000] if context_text else "Repository context not available"
+            )
+        else:
+            # Use detailed page generation prompt for component-specific queries
+            system_prompt = WIKI_PAGE_GENERATION_PROMPT.format(
+                context=context_text[:5000] if context_text else "Context not available",
+                file_content=file_content[:10000] if file_content else "File content not available",
+                page_topic=query
+            )
     conversation_history = "\n".join([f"{m.role}: {m.content}" for m in request.messages[:-1]])
 
-    file_content, context_text = truncate_prompt_to_fit(
-        context_window, max_completion_tokens, system_prompt, conversation_history, file_content, context_text, query
-    )
-
-    prompt = f"{system_prompt}\n\nHistory: {conversation_history}\n\nFile Context:\n{file_content}\n\nRetrieved Context:\n{context_text}\n\nQuery: {query}"
+    if is_structure_query:
+        # For structure queries, the system_prompt already contains everything we need
+        prompt = system_prompt
+        logger.info(f"📋 Structure query prompt length: {len(prompt)} characters")
+    else:
+        # For content generation, combine all context
+        file_content, context_text = truncate_prompt_to_fit(
+            context_window, max_completion_tokens, system_prompt, conversation_history, file_content, context_text, query
+        )
+        prompt = f"{system_prompt}\n\nHistory: {conversation_history}\n\nFile Context:\n{file_content}\n\nRetrieved Context:\n{context_text}\n\nQuery: {query}"
+        logger.info(f"📝 Content generation prompt length: {len(prompt)} characters")
+        logger.info(f"🔍 Context breakdown - File: {len(file_content)}, Retrieved: {len(context_text)}, History: {len(conversation_history)}")
     
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
     model_kwargs["stream"] = True
@@ -303,64 +454,9 @@ async def stream_response(
             yield json.dumps({"error": "LLM API connection timeout"})
             return
         
-        logger.info("Starting to iterate over response stream.")
-        chunk_count = 0
-        last_chunk_time = asyncio.get_event_loop().time()
-        stream_timeout = 120  # 2 minutes timeout for the entire stream
-        chunk_timeout = 30   # 30 seconds timeout between chunks
-        
-        try:
-            # Create an async iterator from the response stream
-            stream_iter = aiter(response_stream)
-            
-            while True:
-                try:
-                    # Use wait_for to add timeout to each chunk retrieval
-                    chunk = await asyncio.wait_for(anext(stream_iter), timeout=chunk_timeout)
-                    chunk_count += 1
-                    current_time = asyncio.get_event_loop().time()
-                    
-                    # Check if total stream time has exceeded limit
-                    if current_time - last_chunk_time > stream_timeout:
-                        logger.warning(f"Stream timeout exceeded ({stream_timeout}s), terminating")
-                        yield json.dumps({"error": "Response stream timed out"})
-                        break
-                    
-                    content = ""
-                    if isinstance(chunk, str): 
-                        content = chunk
-                    elif hasattr(chunk, "choices") and chunk.choices and hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"): 
-                        content = chunk.choices[0].delta.content or ""
-                    elif hasattr(chunk, "text"): 
-                        content = chunk.text
-                    
-                    if content:
-                        logger.debug(f"Yielding chunk {chunk_count}: {len(content)} chars")
-                        yield json.dumps({"content": content})
-                    
-                    # Update last chunk time on successful processing
-                    last_chunk_time = current_time
-                    
-                except StopAsyncIteration:
-                    # Normal end of stream
-                    logger.info(f"Stream completed normally after {chunk_count} chunks")
-                    break
-                    
-                except asyncio.TimeoutError:
-                    logger.error(f"Chunk timeout ({chunk_timeout}s) - no data received")
-                    yield json.dumps({"error": "Stream stalled - no data received within timeout"})
-                    break
-                    
-                except Exception as chunk_error:
-                    logger.error(f"Error processing chunk {chunk_count}: {chunk_error}")
-                    # Continue processing other chunks instead of failing completely
-                    continue
-        
-        except Exception as stream_error:
-            logger.error(f"Error in stream iteration: {stream_error}")
-            yield json.dumps({"error": f"Stream processing error: {stream_error}"})
-        
-        logger.info(f"Finished iterating over response stream after {chunk_count} chunks.")
+        # Use the shared streaming handler
+        async for chunk in handle_streaming_response(response_stream):
+            yield chunk
 
     except Exception as e:
         logger.error(f"Error in streaming response: {e}", exc_info=True)
