@@ -19,100 +19,204 @@ mermaid.initialize({
     padding: 20,
   },
   themeCSS: `
-    /* Japanese aesthetic styles for all diagrams */
+    /* Colorful Japanese aesthetic styles for all diagrams */
     .node rect, .node circle, .node ellipse, .node polygon, .node path {
-      fill: #f8f4e6;
-      stroke: #d7c4bb;
-      stroke-width: 1px;
+      fill: #e8f4fd;
+      stroke: #4a90e2;
+      stroke-width: 2px;
     }
+    
+    /* Different colors for different node types */
+    .node:nth-child(4n+1) rect, .node:nth-child(4n+1) circle, .node:nth-child(4n+1) ellipse, .node:nth-child(4n+1) polygon, .node:nth-child(4n+1) path {
+      fill: #fef3e8;
+      stroke: #e67e22;
+    }
+    .node:nth-child(4n+2) rect, .node:nth-child(4n+2) circle, .node:nth-child(4n+2) ellipse, .node:nth-child(4n+2) polygon, .node:nth-child(4n+2) path {
+      fill: #f0fdf4;
+      stroke: #22c55e;
+    }
+    .node:nth-child(4n+3) rect, .node:nth-child(4n+3) circle, .node:nth-child(4n+3) ellipse, .node:nth-child(4n+3) polygon, .node:nth-child(4n+3) path {
+      fill: #fdf2f8;
+      stroke: #e879f9;
+    }
+    .node:nth-child(4n+4) rect, .node:nth-child(4n+4) circle, .node:nth-child(4n+4) ellipse, .node:nth-child(4n+4) polygon, .node:nth-child(4n+4) path {
+      fill: #fff7ed;
+      stroke: #f97316;
+    }
+    
     .edgePath .path {
-      stroke: #9b7cb9;
-      stroke-width: 1.5px;
+      stroke: #6366f1;
+      stroke-width: 2px;
     }
     .edgeLabel {
-      background-color: transparent;
-      color: #333333;
+      background-color: rgba(255, 255, 255, 0.9);
+      color: #1e293b;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
       p {
         background-color: transparent !important;
       }
     }
     .label {
-      color: #333333;
+      color: #1e293b;
+      font-weight: 500;
     }
     .cluster rect {
-      fill: #f8f4e6;
-      stroke: #d7c4bb;
-      stroke-width: 1px;
+      fill: #f1f5f9;
+      stroke: #64748b;
+      stroke-width: 2px;
     }
 
-    /* Sequence diagram specific styles */
+    /* Colorful sequence diagram specific styles */
     .actor {
-      fill: #f8f4e6;
-      stroke: #d7c4bb;
-      stroke-width: 1px;
+      fill: #dbeafe;
+      stroke: #3b82f6;
+      stroke-width: 2px;
+    }
+    .actor:nth-of-type(2n) {
+      fill: #dcfce7;
+      stroke: #22c55e;
+    }
+    .actor:nth-of-type(3n) {
+      fill: #fef3c7;
+      stroke: #f59e0b;
     }
     text.actor {
-      fill: #333333;
+      fill: #1e293b;
       stroke: none;
+      font-weight: 600;
     }
     .messageText {
-      fill: #333333;
+      fill: #1e293b;
       stroke: none;
+      font-weight: 500;
     }
     .messageLine0, .messageLine1 {
-      stroke: #9b7cb9;
+      stroke: #6366f1;
+      stroke-width: 2px;
+    }
+    .messageLine0.note, .messageLine1.note {
+      stroke: #ef4444;
+      stroke-width: 2px;
     }
     .noteText {
-      fill: #333333;
+      fill: #1e293b;
+      font-weight: 500;
+    }
+    .note {
+      fill: #fef2f2;
+      stroke: #ef4444;
+      stroke-width: 2px;
     }
 
-    /* Dark mode overrides - will be applied with data-theme="dark" */
+    /* Colorful dark mode overrides - will be applied with data-theme="dark" */
     [data-theme="dark"] .node rect,
     [data-theme="dark"] .node circle,
     [data-theme="dark"] .node ellipse,
     [data-theme="dark"] .node polygon,
     [data-theme="dark"] .node path {
-      fill: #222222;
-      stroke: #5d4037;
+      fill: #1e293b;
+      stroke: #60a5fa;
     }
+    
+    /* Different colors for different node types in dark mode */
+    [data-theme="dark"] .node:nth-child(4n+1) rect,
+    [data-theme="dark"] .node:nth-child(4n+1) circle,
+    [data-theme="dark"] .node:nth-child(4n+1) ellipse,
+    [data-theme="dark"] .node:nth-child(4n+1) polygon,
+    [data-theme="dark"] .node:nth-child(4n+1) path {
+      fill: #292524;
+      stroke: #fb923c;
+    }
+    [data-theme="dark"] .node:nth-child(4n+2) rect,
+    [data-theme="dark"] .node:nth-child(4n+2) circle,
+    [data-theme="dark"] .node:nth-child(4n+2) ellipse,
+    [data-theme="dark"] .node:nth-child(4n+2) polygon,
+    [data-theme="dark"] .node:nth-child(4n+2) path {
+      fill: #14532d;
+      stroke: #4ade80;
+    }
+    [data-theme="dark"] .node:nth-child(4n+3) rect,
+    [data-theme="dark"] .node:nth-child(4n+3) circle,
+    [data-theme="dark"] .node:nth-child(4n+3) ellipse,
+    [data-theme="dark"] .node:nth-child(4n+3) polygon,
+    [data-theme="dark"] .node:nth-child(4n+3) path {
+      fill: #2e1065;
+      stroke: #c084fc;
+    }
+    [data-theme="dark"] .node:nth-child(4n+4) rect,
+    [data-theme="dark"] .node:nth-child(4n+4) circle,
+    [data-theme="dark"] .node:nth-child(4n+4) ellipse,
+    [data-theme="dark"] .node:nth-child(4n+4) polygon,
+    [data-theme="dark"] .node:nth-child(4n+4) path {
+      fill: #431407;
+      stroke: #fb923c;
+    }
+    
     [data-theme="dark"] .edgePath .path {
-      stroke: #9370db;
+      stroke: #a78bfa;
+      stroke-width: 2px;
     }
     [data-theme="dark"] .edgeLabel {
-      background-color: transparent;
-      color: #f0f0f0;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
     }
     [data-theme="dark"] .label {
-      color: #f0f0f0;
+      color: #f1f5f9;
+      font-weight: 500;
     }
     [data-theme="dark"] .cluster rect {
-      fill: #222222;
-      stroke: #5d4037;
+      fill: #1e293b;
+      stroke: #64748b;
     }
     [data-theme="dark"] .flowchart-link {
-      stroke: #9370db;
+      stroke: #a78bfa;
     }
 
-    /* Dark mode sequence diagram overrides */
+    /* Colorful dark mode sequence diagram overrides */
     [data-theme="dark"] .actor {
-      fill: #222222;
-      stroke: #5d4037;
+      fill: #1e3a8a;
+      stroke: #60a5fa;
+      stroke-width: 2px;
+    }
+    [data-theme="dark"] .actor:nth-of-type(2n) {
+      fill: #14532d;
+      stroke: #4ade80;
+    }
+    [data-theme="dark"] .actor:nth-of-type(3n) {
+      fill: #92400e;
+      stroke: #fbbf24;
     }
     [data-theme="dark"] text.actor {
-      fill: #f0f0f0;
+      fill: #f1f5f9;
       stroke: none;
+      font-weight: 600;
     }
     [data-theme="dark"] .messageText {
-      fill: #f0f0f0;
+      fill: #f1f5f9;
       stroke: none;
       font-weight: 500;
     }
     [data-theme="dark"] .messageLine0, [data-theme="dark"] .messageLine1 {
-      stroke: #9370db;
-      stroke-width: 1.5px;
+      stroke: #a78bfa;
+      stroke-width: 2px;
+    }
+    [data-theme="dark"] .messageLine0.note, [data-theme="dark"] .messageLine1.note {
+      stroke: #f87171;
+      stroke-width: 2px;
     }
     [data-theme="dark"] .noteText {
-      fill: #f0f0f0;
+      fill: #f1f5f9;
+      font-weight: 500;
+    }
+    [data-theme="dark"] .note {
+      fill: #7f1d1d;
+      stroke: #f87171;
+      stroke-width: 2px;
     }
     /* Additional styles for sequence diagram text */
     [data-theme="dark"] #sequenceNumber {

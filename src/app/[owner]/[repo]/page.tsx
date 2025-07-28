@@ -56,16 +56,46 @@ type PageState =
 
 // Styles remain the same
 const wikiStyles = `
-  .prose code { @apply bg-[var(--background)]/70 px-1.5 py-0.5 rounded font-mono text-xs border border-[var(--border-color)]; }
-  .prose pre { @apply bg-[var(--background)]/80 text-[var(--foreground)] rounded-md p-4 overflow-x-auto border border-[var(--border-color)] shadow-sm; }
-  .prose h1, .prose h2, .prose h3, .prose h4 { @apply font-serif text-[var(--foreground)]; }
-  .prose p { @apply text-[var(--foreground)] leading-relaxed; }
+  /* Main wiki content uses consistent fonts */
+  .prose { 
+    font-family: var(--font-geist-sans), sans-serif;
+    @apply text-[var(--foreground)] max-w-none;
+  }
+  .prose code { 
+    font-family: var(--font-geist-mono), monospace;
+    @apply bg-[var(--background)]/70 px-1.5 py-0.5 rounded text-xs border border-[var(--border-color)]; 
+  }
+  .prose pre { 
+    font-family: var(--font-geist-mono), monospace;
+    @apply bg-[var(--background)]/80 text-[var(--foreground)] rounded-md p-4 overflow-x-auto border border-[var(--border-color)] shadow-sm; 
+  }
+  .prose h1, .prose h2, .prose h3, .prose h4 { 
+    font-family: var(--font-serif-jp), serif;
+    @apply text-[var(--foreground)] font-medium;
+  }
+  .prose p { 
+    font-family: var(--font-geist-sans), sans-serif;
+    @apply text-[var(--foreground)] leading-relaxed; 
+  }
   .prose a { @apply text-[var(--accent-primary)] hover:text-[var(--highlight)] transition-colors no-underline border-b border-[var(--border-color)] hover:border-[var(--accent-primary)]; }
   .prose blockquote { @apply border-l-4 border-[var(--accent-primary)]/30 bg-[var(--background)]/30 pl-4 py-1 italic; }
-  .prose ul, .prose ol { @apply text-[var(--foreground)]; }
+  .prose ul, .prose ol { 
+    font-family: var(--font-geist-sans), sans-serif;
+    @apply text-[var(--foreground)]; 
+  }
   .prose table { @apply border-collapse border border-[var(--border-color)]; }
-  .prose th { @apply bg-[var(--background)]/70 text-[var(--foreground)] p-2 border border-[var(--border-color)]; }
-  .prose td { @apply p-2 border border-[var(--border-color)]; }
+  .prose th { 
+    font-family: var(--font-serif-jp), serif;
+    @apply bg-[var(--background)]/70 text-[var(--foreground)] p-2 border border-[var(--border-color)] font-medium; 
+  }
+  .prose td { 
+    font-family: var(--font-geist-sans), sans-serif;
+    @apply p-2 border border-[var(--border-color)]; 
+  }
+  /* Ensure buttons and UI elements use consistent fonts */
+  button, .button {
+    font-family: var(--font-geist-sans), sans-serif;
+  }
 `;
 
 // --- Helper functions for API calls ---
@@ -128,6 +158,7 @@ export default function RepoWikiPage() {
   const [isAskModalOpen, setIsAskModalOpen] = useState(false);
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
   const [isComprehensiveView, setIsComprehensiveView] = useState(searchParams.get('comprehensive') !== 'false');
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
   // --- Model Config State ---
   const [selectedProvider, setSelectedProvider] = useState(searchParams.get('provider') || '');
@@ -164,6 +195,109 @@ export default function RepoWikiPage() {
     setError(errorMessage);
     setPageState(state as PageState);
     setLoadingMessage(undefined);
+  };
+
+  // --- Export and Save Handlers ---
+  const handleExportWiki = async (format: 'markdown' | 'json') => {
+    try {
+      setIsExportDropdownOpen(false);
+      
+      if (!wikiStructure || Object.keys(generatedPages).length === 0) {
+        alert('No wiki content to export. Please generate wiki pages first.');
+        return;
+      }
+
+      // Prepare export data
+      const exportData = {
+        repo_url: repoInfo.repoUrl || `${repoInfo.type}:${repoInfo.owner}/${repoInfo.repo}`,
+        pages: Object.values(generatedPages),
+        format: format
+      };
+
+      console.log('Exporting wiki:', exportData);
+
+      // Call the export API
+      const response = await fetch('/api/export/wiki', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(exportData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.statusText}`);
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      
+      // Get filename from response headers or create one
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `${repoInfo.owner}_${repoInfo.repo}_wiki.${format}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]*)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      console.log(`Wiki exported as ${format} successfully`);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert(`Failed to export wiki: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleSaveWiki = async () => {
+    try {
+      if (!wikiStructure || Object.keys(generatedPages).length === 0) {
+        alert('No wiki content to save. Please generate wiki pages first.');
+        return;
+      }
+
+      // Prepare save data for the wiki cache API
+      const saveData = {
+        repo: repoInfo,
+        language: language,
+        wiki_structure: wikiStructure,
+        generated_pages: generatedPages,
+        provider: selectedProvider || 'google',
+        model: selectedModel || 'gemini-2.0-flash'
+      };
+
+      console.log('Saving wiki to cache:', saveData);
+
+      // Call the save API
+      const response = await fetch('/api/wiki_cache', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(saveData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Save failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('Wiki saved successfully:', result);
+      alert('Wiki saved successfully! You can access it later from the processed projects page.');
+    } catch (error) {
+      console.error('Save error:', error);
+      alert(`Failed to save wiki: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   // --- State Machine Effects ---
@@ -543,13 +677,57 @@ export default function RepoWikiPage() {
             <Link href="/" className="text-[var(--accent-primary)] hover:text-[var(--highlight)] flex items-center gap-1.5 transition-colors">
               <FaHome /> {messages.repoPage?.home || 'Home'}
             </Link>
-            <button
-                onClick={() => setIsAskModalOpen(true)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center gap-2"
-            >
-                <FaComments />
-                {messages.repoPage?.askButton || 'Ask about this repo'}
-            </button>
+            
+            <div className="flex items-center gap-3">
+              {/* Export Dropdown */}
+              <div className="relative export-dropdown">
+                <button
+                  onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center gap-2"
+                  disabled={!wikiStructure || Object.keys(generatedPages).length === 0}
+                >
+                  <FaFileExport />
+                  Export Wiki
+                </button>
+                
+                {isExportDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50">
+                    <button
+                      onClick={() => handleExportWiki('markdown')}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                    >
+                      <FaDownload />
+                      Export as Markdown
+                    </button>
+                    <button
+                      onClick={() => handleExportWiki('json')}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                    >
+                      <FaDownload />
+                      Export as JSON
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Save Wiki Button */}
+              <button
+                onClick={handleSaveWiki}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+                disabled={!wikiStructure || Object.keys(generatedPages).length === 0}
+              >
+                <FaSync />
+                Save Wiki
+              </button>
+              
+              <button
+                  onClick={() => setIsAskModalOpen(true)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center gap-2"
+              >
+                  <FaComments />
+                  {messages.repoPage?.askButton || 'Ask about this repo'}
+              </button>
+            </div>
         </div>
       </header>
       <main className="flex-1 max-w-[90%] xl:max-w-[1400px] mx-auto overflow-y-auto grid grid-cols-12 gap-8">
