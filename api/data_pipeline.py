@@ -149,13 +149,15 @@ def read_all_documents(
     """
     splitter_config = configs.get("text_splitter", {})
     
-    # Use smarter chunking for large repos
-    chunk_size = min(splitter_config.get("chunk_size", 1000), 2000)  # Cap chunk size
-    chunk_overlap = min(splitter_config.get("chunk_overlap", 200), chunk_size // 4)
+    # Use token-based chunking to ensure embedding limits are respected
+    # Get max tokens from embedding config to ensure chunks fit within limits
+    max_embedding_tokens = splitter_config.get("max_tokens_per_chunk", 4000)
+    safe_chunk_size = min(max_embedding_tokens // 2, 2000)  # Use half the limit for safety
+    chunk_overlap = min(splitter_config.get("chunk_overlap", 200), safe_chunk_size // 4)
     
     text_splitter = TextSplitter(
-        split_by=splitter_config.get("split_by", "word"),
-        chunk_size=chunk_size,
+        split_by="token",  # Use token-based splitting for precise control
+        chunk_size=safe_chunk_size,
         chunk_overlap=chunk_overlap,
     )
 
@@ -418,11 +420,18 @@ def read_all_documents(
             
             # Create documents from safe chunks
             for i, chunk_content in enumerate(safe_chunks):
-                # Final token check before creating document
+                # CRITICAL: Final token validation before creating document
                 final_token_count = count_tokens(chunk_content)
                 if final_token_count > max_embedding_tokens:
-                    logger.error(f"Chunk still exceeds token limit ({final_token_count} tokens), skipping")
+                    logger.error(f"CRITICAL: Chunk from {file_info['normalized_path']} exceeds token limit ({final_token_count} > {max_embedding_tokens} tokens)")
+                    logger.error(f"Chunk preview: {repr(chunk_content[:200])}...")
+                    logger.error("This chunk will be rejected to prevent embedding API errors")
                     continue
+                
+                # Additional safety check for very large chunks that might cause issues
+                if final_token_count > 8000:  # Well below the 8194 limit but flag for attention
+                    logger.warning(f"Large chunk detected ({final_token_count} tokens) from {file_info['normalized_path']}")
+                    logger.warning("This is within limits but may cause issues if batched with other chunks")
                 
                 # ABSOLUTE FINAL CHECK: No null bytes in document content
                 if '\x00' in chunk_content or '\0' in chunk_content:

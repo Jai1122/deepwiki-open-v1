@@ -156,10 +156,22 @@ class RAG(adal.Component):
             # 1. Create a single-document pipeline
             query_pipeline = ToEmbeddings(embedder=self.embedder)
             
-            # 2. Wrap the query string in a Document object
+            # 2. Validate query length to prevent token limit errors
+            from .utils import count_tokens
+            query_tokens = count_tokens(query)
+            max_query_tokens = 4000  # Conservative limit for queries
+            
+            if query_tokens > max_query_tokens:
+                logger.warning(f"Query is too long ({query_tokens} tokens), truncating to {max_query_tokens} tokens")
+                # Truncate query to fit within limits
+                ratio = max_query_tokens / query_tokens
+                query = query[:int(len(query) * ratio * 0.9)]  # 0.9 for safety margin
+                logger.info(f"Truncated query to {count_tokens(query)} tokens")
+            
+            # 3. Wrap the query string in a Document object
             query_document = Document(text=query)
             
-            # 3. Process the document to get the embedding
+            # 4. Process the document to get the embedding
             transformed_query_doc = query_pipeline([query_document])
             
             if not transformed_query_doc or not hasattr(transformed_query_doc[0], 'vector'):
