@@ -179,9 +179,17 @@ def read_all_documents(
     normalized_excluded_dirs = [p.strip('./').strip('/') for p in final_excluded_dirs if p.strip('./').strip('/')]
 
     logger.info(f"Starting to walk directory: {path}")
-    logger.info(f"Excluded directories: {normalized_excluded_dirs}")
+    logger.info(f"Excluded directories ({len(normalized_excluded_dirs)}): {normalized_excluded_dirs}")
     logger.info(f"Excluded filename patterns: {excluded_filename_patterns}")
     logger.info(f"Total excluded file patterns: {len(final_excluded_files)}")
+    
+    # Debug: Check if 'vendor' is in the exclusion list
+    if 'vendor' in normalized_excluded_dirs:
+        logger.info("✅ 'vendor' directory is in exclusion list")
+    else:
+        logger.warning("❌ 'vendor' directory is NOT in exclusion list!")
+        logger.warning(f"Repo config dirs: {repo_excluded_dirs}")
+        logger.warning(f"Default excluded dirs: {DEFAULT_EXCLUDED_DIRS[:10]}...")  # Show first 10
     
     # First pass: collect all candidate files with priorities
     for root, dirs, files in os.walk(path, topdown=True):
@@ -189,33 +197,77 @@ def read_all_documents(
         current_dir_relative = os.path.relpath(root, path) 
         normalized_current_dir = current_dir_relative.replace('\\', '/')
         
-        # Skip the root directory case completely to avoid issues
+        # Handle root directory case
         if normalized_current_dir == '.':
             normalized_current_dir = ''
         
-        # Check if any part of the current path should cause us to skip this directory
-        should_skip_dir = False
+        # CRITICAL: Check if current directory should be entirely skipped
+        should_skip_current_dir = False
+        excluded_component = None
+        
         if normalized_current_dir:
-            # Split path and check each component
+            # Check each component of the current path
+            path_components = normalized_current_dir.split('/')
+            logger.debug(f"Checking path components for '{normalized_current_dir}': {path_components}")
+            
+            for component in path_components:
+                if component in normalized_excluded_dirs:
+                    should_skip_current_dir = True
+                    excluded_component = component
+                    logger.info(f"🚫 SKIPPING ENTIRE TREE '{normalized_current_dir}' - component '{component}' is excluded")
+                    break
+        
+        # If current directory should be skipped, skip it completely
+        if should_skip_current_dir:
+            dirs.clear()  # Critical: prevent any recursion into this tree
+            continue  # Skip processing files in this directory too
+        
+        # DOUBLE CHECK: Filter immediate subdirectories as additional safety
+        original_subdirs = dirs[:]
+        dirs[:] = []
+        
+        for subdir in original_subdirs:
+            if subdir in normalized_excluded_dirs:
+                logger.info(f"🚫 Excluding subdirectory '{subdir}' from '{normalized_current_dir or 'root'}'")
+            else:
+                dirs.append(subdir)
+        
+        # Log directory processing status
+        if original_subdirs != dirs:
+            filtered_subdirs = set(original_subdirs) - set(dirs)
+            logger.info(f"🚫 Filtered {len(filtered_subdirs)} subdirs from '{normalized_current_dir or 'root'}': {filtered_subdirs}")
+        
+        logger.debug(f"📂 Processing '{normalized_current_dir or 'root'}' - will recurse into: {dirs}")
+        
+        # SAFETY CHECK: Verify we're not in an excluded directory
+        if normalized_current_dir:
             path_components = normalized_current_dir.split('/')
             for component in path_components:
                 if component in normalized_excluded_dirs:
-                    should_skip_dir = True
-                    logger.debug(f"Skipping directory '{normalized_current_dir}' due to excluded component '{component}'")
-                    break
+                    logger.error(f"🚨 ERROR: Processing files in excluded directory '{normalized_current_dir}' - this should not happen!")
+                    continue  # Skip processing files in this directory
         
-        if should_skip_dir:
-            dirs.clear()  # Prevent recursion into this directory tree
-            continue
-        
-        # Filter immediate subdirectories to prevent walking into them
-        dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
+        # Log files being considered in this directory
+        if files:
+            logger.debug(f"📄 Found {len(files)} files in '{normalized_current_dir or 'root'}': {files[:5]}{'...' if len(files) > 5 else ''}")
         
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.relpath(file_path, path)
             normalized_relative_path = relative_path.replace('\\', '/')
 
+            # FINAL SAFETY CHECK: Ensure we're not processing files from excluded directories
+            file_path_components = normalized_relative_path.split('/')
+            file_in_excluded_dir = False
+            for component in file_path_components[:-1]:  # Exclude the filename itself
+                if component in normalized_excluded_dirs:
+                    rejected_files_log.append(f"{normalized_relative_path} (in excluded directory: {component})")
+                    file_in_excluded_dir = True
+                    break
+            
+            if file_in_excluded_dir:
+                continue
+            
             # Skip excluded files by filename pattern (both filename and full path)
             filename_excluded = False
             matched_pattern = None
