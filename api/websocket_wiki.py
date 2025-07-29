@@ -42,21 +42,54 @@ def is_websocket_connected(websocket: WebSocket) -> bool:
         # If any error checking state, assume disconnected to be safe
         return False
 
+def is_xml_complete(xml_text: str) -> bool:
+    """Check if XML response appears to be complete"""
+    if not xml_text.strip():
+        return False
+    
+    # Check for common XML structures that should be complete
+    if '<wiki_structure>' in xml_text:
+        return '</wiki_structure>' in xml_text
+    
+    # For other XML, check basic structure
+    if xml_text.strip().startswith('<'):
+        # Count opening and closing tags (basic heuristic)
+        import re
+        opening_tags = re.findall(r'<([^/\s>]+)', xml_text)
+        closing_tags = re.findall(r'</([^>]+)>', xml_text)
+        
+        # If we have opening tags, we should have corresponding closing tags
+        if opening_tags and len(closing_tags) >= len(opening_tags):
+            return True
+        
+        # If no clear XML structure, assume it's complete
+        if not opening_tags:
+            return True
+            
+    return True  # Default to true for non-XML content
+
 async def handle_streaming_response(response_stream):
-    """Handle streaming response from LLM with timeout protection"""
+    """Handle streaming response from LLM with timeout protection and response validation"""
     logger.info("Starting to iterate over response stream.")
     chunk_count = 0
     start_time = asyncio.get_event_loop().time()
-    stream_timeout = 120  # 2 minutes timeout for the entire stream
+    stream_timeout = 180  # Increased to 3 minutes for more complex responses
     last_chunk_time = start_time
+    response_buffer = ""  # Buffer to accumulate response for validation
     
     try:
         # Use asyncio.wait_for with the entire async for loop
         async def process_stream():
-            nonlocal chunk_count, last_chunk_time
+            nonlocal chunk_count, last_chunk_time, response_buffer
             async for chunk in response_stream:
                 chunk_count += 1
                 current_time = asyncio.get_event_loop().time()
+                
+                # Check if no chunks received recently (stalled stream)
+                if current_time - last_chunk_time > 60:  # 1 minute without chunks
+                    logger.warning(f"Stream stalled - no chunks for {current_time - last_chunk_time:.1f}s")
+                    yield json.dumps({"error": "Response stream stalled"})
+                    break
                 
                 # Check if total stream time has exceeded limit
                 if current_time - start_time > stream_timeout:
@@ -73,7 +106,8 @@ async def handle_streaming_response(response_stream):
                     content = chunk.text
                 
                 if content:
-                    logger.debug(f"Yielding chunk {chunk_count}: {len(content)} chars")
+                    response_buffer += content
+                    logger.debug(f"Yielding chunk {chunk_count}: {len(content)} chars, buffer: {len(response_buffer)} chars")
                     yield json.dumps({"content": content})
                 
                 # Update last chunk time on successful processing
@@ -84,7 +118,7 @@ async def handle_streaming_response(response_stream):
             stream_gen = process_stream()
             while True:
                 try:
-                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=30)
+                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=45)  # Increased chunk timeout
                     yield chunk_result
                 except StopAsyncIteration:
                     break
@@ -92,7 +126,13 @@ async def handle_streaming_response(response_stream):
             logger.error(f"Overall stream timeout exceeded")
             yield json.dumps({"error": "Stream processing timed out"})
             
-        logger.info(f"Stream completed after {chunk_count} chunks")
+        # Validate response completeness after streaming is done
+        if response_buffer and not is_xml_complete(response_buffer):
+            logger.warning(f"Potentially incomplete XML response detected (length: {len(response_buffer)})")
+            logger.debug(f"Response buffer ends with: ...{response_buffer[-200:]}")
+            # Note: We don't fail here as the client can handle partial responses
+            
+        logger.info(f"Stream completed after {chunk_count} chunks, total response: {len(response_buffer)} chars")
     
     except Exception as stream_error:
         logger.error(f"Error in stream iteration: {stream_error}")
@@ -149,7 +189,8 @@ async def handle_websocket_chat(websocket: WebSocket):
                     error_str = str(heartbeat_error)
                     if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
                         "connection closed" in error_str.lower() or 
-                        "1006" in error_str or "abnormal closure" in error_str.lower()):
+                        "1005" in error_str or "1006" in error_str or 
+                        "abnormal closure" in error_str.lower()):
                         logger.info(f"WebSocket connection closed during heartbeat: {heartbeat_error}")
                     else:
                         logger.warning(f"Failed to send heartbeat: {heartbeat_error}")
@@ -161,10 +202,11 @@ async def handle_websocket_chat(websocket: WebSocket):
             except Exception as receive_error:
                 # Check if this is a connection close event
                 error_str = str(receive_error)
-                # Handle various WebSocket close scenarios including 1006 (abnormal closure)
+                # Handle various WebSocket close scenarios including 1005, 1006 (abnormal closures)
                 if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
                     "connection closed" in error_str.lower() or 
-                    "1006" in error_str or "abnormal closure" in error_str.lower()):
+                    "1005" in error_str or "1006" in error_str or 
+                    "abnormal closure" in error_str.lower()):
                     logger.info(f"WebSocket connection closed by client: {receive_error}")
                     break
                 else:
@@ -244,18 +286,24 @@ async def handle_websocket_chat(websocket: WebSocket):
                         error_str = str(send_error)
                         if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
                             "connection closed" in error_str.lower() or 
-                            "1006" in error_str or "abnormal closure" in error_str.lower()):
+                            "1005" in error_str or "1006" in error_str or 
+                            "abnormal closure" in error_str.lower()):
                             logger.info(f"WebSocket connection closed during send: {send_error}")
                         else:
                             logger.warning(f"Failed to send chunk {chunk_count}: {send_error}")
                         # If we can't send, client probably disconnected
                         break
                     
-                    # Send periodic heartbeats during long streams
-                    if chunk_count % 50 == 0:
+                    # Send periodic heartbeats and connection checks during long streams
+                    if chunk_count % 25 == 0:  # More frequent checks
                         current_time = asyncio.get_event_loop().time()
                         elapsed = current_time - start_time
                         logger.debug(f"Stream progress: {chunk_count} chunks, {elapsed:.1f}s elapsed")
+                        
+                        # Additional connection health check for long streams
+                        if elapsed > 60 and not is_websocket_connected(websocket):
+                            logger.warning("WebSocket connection lost during long stream, terminating")
+                            break
                         
             except Exception as stream_error:
                 logger.error(f"Error in stream processing: {stream_error}")
@@ -268,6 +316,14 @@ async def handle_websocket_chat(websocket: WebSocket):
                 except Exception as error_send_error:
                     logger.warning(f"Failed to send error message: {error_send_error}")
             
+            # Send completion signal if connection is still active
+            try:
+                if is_websocket_connected(websocket):
+                    await websocket.send_text(json.dumps({"status": "done", "message": f"Response completed with {chunk_count} chunks"}))
+                    logger.info(f"Sent completion signal for {chunk_count} chunks")
+            except Exception as completion_error:
+                logger.debug(f"Failed to send completion signal: {completion_error}")
+            
             logger.info(f"Completed WebSocket request: {chunk_count} chunks sent")
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected cleanly.")
@@ -276,7 +332,8 @@ async def handle_websocket_chat(websocket: WebSocket):
         error_str = str(e)
         if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
             "connection closed" in error_str.lower() or 
-            "1006" in error_str or "abnormal closure" in error_str.lower()):
+            "1005" in error_str or "1006" in error_str or 
+            "abnormal closure" in error_str.lower()):
             logger.info(f"WebSocket connection closed: {e}")
         else:
             logger.error(f"Error in WebSocket handler: {e}", exc_info=True)
