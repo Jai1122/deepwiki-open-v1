@@ -100,13 +100,37 @@ async def handle_websocket_chat(websocket: WebSocket):
     
     try:
         while True:
+            # Check if WebSocket is still connected before trying to receive
+            try:
+                if hasattr(websocket, 'client_state') and websocket.client_state == websocket.client_state.DISCONNECTED:
+                    logger.info("WebSocket client disconnected, breaking loop")
+                    break
+            except (AttributeError, Exception):
+                # If we can't check state, continue and let the receive_text call handle it
+                pass
+                
             # Add timeout to websocket receive to prevent indefinite waiting
             try:
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=300)  # 5 minute timeout
             except asyncio.TimeoutError:
-                logger.warning("WebSocket receive timeout - sending heartbeat")
-                await websocket.send_text(json.dumps({"status": "heartbeat", "message": "Connection alive"}))
+                logger.warning("WebSocket receive timeout - checking connection and sending heartbeat")
+                # Check if still connected before sending heartbeat
+                try:
+                    if hasattr(websocket, 'client_state') and websocket.client_state == websocket.client_state.DISCONNECTED:
+                        logger.info("WebSocket disconnected during timeout, breaking loop")
+                        break
+                except (AttributeError, Exception):
+                    pass
+                    
+                try:
+                    await websocket.send_text(json.dumps({"status": "heartbeat", "message": "Connection alive"}))
+                except Exception as heartbeat_error:
+                    logger.warning(f"Failed to send heartbeat: {heartbeat_error}")
+                    break
                 continue
+            except Exception as receive_error:
+                logger.error(f"Error receiving WebSocket data: {receive_error}")
+                break
                 
             logger.info("Received WebSocket request")
             request = ChatCompletionRequest(**json.loads(data))
@@ -121,9 +145,13 @@ async def handle_websocket_chat(websocket: WebSocket):
                     chunk_count += 1
                     
                     # Check if websocket is still connected before sending
-                    if websocket.client_state == websocket.client_state.DISCONNECTED:
-                        logger.warning("Client disconnected during stream, stopping generation")
-                        break
+                    try:
+                        if hasattr(websocket, 'client_state') and websocket.client_state == websocket.client_state.DISCONNECTED:
+                            logger.warning("Client disconnected during stream, stopping generation")
+                            break
+                    except (AttributeError, Exception):
+                        # If we can't check state, continue and let the send_text call handle it
+                        pass
                     
                     try:
                         await websocket.send_text(chunk)
@@ -141,10 +169,13 @@ async def handle_websocket_chat(websocket: WebSocket):
             except Exception as stream_error:
                 logger.error(f"Error in stream processing: {stream_error}")
                 try:
-                    if websocket.client_state != websocket.client_state.DISCONNECTED:
+                    # Check if websocket is still connected before sending error
+                    if hasattr(websocket, 'client_state') and websocket.client_state != websocket.client_state.DISCONNECTED:
                         await websocket.send_text(json.dumps({"error": f"Stream processing failed: {stream_error}"}))
-                except:
-                    logger.warning("Failed to send error message - client may have disconnected")
+                    else:
+                        logger.warning("WebSocket disconnected, cannot send error message")
+                except Exception as error_send_error:
+                    logger.warning(f"Failed to send error message: {error_send_error}")
             
             logger.info(f"Completed WebSocket request: {chunk_count} chunks sent")
     except WebSocketDisconnect:
