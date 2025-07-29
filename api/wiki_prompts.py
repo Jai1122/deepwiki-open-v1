@@ -53,6 +53,8 @@ You are creating a comprehensive wiki page based on ACTUAL SOURCE CODE ANALYSIS.
 REQUIREMENTS FOR CODE-BASED WIKI GENERATION:
 1. **Analyze Actual Source Code**: Base your documentation on the provided source code from multiple files
 2. **Include Mermaid Diagrams**: Create diagrams based on actual code structure and flow
+   - 🚨 CRITICAL: Node labels MUST NOT contain parentheses () - use dashes or "like" instead
+   - Example: Use "External Systems - CBS, NPCI" not "External Systems (e.g., CBS, NPCI)"
 3. **Show Real Implementation**: Document actual functions, classes, and their relationships as found in the code
 4. **Provide Code Examples**: Include relevant code snippets from the analyzed files
 5. **Cross-Reference Files**: Show how different source files interact with each other
@@ -114,7 +116,7 @@ ARCHITECTURE ANALYSIS REQUIREMENTS:
    - Actual testing framework and patterns used
    - Real development dependencies and tools
 
-EXAMPLE MERMAID (should reflect actual code structure):
+MERMAID DIAGRAM REQUIREMENTS (must follow these syntax rules):
 ```mermaid
 graph TD
     A[Frontend Components] --> B[API Routes]
@@ -122,6 +124,17 @@ graph TD
     C --> D[Data Access Layer]
     D --> E[Database/Storage]
 ```
+
+🚨 CRITICAL MERMAID SYNTAX RULES:
+1. **Node labels MUST NOT contain parentheses ()** - Use square brackets or dashes instead
+   - ❌ BAD: A[External Systems (e.g., CBS, NPCI)]
+   - ✅ GOOD: A[External Systems - CBS, NPCI]
+   - ✅ GOOD: A[External Systems like CBS and NPCI]
+
+2. **Use simple, clean node IDs**: A, B, C, etc. or descriptive names without spaces
+3. **Avoid special characters** in node labels: &, <, >, quotes
+4. **Keep labels concise** - long labels can cause parsing issues
+5. **Always start with graph TD** for flowcharts
 
 COMPREHENSIVE SOURCE CODE CONTEXT:
 Repository Context (should contain actual source code): {context}

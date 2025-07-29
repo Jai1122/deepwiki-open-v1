@@ -286,8 +286,23 @@ const preprocessMermaidChart = (chart: string): string => {
     processed = processed.replace(/([A-Z])\s*-->\s*([A-Z])/g, '$1 --> $2');
     
     // Fix node definitions with parentheses that might break parsing
-    // Replace parentheses in node labels with safer alternatives
-    processed = processed.replace(/\[([^\]]*)\(([^)]*)\)([^\]]*)\]/g, '[$1($2)$3]');
+    // Replace parentheses in node labels with square brackets or quotes
+    processed = processed.replace(/\[([^\]]*)\(([^)]*)\)([^\]]*)\]/g, (match, before, inside, after) => {
+      // Replace parentheses with square brackets to avoid parse errors
+      return `[${before}[${inside}]${after}]`;
+    });
+    
+    // Additional fix: Handle parentheses in node labels more aggressively
+    // Look for patterns like: A[Text (content) more text]
+    processed = processed.replace(/(\[[^\]]*)\(([^)]*)\)([^\]]*\])/g, (match, before, inside, after) => {
+      // Replace with safer alternatives
+      return `${before} - ${inside}${after}`;
+    });
+    
+    // Fix special characters that can break parsing
+    processed = processed.replace(/\[([^\]]*)\&([^\]]*)\]/g, '[$1and$2]');
+    processed = processed.replace(/\[([^\]]*)<([^\]]*)\]/g, '[$1 less than $2]');
+    processed = processed.replace(/\[([^\]]*>([^\]]*)\]/g, '[$1 greater than $2]');
     
     // Ensure proper graph declaration
     if (!processed.trim().startsWith('graph ') && 
@@ -307,15 +322,31 @@ const preprocessMermaidChart = (chart: string): string => {
       // Keep graph declarations
       if (trimmed.startsWith('graph ') || trimmed.startsWith('flowchart ') || 
           trimmed.startsWith('sequenceDiagram') || trimmed.startsWith('classDiagram')) return true;
-      // Keep valid arrows and node definitions
-      if (trimmed.includes('-->') || trimmed.includes('->') || 
-          trimmed.match(/^[A-Z]+\[[^\]]*\]$/) || 
-          trimmed.includes('participant ') ||
-          trimmed.includes('Note ')) return true;
-      // Keep style definitions
+      
+      // More comprehensive validation for flowchart lines
+      // Valid node definition: A[Label]
+      if (trimmed.match(/^[A-Za-z0-9_]+\[[^\]]*\]$/)) return true;
+      // Valid connection: A --> B or A[Label] --> B[Label]
+      if (trimmed.match(/^[A-Za-z0-9_]+(\[[^\]]*\])?\s*-->\s*[A-Za-z0-9_]+(\[[^\]]*\])?$/)) return true;
+      // Valid arrow with label: A -->|label| B
+      if (trimmed.match(/^[A-Za-z0-9_]+\s*-->\|[^|]*\|\s*[A-Za-z0-9_]+$/)) return true;
+      
+      // Sequence diagram elements
+      if (trimmed.includes('participant ') || trimmed.includes('Note ') || 
+          trimmed.match(/^[A-Za-z0-9_]+-?-?>[A-Za-z0-9_]+:/)) return true;
+      
+      // Style definitions
       if (trimmed.startsWith('style ') || trimmed.startsWith('class ')) return true;
-      // Filter out incomplete or malformed lines
-      return false;
+      
+      // Subgraph definitions
+      if (trimmed.startsWith('subgraph ') || trimmed === 'end') return true;
+      
+      // If line contains problematic characters or patterns, reject it
+      if (trimmed.includes('PS') && !trimmed.includes('[') && !trimmed.includes(']')) return false;
+      if (trimmed.match(/[^\w\s\[\]().,:-]/)) return false;
+      
+      // Be more permissive for other valid-looking content
+      return trimmed.length > 0;
     });
     
     processed = validLines.join('\n');
@@ -328,6 +359,13 @@ const preprocessMermaidChart = (chart: string): string => {
       processed = processed.replace(/^(graph |flowchart |sequenceDiagram|classDiagram).*$/gm, '');
       processed = `${firstDeclaration}\n${processed}`;
     }
+    
+    // Final sanitization pass - remove any remaining problematic characters
+    processed = processed
+      .replace(/[""'']/g, '"')  // Normalize quotes
+      .replace(/[—–]/g, '-')   // Normalize dashes
+      .replace(/\s+/g, ' ')    // Normalize whitespace
+      .replace(/\n\s*\n/g, '\n'); // Remove empty lines
     
   } catch (error) {
     console.warn('Error preprocessing Mermaid chart:', error);
@@ -557,6 +595,54 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
         console.log('Original chart:', chart);
         console.log('Processed chart:', processedChart);
 
+        // Try a simplified fallback approach
+        let fallbackAttempted = false;
+        if (processedChart.includes('[') && processedChart.includes(']')) {
+          try {
+            // Create a super-simplified diagram by extracting just node names
+            const nodeMatches = processedChart.match(/([A-Za-z0-9_]+)\[([^\]]+)\]/g);
+            const connectionMatches = processedChart.match(/([A-Za-z0-9_]+)\s*-->\s*([A-Za-z0-9_]+)/g);
+            
+            if (nodeMatches && nodeMatches.length > 0) {
+              let simplifiedChart = 'graph TD\n';
+              
+              // Add sanitized node definitions
+              nodeMatches.forEach(match => {
+                const nodeMatch = match.match(/([A-Za-z0-9_]+)\[([^\]]+)\]/);
+                if (nodeMatch) {
+                  const nodeId = nodeMatch[1];
+                  const nodeLabel = nodeMatch[2]
+                    .replace(/[()]/g, '')  // Remove parentheses
+                    .replace(/[^\w\s-]/g, '') // Keep only word chars, spaces, hyphens
+                    .substring(0, 50);  // Limit length
+                  simplifiedChart += `    ${nodeId}[${nodeLabel}]\n`;
+                }
+              });
+              
+              // Add connections
+              if (connectionMatches) {
+                connectionMatches.forEach(match => {
+                  const connectionMatch = match.match(/([A-Za-z0-9_]+)\s*-->\s*([A-Za-z0-9_]+)/);
+                  if (connectionMatch) {
+                    simplifiedChart += `    ${connectionMatch[1]} --> ${connectionMatch[2]}\n`;
+                  }
+                });
+              }
+              
+              // Try to render the simplified chart
+              const { svg: fallbackSvg } = await mermaid.render(idRef.current + '_fallback', simplifiedChart);
+              if (isMounted) {
+                setSvg(fallbackSvg);
+                console.log('Successfully rendered simplified fallback diagram');
+                return;
+              }
+              fallbackAttempted = true;
+            }
+          } catch (fallbackErr) {
+            console.log('Fallback diagram also failed:', fallbackErr);
+          }
+        }
+
         const errorMessage = err instanceof Error ? err.message : String(err);
 
         if (isMounted) {
@@ -564,7 +650,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
 
           if (mermaidRef.current) {
             mermaidRef.current.innerHTML = `
-              <div class="text-red-500 dark:text-red-400 text-xs mb-1">Syntax error in diagram</div>
+              <div class="text-red-500 dark:text-red-400 text-xs mb-1">Syntax error in diagram${fallbackAttempted ? ' (fallback also failed)' : ''}</div>
               <details class="text-xs">
                 <summary class="cursor-pointer hover:text-blue-500">Show original chart</summary>
                 <pre class="mt-2 overflow-auto p-2 bg-gray-100 dark:bg-gray-800 rounded border">${chart}</pre>
