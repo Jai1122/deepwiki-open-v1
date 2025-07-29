@@ -45,6 +45,7 @@ def is_websocket_connected(websocket: WebSocket) -> bool:
 def is_xml_complete(xml_text: str) -> bool:
     """Check if XML response appears to be complete - very conservative validation"""
     if not xml_text.strip():
+        logger.debug("XML incomplete: empty response")
         return False
     
     text = xml_text.strip()
@@ -53,46 +54,62 @@ def is_xml_complete(xml_text: str) -> bool:
     
     # Check for specific XML structures that must be complete
     if '<wiki_structure>' in text and not '</wiki_structure>' in text:
-        logger.debug("XML incomplete: wiki_structure tag not closed")
+        logger.warning("XML incomplete: wiki_structure tag not closed")
         return False
     
     # Check for obvious truncation patterns
     if text.endswith('<'):  # Ends with incomplete opening tag
-        logger.debug("XML incomplete: ends with incomplete opening tag")
+        logger.warning("XML incomplete: ends with incomplete opening tag")
         return False
     
     # Check for response that ends abruptly with incomplete XML content
     if text.startswith('<') and len(text) > 100:
-        last_100_chars = text[-100:]
-        # Look for incomplete tag at the very end
-        if '<' in last_100_chars:
-            last_open_pos = last_100_chars.rfind('<')
-            last_close_pos = last_100_chars.rfind('>')
+        last_200_chars = text[-200:]
+        # Look for incomplete tag at the very end (more characters to be sure)
+        if '<' in last_200_chars:
+            last_open_pos = last_200_chars.rfind('<')
+            last_close_pos = last_200_chars.rfind('>')
             # If there's an unclosed tag at the end
             if last_open_pos > last_close_pos:
-                logger.debug("XML incomplete: unclosed tag at end")
-                return False
+                # Check if it might be incomplete XML content
+                incomplete_part = last_200_chars[last_open_pos:]
+                if len(incomplete_part) > 1 and not incomplete_part.strip().endswith('>'):
+                    logger.warning(f"XML incomplete: unclosed tag at end: '{incomplete_part[:50]}...'")
+                    return False
     
     # More lenient bracket balance check - only flag severe imbalances
     open_count = text.count('<')
     close_count = text.count('>')
     if open_count > 0 and close_count > 0:
         imbalance_ratio = abs(open_count - close_count) / max(open_count, close_count)
-        if imbalance_ratio > 0.2:  # Increased threshold to 20% to reduce false positives
-            logger.debug(f"XML incomplete: severe bracket imbalance ({imbalance_ratio:.2f})")
+        if imbalance_ratio > 0.3:  # Further increased threshold to 30% to reduce false positives  
+            logger.warning(f"XML incomplete: severe bracket imbalance (open: {open_count}, close: {close_count}, ratio: {imbalance_ratio:.2f})")
             return False
     
     # If response is suspiciously short for XML structure generation, flag it
     if '<wiki_structure>' in text and len(text) < 200:
-        logger.debug("XML incomplete: structure too short")
+        logger.warning("XML incomplete: structure too short")
         return False
+    
+    # Check for common incomplete XML patterns in long responses
+    if len(text) > 5000:
+        # For long responses, be extra conservative - only flag if there are major structural issues
+        if not text.startswith('<'):
+            # Might be a markdown or other format response that's not XML
+            logger.debug("Long response doesn't start with XML - might be valid non-XML content")
+            return True
     
     # Otherwise assume it's complete - be very conservative
     logger.debug("XML appears complete")
     return True
 
-async def handle_streaming_response(response_stream):
-    """Handle streaming response from LLM with timeout protection and response validation"""
+async def handle_streaming_response(response_stream, validate_xml=False):
+    """Handle streaming response from LLM with timeout protection and response validation
+    
+    Args:
+        response_stream: The LLM response stream
+        validate_xml: Whether to validate response as XML (for structure queries)
+    """
     logger.info("Starting to iterate over response stream.")
     chunk_count = 0
     start_time = asyncio.get_event_loop().time()
@@ -150,18 +167,25 @@ async def handle_streaming_response(response_stream):
             yield json.dumps({"error": "Stream processing timed out"})
             return  # Don't validate incomplete buffer
             
-        # Validate response completeness after streaming is done
-        if response_buffer:
+        # Validate response completeness after streaming is done (only for XML responses)
+        if response_buffer and validate_xml:
             is_complete = is_xml_complete(response_buffer)
             if not is_complete:
                 logger.warning(f"Potentially incomplete XML response detected (length: {len(response_buffer)})")
-                logger.debug(f"Response buffer starts with: {response_buffer[:200]}...")
-                logger.debug(f"Response buffer ends with: ...{response_buffer[-200:]}")
-                # For incomplete responses, yield an error to prevent client processing
-                yield json.dumps({"error": "Incomplete response detected - please retry"})
-                return
+                logger.warning(f"Response buffer starts with: {response_buffer[:500]}...")
+                logger.warning(f"Response buffer ends with: ...{response_buffer[-500:]}")
+                
+                # Check if this might be a false positive - if response is very long and has basic structure, allow it
+                if len(response_buffer) > 10000 and '<wiki_structure>' in response_buffer and '</wiki_structure>' in response_buffer:
+                    logger.info("Large response with complete wiki_structure detected - allowing despite validation failure")
+                else:
+                    # For incomplete responses, yield an error to prevent client processing
+                    yield json.dumps({"error": "Incomplete response detected - please retry"})
+                    return
             else:
-                logger.debug(f"Response completeness validation passed (length: {len(response_buffer)})")
+                logger.debug(f"XML response completeness validation passed (length: {len(response_buffer)})")
+        elif response_buffer and not validate_xml:
+            logger.debug(f"Non-XML response completed (length: {len(response_buffer)} chars) - skipping XML validation")
             
         logger.info(f"Stream completed after {chunk_count} chunks, total response: {len(response_buffer)} chars")
     
@@ -432,8 +456,8 @@ async def stream_response(
                 yield json.dumps({"error": "LLM API connection timeout"})
                 return
                 
-            # Handle streaming response (reuse existing streaming logic)
-            async for chunk in handle_streaming_response(response_stream):
+            # Handle streaming response with XML validation for structure queries
+            async for chunk in handle_streaming_response(response_stream, validate_xml=True):
                 yield chunk
                 
         except Exception as e:
@@ -681,8 +705,8 @@ async def stream_response(
             yield json.dumps({"error": "LLM API connection timeout"})
             return
         
-        # Use the shared streaming handler
-        async for chunk in handle_streaming_response(response_stream):
+        # Use the shared streaming handler (no XML validation for page content)
+        async for chunk in handle_streaming_response(response_stream, validate_xml=False):
             yield chunk
 
     except Exception as e:
