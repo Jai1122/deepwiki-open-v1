@@ -467,18 +467,40 @@ export default function RepoWikiPage() {
     webSocketRef.current = createChatWebSocket(
       requestBody,
       (chunk) => { responseBuffer += chunk; },
-      (status, msg) => console.log(`Structure status: ${status} - ${msg}`),
+      (status, msg) => {
+        console.log(`Structure status: ${status} - ${msg}`);
+        if (status === 'error') {
+          handleError(`WebSocket error while determining structure: ${msg}`);
+        }
+      },
       (err) => handleError(`WebSocket error while determining structure: ${err}`),
       () => { // onComplete
         try {
+          console.log(`Wiki structure response completed. Length: ${responseBuffer.length} characters`);
+          
+          // Validate response completeness
+          if (!responseBuffer.trim()) {
+            throw new Error("Empty response received from server.");
+          }
+          
           const xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
           if (!xmlMatch) {
             console.error("Backend response did not contain valid XML structure.", {
-              response: responseBuffer,
+              response: responseBuffer.length > 1000 ? responseBuffer.substring(0, 1000) + '...[truncated]' : responseBuffer,
+              responseLength: responseBuffer.length
             });
             throw new Error(
               "The AI failed to generate a valid wiki structure. This can happen with complex repositories. Please try refreshing."
             );
+          }
+          
+          console.log(`Found XML structure: ${xmlMatch[0].length} characters`);
+          
+          // Additional validation for wiki_structure completeness
+          const xmlContent = xmlMatch[0];
+          if (!xmlContent.includes('</wiki_structure>')) {
+            console.error("Wiki structure XML appears to be incomplete");
+            throw new Error("Incomplete wiki structure received. Please try refreshing.");
           }
           
           const parser = new DOMParser();
@@ -575,7 +597,20 @@ export default function RepoWikiPage() {
         const pageSocket = createChatWebSocket(
           requestBody,
           (chunk) => { responseBuffer += chunk; },
-          (status, msg) => console.log(`Page gen status for ${page.id}: ${status} - ${msg}`),
+          (status, msg) => {
+            console.log(`Page gen status for ${page.id}: ${status} - ${msg}`);
+            if (status === 'error') {
+              console.error(`Error generating page ${page.id}: ${msg}`);
+              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: ${msg}` } }));
+              activeRequestsRef.current--;
+              setPagesInProgress(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(page.id);
+                return newSet;
+              });
+              processQueue(); // Continue with next
+            }
+          },
           (err) => {
             console.error(`Error generating page ${page.id}: ${err}`);
             setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: ${err}` } }));
@@ -588,7 +623,16 @@ export default function RepoWikiPage() {
             processQueue(); // Continue with next
           },
           () => { // onComplete
-            setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: responseBuffer } }));
+            console.log(`Page generation completed for ${page.id}. Length: ${responseBuffer.length} characters`);
+            
+            // Validate response completeness
+            if (!responseBuffer.trim()) {
+              console.error(`Empty response received for page ${page.id}`);
+              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: Empty response received for page ${page.title}` } }));
+            } else {
+              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: responseBuffer } }));
+            }
+            
             activeRequestsRef.current--;
             setPagesInProgress(prev => {
               const newSet = new Set(prev);

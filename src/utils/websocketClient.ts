@@ -162,13 +162,17 @@ export const createChatWebSocket = (
   };
 
   ws.onclose = (event) => {
-    if (!isCompleted) {
-      isCompleted = true;
-      clearAllTimeouts();
-    }
+    clearAllTimeouts();
     
     if (event.wasClean) {
       console.log('WebSocket connection closed cleanly');
+      // Only call onComplete for clean closures or when we've already marked as completed
+      if (isCompleted) {
+        onComplete();
+      } else {
+        console.warn('WebSocket closed cleanly but completion was not signaled');
+        onStatus('error', 'Connection closed without completion signal');
+      }
     } else {
       console.warn('WebSocket connection died unexpectedly', {
         code: event.code,
@@ -176,12 +180,14 @@ export const createChatWebSocket = (
         wasClean: event.wasClean
       });
       
-      // If connection died unexpectedly and we haven't completed, treat as error
-      if (!event.wasClean && !isCompleted) {
-        onStatus('error', 'Connection lost unexpectedly');
+      // For unexpected closures, always treat as error and don't call onComplete
+      if (!isCompleted) {
+        onStatus('error', `Connection lost unexpectedly (code: ${event.code})`);
+      } else {
+        // If we were already completed, still call onComplete
+        onComplete();
       }
     }
-    onComplete();
   };
 
   return ws;
