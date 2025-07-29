@@ -463,10 +463,25 @@ export default function RepoWikiPage() {
     };
 
     let responseBuffer = '';
+    let chunkCount = 0;
     closeWebSocket(webSocketRef.current);
     webSocketRef.current = createChatWebSocket(
       requestBody,
-      (chunk) => { responseBuffer += chunk; },
+      (chunk) => { 
+        chunkCount++;
+        responseBuffer += chunk;
+        if (chunkCount % 1000 === 0) {
+          console.log(`Received ${chunkCount} chunks, buffer length: ${responseBuffer.length}`);
+        }
+        // Log first few chunks to see what we're getting
+        if (chunkCount <= 5) {
+          console.log(`Chunk ${chunkCount}:`, JSON.stringify(chunk.substring(0, 100)));
+        }
+        // Log chunks that contain wiki_structure
+        if (chunk.includes('wiki_structure')) {
+          console.log(`Wiki structure found in chunk ${chunkCount}:`, chunk.substring(0, 200));
+        }
+      },
       (status, msg) => {
         console.log(`Structure status: ${status} - ${msg}`);
         if (status === 'error') {
@@ -476,18 +491,65 @@ export default function RepoWikiPage() {
       (err) => handleError(`WebSocket error while determining structure: ${err}`),
       () => { // onComplete
         try {
-          console.log(`Wiki structure response completed. Length: ${responseBuffer.length} characters`);
+          console.log(`Wiki structure response completed. Chunks: ${chunkCount}, Length: ${responseBuffer.length} characters`);
+          console.log(`Response buffer preview:`, responseBuffer.substring(0, 500));
+          console.log(`Response buffer end:`, responseBuffer.substring(Math.max(0, responseBuffer.length - 500)));
           
           // Validate response completeness
           if (!responseBuffer.trim()) {
             throw new Error("Empty response received from server.");
           }
           
-          const xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
+          // Try multiple patterns to find XML structure
+          let xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
+          
+          // If not found, try without multiline flag
+          if (!xmlMatch) {
+            xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*<\/wiki_structure>/);
+          }
+          
+          // Try greedy matching in case there are nested structures
+          if (!xmlMatch) {
+            xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*<\/wiki_structure>/g);
+            if (xmlMatch && xmlMatch.length > 0) {
+              // Take the last complete match (most likely to be complete)
+              xmlMatch = [xmlMatch[xmlMatch.length - 1]];
+            }
+          }
+          
+          // If still not found, try to find just the opening tag to see if it exists
+          if (!xmlMatch) {
+            const hasOpeningTag = responseBuffer.includes('<wiki_structure>');
+            const hasClosingTag = responseBuffer.includes('</wiki_structure>');
+            
+            console.error("XML structure parsing failed", {
+              responseLength: responseBuffer.length,
+              hasOpeningTag,
+              hasClosingTag,
+              openingTagIndex: hasOpeningTag ? responseBuffer.indexOf('<wiki_structure>') : -1,
+              closingTagIndex: hasClosingTag ? responseBuffer.lastIndexOf('</wiki_structure>') : -1,
+              responseStart: responseBuffer.substring(0, 200),
+              responseEnd: responseBuffer.substring(Math.max(0, responseBuffer.length - 200))
+            });
+            
+            if (hasOpeningTag && hasClosingTag) {
+              // Try manual extraction
+              const startIndex = responseBuffer.indexOf('<wiki_structure>');
+              const endIndex = responseBuffer.lastIndexOf('</wiki_structure>') + '</wiki_structure>'.length;
+              if (startIndex !== -1 && endIndex > startIndex) {
+                const manualXml = responseBuffer.substring(startIndex, endIndex);
+                console.log(`Manual XML extraction successful: ${manualXml.length} characters`);
+                xmlMatch = [manualXml];
+              }
+            }
+          }
+          
           if (!xmlMatch) {
             console.error("Backend response did not contain valid XML structure.", {
-              response: responseBuffer.length > 1000 ? responseBuffer.substring(0, 1000) + '...[truncated]' : responseBuffer,
-              responseLength: responseBuffer.length
+              responseLength: responseBuffer.length,
+              containsWikiStructure: responseBuffer.includes('wiki_structure'),
+              firstFewLines: responseBuffer.split('\n').slice(0, 10),
+              lastFewLines: responseBuffer.split('\n').slice(-10)
             });
             throw new Error(
               "The AI failed to generate a valid wiki structure. This can happen with complex repositories. Please try refreshing."
