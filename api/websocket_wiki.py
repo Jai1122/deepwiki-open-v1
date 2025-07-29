@@ -82,7 +82,7 @@ async def handle_streaming_response(response_stream):
     logger.info("Starting to iterate over response stream.")
     chunk_count = 0
     start_time = asyncio.get_event_loop().time()
-    stream_timeout = 180  # Increased to 3 minutes for more complex responses
+    stream_timeout = 300  # Increased to 5 minutes for complex responses
     last_chunk_time = start_time
     response_buffer = ""  # Buffer to accumulate response for validation
     
@@ -95,16 +95,16 @@ async def handle_streaming_response(response_stream):
                 current_time = asyncio.get_event_loop().time()
                 
                 # Check if no chunks received recently (stalled stream)
-                if current_time - last_chunk_time > 60:  # 1 minute without chunks
+                if current_time - last_chunk_time > 120:  # 2 minutes without chunks
                     logger.warning(f"Stream stalled - no chunks for {current_time - last_chunk_time:.1f}s")
                     yield json.dumps({"error": "Response stream stalled"})
-                    break
+                    return
                 
                 # Check if total stream time has exceeded limit
                 if current_time - start_time > stream_timeout:
                     logger.warning(f"Stream timeout exceeded ({stream_timeout}s), terminating")
                     yield json.dumps({"error": "Response stream timed out"})
-                    break
+                    return
                 
                 content = ""
                 if isinstance(chunk, str): 
@@ -127,13 +127,14 @@ async def handle_streaming_response(response_stream):
             stream_gen = process_stream()
             while True:
                 try:
-                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=45)  # Increased chunk timeout
+                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=90)  # 90 second chunk timeout for complex responses
                     yield chunk_result
                 except StopAsyncIteration:
                     break
         except asyncio.TimeoutError:
-            logger.error(f"Overall stream timeout exceeded")
+            logger.error(f"Chunk timeout exceeded - stream terminated prematurely")
             yield json.dumps({"error": "Stream processing timed out"})
+            return  # Don't validate incomplete buffer
             
         # Validate response completeness after streaming is done
         if response_buffer:
@@ -142,7 +143,9 @@ async def handle_streaming_response(response_stream):
                 logger.warning(f"Potentially incomplete XML response detected (length: {len(response_buffer)})")
                 logger.debug(f"Response buffer starts with: {response_buffer[:200]}...")
                 logger.debug(f"Response buffer ends with: ...{response_buffer[-200:]}")
-                # Note: We don't fail here as the client can handle partial responses
+                # For incomplete responses, yield an error to prevent client processing
+                yield json.dumps({"error": "Incomplete response detected - please retry"})
+                return
             else:
                 logger.debug(f"Response completeness validation passed (length: {len(response_buffer)})")
             
