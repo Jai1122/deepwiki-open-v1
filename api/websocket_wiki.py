@@ -43,30 +43,39 @@ def is_websocket_connected(websocket: WebSocket) -> bool:
         return False
 
 def is_xml_complete(xml_text: str) -> bool:
-    """Check if XML response appears to be complete"""
+    """Check if XML response appears to be complete - very conservative validation"""
     if not xml_text.strip():
         return False
     
-    # Check for common XML structures that should be complete
-    if '<wiki_structure>' in xml_text:
-        return '</wiki_structure>' in xml_text
+    text = xml_text.strip()
     
-    # For other XML, check basic structure
-    if xml_text.strip().startswith('<'):
-        # Count opening and closing tags (basic heuristic)
-        import re
-        opening_tags = re.findall(r'<([^/\s>]+)', xml_text)
-        closing_tags = re.findall(r'</([^>]+)>', xml_text)
-        
-        # If we have opening tags, we should have corresponding closing tags
-        if opening_tags and len(closing_tags) >= len(opening_tags):
-            return True
-        
-        # If no clear XML structure, assume it's complete
-        if not opening_tags:
-            return True
-            
-    return True  # Default to true for non-XML content
+    # Only check for very obvious incomplete patterns to avoid false positives
+    
+    # Check for specific XML structures that must be complete
+    if '<wiki_structure>' in text and not '</wiki_structure>' in text:
+        return False
+    
+    # Check for obvious truncation patterns
+    if text.endswith('<'):  # Ends with incomplete opening tag
+        return False
+    
+    # Check for severely unbalanced brackets (more than 10% difference)
+    open_count = text.count('<')
+    close_count = text.count('>')
+    if open_count > 0 and close_count > 0:
+        imbalance_ratio = abs(open_count - close_count) / max(open_count, close_count)
+        if imbalance_ratio > 0.1:  # More than 10% imbalance suggests truncation
+            return False
+    
+    # Check for response that ends abruptly mid-word in XML context
+    if text.startswith('<') and len(text) > 100:
+        # If it's XML-like content that ends without proper closure, flag it
+        last_50_chars = text[-50:]
+        if '<' in last_50_chars and '>' not in last_50_chars:
+            return False
+    
+    # Otherwise assume it's complete - be very conservative to avoid false positives
+    return True
 
 async def handle_streaming_response(response_stream):
     """Handle streaming response from LLM with timeout protection and response validation"""
@@ -127,10 +136,15 @@ async def handle_streaming_response(response_stream):
             yield json.dumps({"error": "Stream processing timed out"})
             
         # Validate response completeness after streaming is done
-        if response_buffer and not is_xml_complete(response_buffer):
-            logger.warning(f"Potentially incomplete XML response detected (length: {len(response_buffer)})")
-            logger.debug(f"Response buffer ends with: ...{response_buffer[-200:]}")
-            # Note: We don't fail here as the client can handle partial responses
+        if response_buffer:
+            is_complete = is_xml_complete(response_buffer)
+            if not is_complete:
+                logger.warning(f"Potentially incomplete XML response detected (length: {len(response_buffer)})")
+                logger.debug(f"Response buffer starts with: {response_buffer[:200]}...")
+                logger.debug(f"Response buffer ends with: ...{response_buffer[-200:]}")
+                # Note: We don't fail here as the client can handle partial responses
+            else:
+                logger.debug(f"Response completeness validation passed (length: {len(response_buffer)})")
             
         logger.info(f"Stream completed after {chunk_count} chunks, total response: {len(response_buffer)} chars")
     
