@@ -39,23 +39,20 @@ async def handle_streaming_response(response_stream):
     """Handle streaming response from LLM with timeout protection"""
     logger.info("Starting to iterate over response stream.")
     chunk_count = 0
-    last_chunk_time = asyncio.get_event_loop().time()
+    start_time = asyncio.get_event_loop().time()
     stream_timeout = 120  # 2 minutes timeout for the entire stream
-    chunk_timeout = 30   # 30 seconds timeout between chunks
+    last_chunk_time = start_time
     
     try:
-        # Create an async iterator from the response stream
-        stream_iter = aiter(response_stream)
-        
-        while True:
-            try:
-                # Use wait_for to add timeout to each chunk retrieval
-                chunk = await asyncio.wait_for(anext(stream_iter), timeout=chunk_timeout)
+        # Use asyncio.wait_for with the entire async for loop
+        async def process_stream():
+            nonlocal chunk_count, last_chunk_time
+            async for chunk in response_stream:
                 chunk_count += 1
                 current_time = asyncio.get_event_loop().time()
                 
                 # Check if total stream time has exceeded limit
-                if current_time - last_chunk_time > stream_timeout:
+                if current_time - start_time > stream_timeout:
                     logger.warning(f"Stream timeout exceeded ({stream_timeout}s), terminating")
                     yield json.dumps({"error": "Response stream timed out"})
                     break
@@ -74,21 +71,16 @@ async def handle_streaming_response(response_stream):
                 
                 # Update last chunk time on successful processing
                 last_chunk_time = current_time
-                
-            except StopAsyncIteration:
-                # Normal end of stream
-                logger.info(f"Stream completed normally after {chunk_count} chunks")
-                break
-                
-            except asyncio.TimeoutError:
-                logger.error(f"Chunk timeout ({chunk_timeout}s) - no data received")
-                yield json.dumps({"error": "Stream stalled - no data received within timeout"})
-                break
-                
-            except Exception as chunk_error:
-                logger.error(f"Error processing chunk {chunk_count}: {chunk_error}")
-                # Continue processing other chunks instead of failing completely
-                continue
+        
+        # Process the stream with overall timeout
+        try:
+            async for chunk_result in asyncio.wait_for(process_stream(), timeout=stream_timeout + 30):
+                yield chunk_result
+        except asyncio.TimeoutError:
+            logger.error(f"Overall stream timeout ({stream_timeout + 30}s) exceeded")
+            yield json.dumps({"error": "Stream processing timed out"})
+            
+        logger.info(f"Stream completed after {chunk_count} chunks")
     
     except Exception as stream_error:
         logger.error(f"Error in stream iteration: {stream_error}")
