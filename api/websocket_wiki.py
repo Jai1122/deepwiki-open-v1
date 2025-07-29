@@ -49,32 +49,46 @@ def is_xml_complete(xml_text: str) -> bool:
     
     text = xml_text.strip()
     
-    # Only check for very obvious incomplete patterns to avoid false positives
+    # Only flag very obvious incomplete patterns to minimize false positives
     
     # Check for specific XML structures that must be complete
     if '<wiki_structure>' in text and not '</wiki_structure>' in text:
+        logger.debug("XML incomplete: wiki_structure tag not closed")
         return False
     
     # Check for obvious truncation patterns
     if text.endswith('<'):  # Ends with incomplete opening tag
+        logger.debug("XML incomplete: ends with incomplete opening tag")
         return False
     
-    # Check for severely unbalanced brackets (more than 10% difference)
+    # Check for response that ends abruptly with incomplete XML content
+    if text.startswith('<') and len(text) > 100:
+        last_100_chars = text[-100:]
+        # Look for incomplete tag at the very end
+        if '<' in last_100_chars:
+            last_open_pos = last_100_chars.rfind('<')
+            last_close_pos = last_100_chars.rfind('>')
+            # If there's an unclosed tag at the end
+            if last_open_pos > last_close_pos:
+                logger.debug("XML incomplete: unclosed tag at end")
+                return False
+    
+    # More lenient bracket balance check - only flag severe imbalances
     open_count = text.count('<')
     close_count = text.count('>')
     if open_count > 0 and close_count > 0:
         imbalance_ratio = abs(open_count - close_count) / max(open_count, close_count)
-        if imbalance_ratio > 0.1:  # More than 10% imbalance suggests truncation
+        if imbalance_ratio > 0.2:  # Increased threshold to 20% to reduce false positives
+            logger.debug(f"XML incomplete: severe bracket imbalance ({imbalance_ratio:.2f})")
             return False
     
-    # Check for response that ends abruptly mid-word in XML context
-    if text.startswith('<') and len(text) > 100:
-        # If it's XML-like content that ends without proper closure, flag it
-        last_50_chars = text[-50:]
-        if '<' in last_50_chars and '>' not in last_50_chars:
-            return False
+    # If response is suspiciously short for XML structure generation, flag it
+    if '<wiki_structure>' in text and len(text) < 200:
+        logger.debug("XML incomplete: structure too short")
+        return False
     
-    # Otherwise assume it's complete - be very conservative to avoid false positives
+    # Otherwise assume it's complete - be very conservative
+    logger.debug("XML appears complete")
     return True
 
 async def handle_streaming_response(response_stream):
@@ -95,7 +109,7 @@ async def handle_streaming_response(response_stream):
                 current_time = asyncio.get_event_loop().time()
                 
                 # Check if no chunks received recently (stalled stream)
-                if current_time - last_chunk_time > 120:  # 2 minutes without chunks
+                if current_time - last_chunk_time > 150:  # 2.5 minutes without chunks
                     logger.warning(f"Stream stalled - no chunks for {current_time - last_chunk_time:.1f}s")
                     yield json.dumps({"error": "Response stream stalled"})
                     return
@@ -127,7 +141,7 @@ async def handle_streaming_response(response_stream):
             stream_gen = process_stream()
             while True:
                 try:
-                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=90)  # 90 second chunk timeout for complex responses
+                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=120)  # 2 minute chunk timeout for complex responses
                     yield chunk_result
                 except StopAsyncIteration:
                     break
@@ -410,11 +424,11 @@ async def stream_response(
             try:
                 response_stream = await asyncio.wait_for(
                     client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
-                    timeout=60  # 60 second timeout for initial connection
+                    timeout=120  # 2 minute timeout for initial connection
                 )
                 logger.info("Successfully connected to LLM API and received response stream (structure query)")
             except asyncio.TimeoutError:
-                logger.error("LLM API connection timeout - no response within 60 seconds (structure query)")
+                logger.error("LLM API connection timeout - no response within 2 minutes (structure query)")
                 yield json.dumps({"error": "LLM API connection timeout"})
                 return
                 
@@ -659,11 +673,11 @@ async def stream_response(
         try:
             response_stream = await asyncio.wait_for(
                 client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
-                timeout=60  # 60 second timeout for initial connection
+                timeout=120  # 2 minute timeout for initial connection
             )
             logger.info("Successfully connected to LLM API and received response stream")
         except asyncio.TimeoutError:
-            logger.error("LLM API connection timeout - no response within 60 seconds")
+            logger.error("LLM API connection timeout - no response within 2 minutes")
             yield json.dumps({"error": "LLM API connection timeout"})
             return
         
