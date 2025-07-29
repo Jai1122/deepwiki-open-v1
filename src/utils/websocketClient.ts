@@ -52,10 +52,10 @@ export const createChatWebSocket = (
 ): WebSocket => {
   const ws = new WebSocket(getWebSocketUrl());
   
-  // Timeout configuration
+  // Timeout configuration - increased for complex responses
   const CONNECTION_TIMEOUT = 30000; // 30 seconds for connection
-  const RESPONSE_TIMEOUT = 180000;  // 3 minutes for response
-  const CHUNK_TIMEOUT = 45000;     // 45 seconds between chunks
+  const RESPONSE_TIMEOUT = 300000;  // 5 minutes for response
+  const CHUNK_TIMEOUT = 90000;     // 90 seconds between chunks
   
   let connectionTimeout: NodeJS.Timeout;
   let responseTimeout: NodeJS.Timeout;
@@ -80,8 +80,8 @@ export const createChatWebSocket = (
     
     const timeoutMessages = {
       connection: 'Connection timeout - failed to establish connection within 30 seconds',
-      response: 'Response timeout - no response received within 3 minutes',
-      chunk: 'Stream timeout - no data received within 45 seconds'
+      response: 'Response timeout - no response received within 5 minutes',
+      chunk: 'Stream timeout - no data received within 90 seconds'
     };
     
     onStatus('timeout', timeoutMessages[type as keyof typeof timeoutMessages] || 'Timeout occurred');
@@ -164,14 +164,28 @@ export const createChatWebSocket = (
   ws.onclose = (event) => {
     clearAllTimeouts();
     
-    if (event.wasClean) {
-      console.log('WebSocket connection closed cleanly');
-      // Only call onComplete for clean closures or when we've already marked as completed
+    // Handle specific close codes for better error reporting
+    const isNormalClosure = event.code === 1000 || event.code === 1001;
+    const isAbnormalClosure = event.code === 1005 || event.code === 1006;
+    
+    if (event.wasClean || isNormalClosure) {
+      console.log('WebSocket connection closed cleanly', { code: event.code, reason: event.reason });
       if (isCompleted) {
         onComplete();
       } else {
         console.warn('WebSocket closed cleanly but completion was not signaled');
-        onStatus('error', 'Connection closed without completion signal');
+        onStatus('error', 'Incomplete response detected - please retry');
+      }
+    } else if (isAbnormalClosure) {
+      console.warn('WebSocket connection had abnormal closure', {
+        code: event.code,
+        reason: event.reason
+      });
+      
+      if (!isCompleted) {
+        onStatus('error', 'Connection interrupted - please retry');
+      } else {
+        onComplete();
       }
     } else {
       console.warn('WebSocket connection died unexpectedly', {
@@ -180,11 +194,9 @@ export const createChatWebSocket = (
         wasClean: event.wasClean
       });
       
-      // For unexpected closures, always treat as error and don't call onComplete
       if (!isCompleted) {
-        onStatus('error', `Connection lost unexpectedly (code: ${event.code})`);
+        onStatus('error', `Connection error (code: ${event.code}) - please retry`);
       } else {
-        // If we were already completed, still call onComplete
         onComplete();
       }
     }

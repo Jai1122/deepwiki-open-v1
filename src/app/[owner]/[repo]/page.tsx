@@ -47,6 +47,7 @@ interface WikiStructure {
 
 type PageState =
   | 'idle'
+  | 'checking_cache'
   | 'fetching_repo_structure'
   | 'determining_wiki_structure'
   | 'generating_page_content'
@@ -302,13 +303,63 @@ export default function RepoWikiPage() {
 
   // --- State Machine Effects ---
 
-  // Effect for initial load and refresh
+  // Effect for initial load and refresh - check cache first
   useEffect(() => {
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
-      setPageState('fetching_repo_structure');
+      // Check if we should load from cache first
+      const shouldLoadFromCache = !searchParams.get('force_regenerate');
+      if (shouldLoadFromCache) {
+        setPageState('checking_cache');
+      } else {
+        setPageState('fetching_repo_structure');
+      }
     }
-  }, []);
+  }, [searchParams]);
+
+  // 0. Checking Cache
+  useEffect(() => {
+    if (pageState !== 'checking_cache') return;
+
+    const checkCache = async () => {
+      setLoadingMessage('Checking for saved wiki...');
+      try {
+        const params = new URLSearchParams({
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          repo_type: repoInfo.type,
+          language: searchParams.get('language') || language
+        });
+
+        const response = await fetch(`/api/wiki_cache?${params}`);
+        
+        if (response.ok) {
+          const cachedData = await response.json();
+          
+          // Load cached wiki structure and pages
+          if (cachedData.wiki_structure && cachedData.generated_pages) {
+            console.log('Loading wiki from cache:', cachedData);
+            setWikiStructure(cachedData.wiki_structure);
+            setGeneratedPages(cachedData.generated_pages);
+            setPagesInProgress(new Set());
+            setPageState('ready');
+            setLoadingMessage(undefined);
+            return;
+          }
+        }
+        
+        // If cache miss or error, proceed with normal generation
+        console.log('Cache miss or error, proceeding with generation');
+        setPageState('fetching_repo_structure');
+        
+      } catch (error) {
+        console.log('Cache check failed, proceeding with generation:', error);
+        setPageState('fetching_repo_structure');
+      }
+    };
+
+    checkCache();
+  }, [pageState, repoInfo, language, searchParams]);
 
   // 1. Fetching Repository Structure
   useEffect(() => {
@@ -719,7 +770,13 @@ export default function RepoWikiPage() {
     setPagesInProgress(new Set());
     pageQueueRef.current = [];
     activeRequestsRef.current = 0;
+    // Force regeneration by skipping cache
     setPageState('fetching_repo_structure');
+    
+    // Add force_regenerate parameter to URL to bypass cache on page reload
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('force_regenerate', 'true');
+    window.history.replaceState({}, '', currentUrl.toString());
   };
 
   const handlePageSelect = (pageId: string) => {
@@ -776,11 +833,11 @@ export default function RepoWikiPage() {
   }
 
   return (
-    <div className="h-screen paper-texture p-4 md:p-8 flex flex-col">
+    <div className="h-screen bg-white dark:bg-gray-900 p-4 md:p-8 flex flex-col">
       <style>{wikiStyles}</style>
       <header className="max-w-[90%] xl:max-w-[1400px] mx-auto mb-8 h-fit w-full">
         <div className="flex items-center justify-between">
-            <Link href="/" className="text-[var(--accent-primary)] hover:text-[var(--highlight)] flex items-center gap-1.5 transition-colors">
+            <Link href="/" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1.5 transition-colors">
               <FaHome /> {messages.repoPage?.home || 'Home'}
             </Link>
             
@@ -827,12 +884,23 @@ export default function RepoWikiPage() {
               </button>
               
               <button
+                onClick={handleRefresh}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center gap-2"
+                title="Regenerate wiki (ignore cache)"
+              >
+                <FaSync />
+                Refresh
+              </button>
+              
+              <button
                   onClick={() => setIsAskModalOpen(true)}
                   className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center gap-2"
               >
                   <FaComments />
                   {messages.repoPage?.askButton || 'Ask about this repo'}
               </button>
+              
+              <ThemeToggle />
             </div>
         </div>
       </header>
