@@ -302,7 +302,7 @@ const preprocessMermaidChart = (chart: string): string => {
     // Fix special characters that can break parsing
     processed = processed.replace(/\[([^\]]*)\&([^\]]*)\]/g, '[$1and$2]');
     processed = processed.replace(/\[([^\]]*)<([^\]]*)\]/g, '[$1 less than $2]');
-    processed = processed.replace(/\[([^\]]*>([^\]]*)\]/g, '[$1 greater than $2]');
+    processed = processed.replace(/\[([^\]]*)\>([^\]]*)\]/g, '[$1 greater than $2]');
     
     // Ensure proper graph declaration
     if (!processed.trim().startsWith('graph ') && 
