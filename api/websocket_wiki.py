@@ -111,7 +111,7 @@ class ChatCompletionRequest(BaseModel):
     token: Optional[str] = None
     type: Optional[str] = "github"
     provider: str = "google"
-    model: Optional[str] = None
+    model: Optional[str] = "gemini-2.0-flash"
     language: Optional[str] = "en"
     excluded_dirs: Optional[str] = None
     excluded_files: Optional[str] = None
@@ -173,14 +173,60 @@ async def handle_websocket_chat(websocket: WebSocket):
                 
             logger.info("Received WebSocket request")
             request = ChatCompletionRequest(**json.loads(data))
-            rag_instance = RAG(provider=request.provider, model=request.model)
-            model_config = get_model_config(provider=request.provider, model=request.model)
+            
+            # Validate and set default provider if empty
+            provider = request.provider.strip() if request.provider else "google"
+            if not provider:
+                provider = "google"
+                logger.warning(f"Empty provider received, defaulting to: {provider}")
+            
+            # Validate and set default model if empty
+            model = request.model.strip() if request.model else None
+            if not model:
+                # Set default model based on provider
+                if provider == "google":
+                    model = "gemini-2.0-flash"
+                elif provider == "openai":
+                    model = "gpt-4"
+                else:
+                    model = "gemini-2.0-flash"  # fallback
+                logger.warning(f"Empty model received, defaulting to: {model}")
+            
+            logger.info(f"Using provider: {provider}, model: {model}")
+            
+            try:
+                rag_instance = RAG(provider=provider, model=model)
+                model_config = get_model_config(provider=provider, model=model)
+            except Exception as config_error:
+                logger.error(f"Configuration error for provider '{provider}', model '{model}': {config_error}")
+                # Try with default fallback
+                provider = "google"
+                model = "gemini-2.0-flash"
+                logger.info(f"Falling back to default provider: {provider}, model: {model}")
+                rag_instance = RAG(provider=provider, model=model)
+                model_config = get_model_config(provider=provider, model=model)
+
+            # Create updated request with validated provider and model
+            validated_request = ChatCompletionRequest(
+                repo_url=request.repo_url,
+                messages=request.messages,
+                filePath=request.filePath,
+                token=request.token,
+                type=request.type,
+                provider=provider,
+                model=model,
+                language=request.language,
+                excluded_dirs=request.excluded_dirs,
+                excluded_files=request.excluded_files,
+                included_dirs=request.included_dirs,
+                included_files=request.included_files
+            )
 
             chunk_count = 0
             start_time = asyncio.get_event_loop().time()
             
             try:
-                async for chunk in stream_response(request, rag_instance, model_config):
+                async for chunk in stream_response(validated_request, rag_instance, model_config):
                     chunk_count += 1
                     
                     # Check if websocket is still connected before sending
