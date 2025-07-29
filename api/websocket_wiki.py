@@ -640,9 +640,20 @@ async def stream_response(
     logger.info(f"📊 Wiki generation final stats: {len(all_retrieved_docs)} documents from {len(seen_sources)} unique sources")
     logger.info(f"📝 Total context length: {len(context_text)} characters")
     
-    # Enhanced logging for debugging
+    # Enhanced logging for debugging and content validation
     if len(seen_sources) > 0:
         logger.info(f"📁 Source files included: {list(seen_sources)[:10]}{'...' if len(seen_sources) > 10 else ''}")
+        
+        # Check if we have actual source code files (not just README/docs)
+        source_code_files = [s for s in seen_sources if any(s.endswith(ext) for ext in ['.py', '.js', '.ts', '.go', '.java', '.cpp', '.c', '.h', '.json', '.yaml', '.yml'])]
+        doc_files = [s for s in seen_sources if any(s.lower().endswith(ext) for ext in ['.md', '.txt', '.rst'])]
+        
+        logger.info(f"📊 Content breakdown: {len(source_code_files)} source files, {len(doc_files)} documentation files")
+        
+        if len(source_code_files) == 0 and len(doc_files) > 0:
+            logger.warning("⚠️  Only documentation files found - may trigger README-only error")
+        elif len(source_code_files) > 0:
+            logger.info(f"✅ Found actual source code files: {source_code_files[:5]}{'...' if len(source_code_files) > 5 else ''}")
     else:
         logger.error("❌ No source files retrieved - wiki will be generic!")
     file_content = get_file_content(request.repo_url, request.filePath, request.type, request.token) if request.filePath else ""
@@ -659,15 +670,15 @@ async def stream_response(
             # Use architecture overview prompt for system-level queries
             logger.info("🏛️  Using architecture overview prompt for comprehensive analysis")
             system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
-                file_tree=context_text[:5000] if context_text else "File tree not available",
-                readme=file_content[:2000] if file_content else "README not available", 
-                context=context_text[:10000] if context_text else "Repository context not available"
+                file_tree=context_text[:15000] if context_text else "File tree not available",
+                readme=file_content[:5000] if file_content else "README not available", 
+                context=context_text[:50000] if context_text else "Repository context not available"  # Increased from 10K to 50K
             )
         else:
             # Use detailed page generation prompt for component-specific queries
             system_prompt = WIKI_PAGE_GENERATION_PROMPT.format(
-                context=context_text[:5000] if context_text else "Context not available",
-                file_content=file_content[:10000] if file_content else "File content not available",
+                context=context_text[:30000] if context_text else "Context not available",  # Increased from 5K to 30K
+                file_content=file_content[:15000] if file_content else "File content not available",  # Increased from 10K to 15K
                 page_topic=query
             )
     conversation_history = "\n".join([f"{m.role}: {m.content}" for m in request.messages[:-1]])

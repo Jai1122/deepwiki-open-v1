@@ -637,12 +637,19 @@ class DatabaseManager:
                 if isinstance(loaded_docs, list):
                     # Validate embedding dimensions in cached documents
                     cache_valid = self._validate_cache_dimensions(loaded_docs)
-                    if cache_valid:
+                    
+                    # Also validate content diversity - ensure we have actual source code files
+                    content_valid = self._validate_cache_content(loaded_docs)
+                    
+                    if cache_valid and content_valid:
                         self.db_docs = loaded_docs
                         logger.info(f"Successfully loaded {len(self.db_docs)} documents from cache.")
                         return self.db_docs
                     else:
-                        logger.warning(f"Cache contains inconsistent embedding dimensions. Regenerating database.")
+                        if not cache_valid:
+                            logger.warning(f"Cache contains inconsistent embedding dimensions. Regenerating database.")
+                        if not content_valid:
+                            logger.warning(f"Cache appears to contain insufficient source code content. Regenerating database.")
                         self._clear_cache(db_path)
                 else:
                     logger.warning(f"Cache file {db_path} contains an outdated format. Regenerating database.")
@@ -705,6 +712,40 @@ class DatabaseManager:
                 logger.warning(f"   - Inconsistent dimensions in cache: {found_dimensions}")
             if expected_dim not in found_dimensions:
                 logger.warning(f"   - Cache dimensions {found_dimensions} don't match expected {expected_dim}")
+            return False
+    
+    def _validate_cache_content(self, docs: List[Document]) -> bool:
+        """
+        Validate that cached documents contain sufficient source code content,
+        not just documentation files.
+        """
+        if not docs:
+            return False
+            
+        # Analyze the source files in the cache
+        source_files = set()
+        for doc in docs:
+            if hasattr(doc, 'metadata') and doc.metadata:
+                source = doc.metadata.get('source', '')
+                if source:
+                    source_files.add(source)
+        
+        # Count source code vs documentation files
+        source_code_files = [f for f in source_files if any(f.endswith(ext) for ext in ['.py', '.js', '.ts', '.go', '.java', '.cpp', '.c', '.h', '.json', '.yaml', '.yml'])]
+        doc_files = [f for f in source_files if any(f.lower().endswith(ext) for ext in ['.md', '.txt', '.rst'])]
+        
+        logger.info(f"📊 Cache content analysis: {len(source_code_files)} source files, {len(doc_files)} doc files, {len(source_files)} total")
+        
+        # Cache is valid if we have a reasonable number of source code files
+        # Minimum requirement: at least 3 source code files OR more source files than doc files
+        has_sufficient_source = len(source_code_files) >= 3 or (len(source_code_files) > len(doc_files) and len(source_code_files) > 0)
+        
+        if has_sufficient_source:
+            logger.info(f"✅ Cache content validation passed: {len(source_code_files)} source code files found")
+            return True
+        else:
+            logger.warning(f"❌ Cache content validation failed: Only {len(source_code_files)} source files vs {len(doc_files)} doc files")
+            logger.warning(f"📁 Source files in cache: {source_code_files[:5]}{'...' if len(source_code_files) > 5 else ''}")
             return False
     
     def _clear_cache(self, db_path: str):
