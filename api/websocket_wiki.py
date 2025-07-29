@@ -28,10 +28,17 @@ def is_websocket_connected(websocket: WebSocket) -> bool:
         if hasattr(websocket, 'client_state'):
             if websocket.client_state == WebSocketState.DISCONNECTED:
                 return False
+        
+        # Additional check for connection state
+        if hasattr(websocket, '_state'):
+            if websocket._state == WebSocketState.DISCONNECTED:
+                return False
                 
         # If we can't determine state, assume connected (let operations fail gracefully)
         return True
-    except Exception:
+    except Exception as e:
+        # Log the exception for debugging but don't fail
+        logger.debug(f"Exception checking WebSocket state: {e}")
         # If any error checking state, assume disconnected to be safe
         return False
 
@@ -134,19 +141,30 @@ async def handle_websocket_chat(websocket: WebSocket):
                     
                 try:
                     await websocket.send_text(json.dumps({"status": "heartbeat", "message": "Connection alive"}))
+                except WebSocketDisconnect as disconnect_error:
+                    logger.info(f"WebSocket client disconnected during heartbeat: {disconnect_error}")
+                    break
                 except Exception as heartbeat_error:
                     # Check if this is a connection close event
                     error_str = str(heartbeat_error)
-                    if "CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or "connection closed" in error_str.lower():
+                    if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
+                        "connection closed" in error_str.lower() or 
+                        "1006" in error_str or "abnormal closure" in error_str.lower()):
                         logger.info(f"WebSocket connection closed during heartbeat: {heartbeat_error}")
                     else:
                         logger.warning(f"Failed to send heartbeat: {heartbeat_error}")
                     break
                 continue
+            except WebSocketDisconnect as disconnect_error:
+                logger.info(f"WebSocket client disconnected: {disconnect_error}")
+                break
             except Exception as receive_error:
                 # Check if this is a connection close event
                 error_str = str(receive_error)
-                if "CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or "connection closed" in error_str.lower():
+                # Handle various WebSocket close scenarios including 1006 (abnormal closure)
+                if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
+                    "connection closed" in error_str.lower() or 
+                    "1006" in error_str or "abnormal closure" in error_str.lower()):
                     logger.info(f"WebSocket connection closed by client: {receive_error}")
                     break
                 else:
@@ -172,10 +190,15 @@ async def handle_websocket_chat(websocket: WebSocket):
                     
                     try:
                         await websocket.send_text(chunk)
+                    except WebSocketDisconnect as disconnect_error:
+                        logger.info(f"WebSocket client disconnected during send: {disconnect_error}")
+                        break
                     except Exception as send_error:
                         # Check if this is a connection close event
                         error_str = str(send_error)
-                        if "CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or "connection closed" in error_str.lower():
+                        if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
+                            "connection closed" in error_str.lower() or 
+                            "1006" in error_str or "abnormal closure" in error_str.lower()):
                             logger.info(f"WebSocket connection closed during send: {send_error}")
                         else:
                             logger.warning(f"Failed to send chunk {chunk_count}: {send_error}")
@@ -205,7 +228,9 @@ async def handle_websocket_chat(websocket: WebSocket):
     except Exception as e:
         # Check if this is a connection close event
         error_str = str(e)
-        if "CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or "connection closed" in error_str.lower():
+        if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
+            "connection closed" in error_str.lower() or 
+            "1006" in error_str or "abnormal closure" in error_str.lower()):
             logger.info(f"WebSocket connection closed: {e}")
         else:
             logger.error(f"Error in WebSocket handler: {e}", exc_info=True)
