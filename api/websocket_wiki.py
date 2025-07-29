@@ -74,10 +74,15 @@ async def handle_streaming_response(response_stream):
         
         # Process the stream with overall timeout
         try:
-            async for chunk_result in asyncio.wait_for(process_stream(), timeout=stream_timeout + 30):
-                yield chunk_result
+            stream_gen = process_stream()
+            while True:
+                try:
+                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=30)
+                    yield chunk_result
+                except StopAsyncIteration:
+                    break
         except asyncio.TimeoutError:
-            logger.error(f"Overall stream timeout ({stream_timeout + 30}s) exceeded")
+            logger.error(f"Overall stream timeout exceeded")
             yield json.dumps({"error": "Stream processing timed out"})
             
         logger.info(f"Stream completed after {chunk_count} chunks")
