@@ -302,6 +302,7 @@ async def handle_websocket_chat(websocket: WebSocket):
             try:
                 message_data = json.loads(data)
                 logger.info(f"Parsed message data keys: {list(message_data.keys()) if isinstance(message_data, dict) else type(message_data)}")
+                logger.info(f"🔍 Full message data: {message_data}")
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON received: {e}")
                 await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
@@ -547,8 +548,10 @@ async def stream_response(
         
         logger.info("Preparing to stream response from LLM (structure query).")
         try:
+            logger.info(f"🔧 Creating API kwargs for structure query - provider: {request.provider}, model: {request.model}")
             api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
-            logger.debug(f"API kwargs prepared: {list(api_kwargs.keys())}")
+            logger.info(f"✅ API kwargs prepared: {list(api_kwargs.keys())}")
+            logger.info(f"🚀 About to call LLM API for structure query...")
             
             # Add timeout to the initial LLM call to prevent hanging on connection
             try:
@@ -847,8 +850,10 @@ async def stream_response(
 
     logger.info("Preparing to stream response from LLM.")
     try:
+        logger.info(f"🔧 Creating API kwargs for content generation - provider: {request.provider}, model: {request.model}")
         api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
-        logger.debug(f"API kwargs prepared: {list(api_kwargs.keys())}")
+        logger.info(f"✅ API kwargs prepared: {list(api_kwargs.keys())}")
+        logger.info(f"🚀 About to call LLM API for content generation...")
         
         # Add timeout to the initial LLM call to prevent hanging on connection
         try:
