@@ -233,8 +233,17 @@ class ChatCompletionRequest(BaseModel):
     included_files: Optional[str] = None
 
 async def handle_websocket_chat(websocket: WebSocket):
+    logger.info("WebSocket connection request received")
     await websocket.accept()
     logger.info("WebSocket connection accepted")
+    
+    # Send immediate confirmation that connection is established
+    try:
+        await websocket.send_text(json.dumps({"status": "connected", "message": "WebSocket connection established"}))
+        logger.info("Sent connection confirmation to client")
+    except Exception as e:
+        logger.error(f"Failed to send connection confirmation: {e}")
+        return
     
     try:
         while True:
@@ -287,11 +296,12 @@ async def handle_websocket_chat(websocket: WebSocket):
                     logger.error(f"Error receiving WebSocket data: {receive_error}")
                     break
                 
-            logger.info("Received WebSocket message")
+            logger.info(f"Received WebSocket message: {data[:200]}..." if len(data) > 200 else f"Received WebSocket message: {data}")
             
             # Parse the incoming message
             try:
                 message_data = json.loads(data)
+                logger.info(f"Parsed message data keys: {list(message_data.keys()) if isinstance(message_data, dict) else type(message_data)}")
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON received: {e}")
                 await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
@@ -312,6 +322,7 @@ async def handle_websocket_chat(websocket: WebSocket):
             # Validate that this is a chat completion request before processing
             if not isinstance(message_data, dict) or "repo_url" not in message_data:
                 logger.warning(f"Invalid message format received: {message_data}")
+                logger.warning(f"Message type: {type(message_data)}, has repo_url: {'repo_url' in message_data if isinstance(message_data, dict) else 'N/A'}")
                 await websocket.send_text(json.dumps({"error": "Invalid request format - missing repo_url or invalid structure"}))
                 continue
             
@@ -345,9 +356,16 @@ async def handle_websocket_chat(websocket: WebSocket):
             
             logger.info(f"Using provider: {provider}, model: {model}")
             
+            # Send status update that we're starting processing
+            await websocket.send_text(json.dumps({"status": "processing", "message": f"Starting processing with {provider} {model}"}))
+            
             try:
+                logger.info(f"Creating RAG instance with provider: {provider}, model: {model}")
                 rag_instance = RAG(provider=provider, model=model)
+                logger.info(f"Getting model config for provider: {provider}, model: {model}")
                 model_config = get_model_config(provider=provider, model=model)
+                logger.info(f"Successfully configured provider: {provider}, model: {model}")
+                await websocket.send_text(json.dumps({"status": "configured", "message": f"Successfully configured {provider} {model}"}))
             except Exception as config_error:
                 logger.error(f"Configuration error for provider '{provider}', model '{model}': {config_error}")
                 # Send error to client before trying fallback

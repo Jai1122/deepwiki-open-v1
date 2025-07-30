@@ -54,9 +54,9 @@ export const createChatWebSocket = (
   
   // Timeout configuration - increased for complex responses
   const CONNECTION_TIMEOUT = 30000; // 30 seconds for connection
-  const RESPONSE_TIMEOUT = 300000;  // 5 minutes for response
-  const CHUNK_TIMEOUT = 120000;    // 2 minutes between chunks (increased from 90s)
-  const HEARTBEAT_INTERVAL = 120000; // Send heartbeat every 2 minutes (reduced frequency)
+  const RESPONSE_TIMEOUT = 600000;  // 10 minutes for response (increased)
+  const CHUNK_TIMEOUT = 300000;    // 5 minutes between chunks (increased)
+  const HEARTBEAT_INTERVAL = 60000; // Send heartbeat every 1 minute
   
   let connectionTimeout: NodeJS.Timeout;
   let responseTimeout: NodeJS.Timeout;
@@ -100,6 +100,7 @@ export const createChatWebSocket = (
 
   ws.onopen = () => {
     console.log('WebSocket connection established');
+    console.log('Request being sent:', JSON.stringify(request, null, 2));
     clearTimeout(connectionTimeout);
     onStatus('connected', 'Connection established. Sending request...');
     ws.send(JSON.stringify(request));
@@ -138,6 +139,7 @@ export const createChatWebSocket = (
     
     try {
       const data = JSON.parse(event.data);
+      console.log('Received WebSocket message:', data);
 
       // Handle pong responses first
       if (data.type === 'pong') {
@@ -153,6 +155,7 @@ export const createChatWebSocket = (
           responseTimeout = null;
         }
       } else if (data.status) {
+        console.log('Received status:', data.status, data.message);
         onStatus(data.status, data.message);
         
         // Handle heartbeat messages
@@ -172,6 +175,10 @@ export const createChatWebSocket = (
         onStatus('error', data.error);
         isCompleted = true;
         clearAllTimeouts();
+      } else {
+        console.warn('Unknown message format:', data);
+        // Still prevent timeout by calling onStatus
+        onStatus('unknown', `Unknown message: ${JSON.stringify(data)}`);
       }
     } catch (error) {
       console.error('Error parsing WebSocket message:', event.data, error);
