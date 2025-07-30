@@ -303,8 +303,25 @@ async def handle_websocket_chat(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 continue
             
+            # Handle any other control messages
+            if message_data.get("type"):
+                logger.debug(f"Received control message type: {message_data.get('type')}")
+                # For now, just ignore unknown control message types
+                continue
+            
+            # Validate that this is a chat completion request before processing
+            if not isinstance(message_data, dict) or "repo_url" not in message_data:
+                logger.warning(f"Invalid message format received: {message_data}")
+                await websocket.send_text(json.dumps({"error": "Invalid request format - missing repo_url or invalid structure"}))
+                continue
+            
             # Process regular chat completion request
-            request = ChatCompletionRequest(**message_data)
+            try:
+                request = ChatCompletionRequest(**message_data)
+            except Exception as validation_error:
+                logger.error(f"Validation error for ChatCompletionRequest: {validation_error}")
+                await websocket.send_text(json.dumps({"error": f"Invalid request: {validation_error}"}))
+                continue
             
             # Validate and set default provider if empty
             provider = request.provider.strip() if request.provider else "google"

@@ -56,7 +56,7 @@ export const createChatWebSocket = (
   const CONNECTION_TIMEOUT = 30000; // 30 seconds for connection
   const RESPONSE_TIMEOUT = 300000;  // 5 minutes for response
   const CHUNK_TIMEOUT = 120000;    // 2 minutes between chunks (increased from 90s)
-  const HEARTBEAT_INTERVAL = 60000; // Send heartbeat every 60 seconds
+  const HEARTBEAT_INTERVAL = 120000; // Send heartbeat every 2 minutes (reduced frequency)
   
   let connectionTimeout: NodeJS.Timeout;
   let responseTimeout: NodeJS.Timeout;
@@ -64,6 +64,7 @@ export const createChatWebSocket = (
   let heartbeatInterval: NodeJS.Timeout;
   let lastActivity = Date.now();
   let isCompleted = false;
+  let requestSent = false;
   
   // Helper function to clear all timeouts
   const clearAllTimeouts = () => {
@@ -102,6 +103,7 @@ export const createChatWebSocket = (
     clearTimeout(connectionTimeout);
     onStatus('connected', 'Connection established. Sending request...');
     ws.send(JSON.stringify(request));
+    requestSent = true;
     
     // Set response timeout after sending request
     responseTimeout = setTimeout(() => handleTimeout('response'), RESPONSE_TIMEOUT);
@@ -109,9 +111,9 @@ export const createChatWebSocket = (
     // Start chunk timeout monitoring
     chunkTimeout = setTimeout(() => handleTimeout('chunk'), CHUNK_TIMEOUT);
     
-    // Start heartbeat to keep connection alive during long operations
+    // Start heartbeat to keep connection alive during long operations (only after request is sent)
     heartbeatInterval = setInterval(() => {
-      if (!isCompleted && ws.readyState === WebSocket.OPEN) {
+      if (!isCompleted && requestSent && ws.readyState === WebSocket.OPEN) {
         try {
           console.log('Sending heartbeat ping to server');
           ws.send(JSON.stringify({ type: 'ping' }));
@@ -137,6 +139,12 @@ export const createChatWebSocket = (
     try {
       const data = JSON.parse(event.data);
 
+      // Handle pong responses first
+      if (data.type === 'pong') {
+        console.log('Received pong from server');
+        return;
+      }
+      
       if (data.content) {
         onContent(data.content);
         // Clear response timeout once we start receiving content
@@ -150,12 +158,6 @@ export const createChatWebSocket = (
         // Handle heartbeat messages
         if (data.status === 'heartbeat') {
           console.log('Received heartbeat from server');
-          return;
-        }
-        
-        // Handle pong responses
-        if (data.type === 'pong') {
-          console.log('Received pong from server');
           return;
         }
         
