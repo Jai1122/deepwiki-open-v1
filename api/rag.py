@@ -112,11 +112,13 @@ class RAG(adal.Component):
         except Exception as e:
             logger.error(f"Failed to prepare database: {e}", exc_info=True)
             self.transformed_docs = [] # Ensure it's a list on failure
+            raise RuntimeError(f"Database preparation failed: {e}")
 
         if not self.transformed_docs:
-            logger.warning("prepare_database returned no documents. Retriever will not be available.")
+            error_msg = "prepare_database returned no documents. Retriever will not be available."
+            logger.error(error_msg)
             self.transformed_docs = []
-            return # Exit early if no docs
+            raise RuntimeError(error_msg)
 
         self.transformed_docs = self._validate_and_filter_embeddings(self.transformed_docs)
         

@@ -16,12 +16,67 @@ logger = logging.getLogger(__name__)
 # Add the current directory to the path so we can import the api package
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Check for required environment variables
-required_env_vars = ['GOOGLE_API_KEY', 'OPENAI_API_KEY']
-missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
-if missing_vars:
-    logger.warning(f"Missing environment variables: {', '.join(missing_vars)}")
-    logger.warning("Some functionality may not work correctly without these variables.")
+# Validate configuration and API keys
+def validate_configuration():
+    """Validate that at least one working provider is configured"""
+    from api.config import get_model_config
+    
+    # Check for working providers
+    working_providers = []
+    provider_errors = {}
+    
+    # Test Google provider
+    if os.environ.get('GOOGLE_API_KEY') and os.environ.get('GOOGLE_API_KEY') != 'your-google-api-key-here':
+        try:
+            config = get_model_config("google", "gemini-2.0-flash")
+            working_providers.append("google")
+            logger.info("✅ Google provider configured")
+        except Exception as e:
+            provider_errors["google"] = str(e)
+            logger.warning(f"❌ Google provider not working: {e}")
+    else:
+        logger.warning("❌ Google API key not configured")
+    
+    # Test vLLM provider
+    if (os.environ.get('VLLM_API_KEY') and 
+        os.environ.get('VLLM_API_KEY') != 'your-actual-api-key' and
+        os.environ.get('VLLM_API_BASE_URL') and
+        'your-vllm-server-address' not in os.environ.get('VLLM_API_BASE_URL', '')):
+        try:
+            config = get_model_config("vllm", "/app/models/Qwen3-32B")
+            working_providers.append("vllm")
+            logger.info("✅ vLLM provider configured")
+        except Exception as e:
+            provider_errors["vllm"] = str(e)
+            logger.warning(f"❌ vLLM provider not working: {e}")
+    else:
+        logger.warning("❌ vLLM provider not configured properly")
+    
+    # Test OpenAI provider
+    if os.environ.get('OPENAI_API_KEY'):
+        try:
+            config = get_model_config("openai", "gpt-4o")
+            working_providers.append("openai")
+            logger.info("✅ OpenAI provider configured")
+        except Exception as e:
+            provider_errors["openai"] = str(e)
+            logger.warning(f"❌ OpenAI provider not working: {e}")
+    else:
+        logger.warning("❌ OpenAI API key not configured")
+    
+    if not working_providers:
+        logger.error("🚨 CRITICAL: No working LLM providers found!")
+        logger.error("   Please configure at least one of: GOOGLE_API_KEY, VLLM_API_KEY+BASE_URL, OPENAI_API_KEY")
+        logger.error(f"   Provider errors: {provider_errors}")
+        logger.error("   DeepWiki will not function without a working provider")
+        return False
+    else:
+        logger.info(f"✅ {len(working_providers)} working provider(s): {', '.join(working_providers)}")
+        return True
+
+# Validate configuration
+if not validate_configuration():
+    logger.warning("⚠️  Starting server with limited functionality due to configuration issues")
 
 # Configure Google Generative AI
 import google.generativeai as genai

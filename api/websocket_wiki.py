@@ -224,8 +224,8 @@ class ChatCompletionRequest(BaseModel):
     filePath: Optional[str] = None
     token: Optional[str] = None
     type: Optional[str] = "github"
-    provider: str = "google"
-    model: Optional[str] = "gemini-2.0-flash"
+    provider: str = "vllm"
+    model: Optional[str] = "/app/models/Qwen3-32B"
     language: Optional[str] = "en"
     excluded_dirs: Optional[str] = None
     excluded_files: Optional[str] = None
@@ -324,21 +324,23 @@ async def handle_websocket_chat(websocket: WebSocket):
                 continue
             
             # Validate and set default provider if empty
-            provider = request.provider.strip() if request.provider else "google"
+            provider = request.provider.strip() if request.provider else "vllm"
             if not provider:
-                provider = "google"
+                provider = "vllm"
                 logger.warning(f"Empty provider received, defaulting to: {provider}")
             
             # Validate and set default model if empty
             model = request.model.strip() if request.model else None
             if not model:
                 # Set default model based on provider
-                if provider == "google":
+                if provider == "vllm":
+                    model = "/app/models/Qwen3-32B"
+                elif provider == "google":
                     model = "gemini-2.0-flash"
                 elif provider == "openai":
                     model = "gpt-4"
                 else:
-                    model = "gemini-2.0-flash"  # fallback
+                    model = "/app/models/Qwen3-32B"  # fallback
                 logger.warning(f"Empty model received, defaulting to: {model}")
             
             logger.info(f"Using provider: {provider}, model: {model}")
@@ -348,12 +350,21 @@ async def handle_websocket_chat(websocket: WebSocket):
                 model_config = get_model_config(provider=provider, model=model)
             except Exception as config_error:
                 logger.error(f"Configuration error for provider '{provider}', model '{model}': {config_error}")
+                # Send error to client before trying fallback
+                await websocket.send_text(json.dumps({"error": f"Configuration error for {provider}: {config_error}"}))
+                
                 # Try with default fallback
-                provider = "google"
-                model = "gemini-2.0-flash"
+                provider = "vllm"
+                model = "/app/models/Qwen3-32B"
                 logger.info(f"Falling back to default provider: {provider}, model: {model}")
-                rag_instance = RAG(provider=provider, model=model)
-                model_config = get_model_config(provider=provider, model=model)
+                try:
+                    rag_instance = RAG(provider=provider, model=model)
+                    model_config = get_model_config(provider=provider, model=model)
+                    await websocket.send_text(json.dumps({"status": "fallback", "message": f"Using fallback: {provider} {model}"}))
+                except Exception as fallback_error:
+                    logger.error(f"Fallback configuration also failed: {fallback_error}")
+                    await websocket.send_text(json.dumps({"error": f"All providers failed. Check configuration: {fallback_error}"}))
+                    continue
 
             # Create updated request with validated provider and model
             validated_request = ChatCompletionRequest(
@@ -547,12 +558,12 @@ async def stream_response(
             yield json.dumps({"error": "No repository documents available for wiki generation"})
             return
             
-        logger.info(f"✅ Retriever ready with {len(rag_instance.transformed_docs)} documents")
-        
-    except Exception as e:
-        logger.error(f"Error preparing retriever: {e}", exc_info=True)
-        yield json.dumps({"error": f"Failed to prepare repository data: {e}"})
+    except Exception as rag_error:
+        logger.error(f"RAG preparation failed: {rag_error}", exc_info=True)
+        yield json.dumps({"error": f"Repository processing failed: {rag_error}"})
         return
+        
+    logger.info(f"✅ Retriever ready with {len(rag_instance.transformed_docs)} documents")
 
     # For wiki generation, we need comprehensive repository content, not just query-specific matches
     # Use multiple broad queries to get comprehensive codebase coverage
