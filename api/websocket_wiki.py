@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from adalflow.core.types import ModelType, Document
 from adalflow.components.data_process import TextSplitter
 
-from .config import get_model_config, configs, get_context_window_for_model
+from .config import get_model_config, configs, get_context_window_for_model, get_max_tokens_for_model
 from .rag import RAG
 from .utils import count_tokens, truncate_prompt_to_fit, get_file_content
 from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PROMPT
@@ -414,8 +414,14 @@ async def stream_response(
     query = request.messages[-1].content if request.messages else ""
     model_kwargs = model_config.get("model_kwargs", {})
     context_window = get_context_window_for_model(request.provider, request.model)
-    max_completion_tokens = model_kwargs.get("max_tokens", 4096)
+    max_completion_tokens = get_max_tokens_for_model(request.provider, request.model)
     allowed_prompt_size = context_window - max_completion_tokens
+    
+    # Ensure max_tokens in model_kwargs doesn't exceed the configured limit
+    if "max_tokens" in model_kwargs:
+        model_kwargs["max_tokens"] = min(model_kwargs["max_tokens"], max_completion_tokens)
+    else:
+        model_kwargs["max_tokens"] = max_completion_tokens
 
     if count_tokens(query) > allowed_prompt_size * 0.8:
         yield json.dumps({"status": "summarizing", "message": "Query is very large, summarizing..."})
@@ -687,6 +693,24 @@ async def stream_response(
         # For structure queries, the system_prompt already contains everything we need
         prompt = system_prompt
         logger.info(f"📋 Structure query prompt length: {len(prompt)} characters")
+        
+        # Final safety check for structure queries too
+        prompt_tokens = count_tokens(prompt)
+        total_tokens = prompt_tokens + max_completion_tokens
+        if total_tokens > context_window:
+            logger.warning(f"⚠️  Structure query prompt too large: {prompt_tokens} + {max_completion_tokens} = {total_tokens} > {context_window}")
+            # Emergency truncation for structure queries
+            max_prompt_tokens = context_window - max_completion_tokens - 50  # Extra safety buffer
+            if max_prompt_tokens > 0:
+                truncation_ratio = max_prompt_tokens / prompt_tokens
+                if truncation_ratio < 1:
+                    truncated_length = int(len(prompt) * truncation_ratio * 0.9)  # 0.9 for safety
+                    prompt = prompt[:truncated_length] + "\n\n[Content truncated due to length]"
+                    logger.warning(f"Applied emergency truncation to structure query: {len(prompt)} characters")
+            else:
+                logger.error("Cannot fit structure query. Context window too small.")
+                yield json.dumps({"error": "Context window too small for this structure query"})
+                return
     else:
         # For content generation, combine all context
         file_content, context_text = truncate_prompt_to_fit(
@@ -695,6 +719,25 @@ async def stream_response(
         prompt = f"{system_prompt}\n\nHistory: {conversation_history}\n\nFile Context:\n{file_content}\n\nRetrieved Context:\n{context_text}\n\nQuery: {query}"
         logger.info(f"📝 Content generation prompt length: {len(prompt)} characters")
         logger.info(f"🔍 Context breakdown - File: {len(file_content)}, Retrieved: {len(context_text)}, History: {len(conversation_history)}")
+        
+        # Final safety check: ensure prompt + completion doesn't exceed context window
+        prompt_tokens = count_tokens(prompt)
+        total_tokens = prompt_tokens + max_completion_tokens
+        if total_tokens > context_window:
+            logger.warning(f"⚠️  Final prompt still too large: {prompt_tokens} + {max_completion_tokens} = {total_tokens} > {context_window}")
+            # Emergency truncation: cut the prompt to fit
+            max_prompt_tokens = context_window - max_completion_tokens - 50  # Extra safety buffer
+            if max_prompt_tokens > 0:
+                # Simple truncation - keep the beginning (system prompt) and end (query)
+                truncation_ratio = max_prompt_tokens / prompt_tokens
+                if truncation_ratio < 1:
+                    truncated_length = int(len(prompt) * truncation_ratio * 0.9)  # 0.9 for safety
+                    prompt = prompt[:truncated_length] + "\n\n[Content truncated due to length]\n\nQuery: " + query
+                    logger.warning(f"Applied emergency truncation: {len(prompt)} characters")
+            else:
+                logger.error("Cannot fit any meaningful content. Context window too small.")
+                yield json.dumps({"error": "Context window too small for this query"})
+                return
     
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
     model_kwargs["stream"] = True

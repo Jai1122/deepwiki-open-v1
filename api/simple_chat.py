@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.config import get_model_config, configs, OPENROUTER_API_KEY, OPENAI_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-from .config import get_model_config, configs, get_context_window_for_model
+from .config import get_model_config, configs, get_context_window_for_model, get_max_tokens_for_model
 from .utils import count_tokens, get_file_content, truncate_prompt_to_fit
 from api.openai_client import OpenAIClient
 from api.openrouter_client import OpenRouterClient
@@ -113,7 +113,13 @@ async def chat_completions_stream(request: ChatCompletionRequest):
         model_config = get_model_config(request.provider, request.model)
         model_kwargs = model_config.get("model_kwargs", {})
         context_window = get_context_window_for_model(request.provider, request.model)
-        max_completion_tokens = model_kwargs.get("max_tokens", 4096)
+        max_completion_tokens = get_max_tokens_for_model(request.provider, request.model)
+        
+        # Ensure max_tokens in model_kwargs doesn't exceed the configured limit
+        if "max_tokens" in model_kwargs:
+            model_kwargs["max_tokens"] = min(model_kwargs["max_tokens"], max_completion_tokens)
+        else:
+            model_kwargs["max_tokens"] = max_completion_tokens
 
         # Truncate context to fit
         file_content, context_text = truncate_prompt_to_fit(
