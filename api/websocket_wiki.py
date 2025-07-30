@@ -354,26 +354,40 @@ async def handle_websocket_chat(websocket: WebSocket):
                     model = "/app/models/Qwen3-32B"  # fallback
                 logger.warning(f"Empty model received, defaulting to: {model}")
             
-            logger.info(f"Using provider: {provider}, model: {model}")
+            logger.info(f"🎯 Request details - Provider: '{provider}', Model: '{model}', Type: '{request.type}', URL: '{request.repo_url}'")
             
             # Send status update that we're starting processing
             await websocket.send_text(json.dumps({"status": "processing", "message": f"Starting processing with {provider} {model}"}))
             
             try:
-                logger.info(f"Creating RAG instance with provider: {provider}, model: {model}")
+                logger.info(f"🔧 Creating RAG instance with provider: {provider}, model: {model}")
                 rag_instance = RAG(provider=provider, model=model)
-                logger.info(f"Getting model config for provider: {provider}, model: {model}")
+                logger.info(f"🔧 Getting model config for provider: {provider}, model: {model}")
                 model_config = get_model_config(provider=provider, model=model)
-                logger.info(f"Successfully configured provider: {provider}, model: {model}")
+                logger.info(f"✅ Successfully configured provider: {provider}, model: {model}")
                 await websocket.send_text(json.dumps({"status": "configured", "message": f"Successfully configured {provider} {model}"}))
             except Exception as config_error:
                 logger.error(f"Configuration error for provider '{provider}', model '{model}': {config_error}")
-                # Send error to client before trying fallback
-                await websocket.send_text(json.dumps({"error": f"Configuration error for {provider}: {config_error}"}))
                 
-                # Try with default fallback
-                provider = "vllm"
-                model = "/app/models/Qwen3-32B"
+                # Check if this is an API key issue
+                error_msg = str(config_error).lower()
+                if any(keyword in error_msg for keyword in ['api key', 'authentication', 'unauthorized', 'invalid key', 'missing key']):
+                    detailed_error = f"❌ API Key Error: No valid API key found for {provider}. Please check your .env file and ensure you have set a real API key, not a placeholder value."
+                else:
+                    detailed_error = f"Configuration error for {provider}: {config_error}"
+                
+                # Send specific error to client
+                await websocket.send_text(json.dumps({"error": detailed_error}))
+                
+                # Don't try fallback if it's an API key issue - all providers will likely fail
+                if 'api key' in error_msg or 'authentication' in error_msg:
+                    logger.error("🚨 API key authentication failed. Skipping fallback attempts.")
+                    await websocket.send_text(json.dumps({"error": "No working LLM providers available. Please configure valid API keys in your .env file."}))
+                    continue
+                
+                # Try with default fallback only for other types of errors
+                provider = "google"  # Try Google as fallback since it's most commonly configured
+                model = "gemini-2.0-flash"
                 logger.info(f"Falling back to default provider: {provider}, model: {model}")
                 try:
                     rag_instance = RAG(provider=provider, model=model)
@@ -381,7 +395,7 @@ async def handle_websocket_chat(websocket: WebSocket):
                     await websocket.send_text(json.dumps({"status": "fallback", "message": f"Using fallback: {provider} {model}"}))
                 except Exception as fallback_error:
                     logger.error(f"Fallback configuration also failed: {fallback_error}")
-                    await websocket.send_text(json.dumps({"error": f"All providers failed. Check configuration: {fallback_error}"}))
+                    await websocket.send_text(json.dumps({"error": f"All providers failed. Please check your .env file and ensure you have configured valid API keys for at least one LLM provider (Google, OpenAI, vLLM, etc.)"}))
                     continue
 
             # Create updated request with validated provider and model
@@ -404,6 +418,7 @@ async def handle_websocket_chat(websocket: WebSocket):
             start_time = asyncio.get_event_loop().time()
             
             try:
+                logger.info(f"🚀 Starting stream_response with request: {validated_request.repo_url}")
                 async for chunk in stream_response(validated_request, rag_instance, model_config):
                     chunk_count += 1
                     
@@ -492,11 +507,14 @@ async def stream_response(
     rag_instance: RAG,
     model_config: dict
 ) -> AsyncGenerator[str, None]:
+    logger.info(f"🔄 stream_response started for repo: {request.repo_url}")
     query = request.messages[-1].content if request.messages else ""
+    logger.info(f"📝 Query length: {len(query)} characters")
     model_kwargs = model_config.get("model_kwargs", {})
     context_window = get_context_window_for_model(request.provider, request.model)
     max_completion_tokens = get_max_tokens_for_model(request.provider, request.model)
     allowed_prompt_size = context_window - max_completion_tokens
+    logger.info(f"🔧 Model config - Context: {context_window}, Max tokens: {max_completion_tokens}")
     
     # Ensure max_tokens in model_kwargs doesn't exceed the configured limit
     if "max_tokens" in model_kwargs:
@@ -516,6 +534,7 @@ async def stream_response(
 
     # Check early if this is a structure query to skip unnecessary RAG preparation
     is_structure_query = '<file_tree>' in query and '</file_tree>' in query
+    logger.info(f"🔍 Structure query check: {is_structure_query}")
     
     if is_structure_query:
         logger.info("🏗️  Detected wiki structure determination query - skipping RAG retrieval")
@@ -556,7 +575,9 @@ async def stream_response(
         return
 
     # For content generation queries, continue with RAG preparation
+    logger.info("🔧 Starting RAG preparation for content generation")
     try:
+        logger.info(f"📂 Preparing retriever for: {request.repo_url} (type: {request.type})")
         rag_instance.prepare_retriever(
             request.repo_url, request.type, request.token,
             request.excluded_dirs.split(',') if request.excluded_dirs else None,
@@ -564,6 +585,7 @@ async def stream_response(
             request.included_dirs.split(',') if request.included_dirs else None,
             request.included_files.split(',') if request.included_files else None,
         )
+        logger.info("✅ RAG retriever preparation completed")
         
         # Diagnostic check for retriever state
         if not hasattr(rag_instance, 'retriever') or rag_instance.retriever is None:

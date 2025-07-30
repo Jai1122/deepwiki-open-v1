@@ -90,14 +90,9 @@ OLLAMA_HOST=your_ollama_host
 # Install Python dependencies
 pip install -r api/requirements.txt
 
-# Start the API server (recommended - includes validation)
-python start_api.py
-
-# Or manually start the server
+# Start the API server
 python -m api.main
 ```
-
-> **⚠️ Important**: The API server must be running on port 8001 before the frontend can generate wikis. If you see connection timeout errors in the UI, check that the API server started successfully.
 
 #### Step 3: Start the Frontend
 
@@ -644,17 +639,19 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 ## ❓ Troubleshooting
 
 ### API Key Issues
-- **"Missing environment variables"**: Make sure your `.env` file is in the project root and contains the required API keys
+- **"Missing environment variables"** or **"No working LLM providers found"**: Your `.env` file contains placeholder values like `your-google-api-key-here`. Replace these with real API keys from [Google AI Studio](https://makersuite.google.com/app/apikey) or [OpenAI Platform](https://platform.openai.com/api-keys)
 - **"API key not valid"**: Check that you've copied the full key correctly with no extra spaces
+- **"Configuration error for provider"**: The API key is invalid or expired. Get a new key from the provider
 - **"OpenRouter API error"**: Verify your OpenRouter API key is valid and has sufficient credits
 - **"Azure OpenAI API error"**: Verify your Azure OpenAI credentials (API key, endpoint, and version) are correct and the service is properly deployed
 
 ### Connection Problems
-- **"Cannot connect to API server"**: Make sure the API server is running on port 8001
+- **"Cannot connect to API server"** or **"Connection timeout"**: Make sure the API server is running on port 8001. Check with `lsof -i :8001`
+- **"WebSocket connection failed"**: The API server isn't running or is unreachable
 - **"CORS error"**: The API is configured to allow all origins, but if you're having issues, try running both frontend and backend on the same machine
 
 ### Generation Issues
-- **"Error generating wiki"**: For very large repositories, try a smaller one first
+- **"Error generating wiki"** or **Wiki generation stops**: Usually an API key issue. Check server logs and ensure you have valid API keys in `.env`
 - **"Invalid repository format"**: Make sure you're using a valid GitHub, GitLab or Bitbucket URL format
 - **"Could not fetch repository structure"**: For private repositories, ensure you've entered a valid personal access token with appropriate permissions
 - **"Diagram rendering error"**: The app will automatically try to fix broken diagrams

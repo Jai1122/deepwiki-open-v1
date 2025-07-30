@@ -13,6 +13,7 @@ from api.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 # Add the current directory to the path so we can import the api package
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,7 +27,8 @@ def validate_configuration():
     provider_errors = {}
     
     # Test Google provider
-    if os.environ.get('GOOGLE_API_KEY') and os.environ.get('GOOGLE_API_KEY') != 'your-google-api-key-here':
+    google_key = os.environ.get('GOOGLE_API_KEY')
+    if google_key and google_key not in ['your-google-api-key-here', 'your_google_api_key', '']:
         try:
             config = get_model_config("google", "gemini-2.0-flash")
             working_providers.append("google")
@@ -35,13 +37,16 @@ def validate_configuration():
             provider_errors["google"] = str(e)
             logger.warning(f"❌ Google provider not working: {e}")
     else:
-        logger.warning("❌ Google API key not configured")
+        if google_key in ['your-google-api-key-here', 'your_google_api_key']:
+            logger.warning("❌ Google API key is set to placeholder value - please update .env with real key")
+        else:
+            logger.warning("❌ Google API key not configured")
     
     # Test vLLM provider
-    if (os.environ.get('VLLM_API_KEY') and 
-        os.environ.get('VLLM_API_KEY') != 'your-actual-api-key' and
-        os.environ.get('VLLM_API_BASE_URL') and
-        'your-vllm-server-address' not in os.environ.get('VLLM_API_BASE_URL', '')):
+    vllm_key = os.environ.get('VLLM_API_KEY')
+    vllm_url = os.environ.get('VLLM_API_BASE_URL')
+    if (vllm_key and vllm_key not in ['your-actual-api-key', 'your_vllm_api_key', ''] and
+        vllm_url and 'your-vllm-server-address' not in vllm_url):
         try:
             config = get_model_config("vllm", "/app/models/Qwen3-32B")
             working_providers.append("vllm")
@@ -50,10 +55,14 @@ def validate_configuration():
             provider_errors["vllm"] = str(e)
             logger.warning(f"❌ vLLM provider not working: {e}")
     else:
-        logger.warning("❌ vLLM provider not configured properly")
+        if vllm_key in ['your-actual-api-key', 'your_vllm_api_key'] or 'your-vllm-server-address' in (vllm_url or ''):
+            logger.warning("❌ vLLM credentials are set to placeholder values - please update .env with real values")
+        else:
+            logger.warning("❌ vLLM provider not configured properly")
     
     # Test OpenAI provider
-    if os.environ.get('OPENAI_API_KEY'):
+    openai_key = os.environ.get('OPENAI_API_KEY')
+    if openai_key and openai_key not in ['your_openai_api_key', 'your-openai-api-key', '']:
         try:
             config = get_model_config("openai", "gpt-4o")
             working_providers.append("openai")
@@ -62,7 +71,10 @@ def validate_configuration():
             provider_errors["openai"] = str(e)
             logger.warning(f"❌ OpenAI provider not working: {e}")
     else:
-        logger.warning("❌ OpenAI API key not configured")
+        if openai_key in ['your_openai_api_key', 'your-openai-api-key']:
+            logger.warning("❌ OpenAI API key is set to placeholder value - please update .env with real key")
+        else:
+            logger.warning("❌ OpenAI API key not configured")
     
     if not working_providers:
         logger.error("🚨 CRITICAL: No working LLM providers found!")
