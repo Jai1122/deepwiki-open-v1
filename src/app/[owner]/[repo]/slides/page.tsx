@@ -286,7 +286,7 @@ Give me the numbered list with brief descriptions for each slide. Be creative bu
               }
               reject(new Error('WebSocket connection timeout'));
             }
-          }, 10000);
+          }, 300000);  // 5 minutes - match WebSocket client timeout
 
           // Set up event handlers
           ws.onopen = () => {

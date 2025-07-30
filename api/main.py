@@ -53,5 +53,9 @@ if __name__ == "__main__":
         "api.api:app",
         host="0.0.0.0",
         port=port,
-        reload=is_development
+        reload=is_development,
+        ws_ping_interval=30,     # Send ping every 30 seconds
+        ws_ping_timeout=10,      # Wait 10 seconds for pong response
+        ws_max_size=16 * 1024 * 1024,  # 16MB max WebSocket message size
+        timeout_keep_alive=60    # Keep connections alive for 60 seconds
     )

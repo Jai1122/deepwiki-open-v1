@@ -341,7 +341,7 @@ Make the workshop content in ${language === 'en' ? 'English' :
           // If the connection doesn't open within 5 seconds, fall back to HTTP
           const timeout = setTimeout(() => {
             reject(new Error('WebSocket connection timeout'));
-          }, 5000);
+          }, 300000);  // 5 minutes - match WebSocket client timeout
 
           // Clear the timeout if the connection opens successfully
           ws.onopen = () => {

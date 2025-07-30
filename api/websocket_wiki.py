@@ -287,8 +287,24 @@ async def handle_websocket_chat(websocket: WebSocket):
                     logger.error(f"Error receiving WebSocket data: {receive_error}")
                     break
                 
-            logger.info("Received WebSocket request")
-            request = ChatCompletionRequest(**json.loads(data))
+            logger.info("Received WebSocket message")
+            
+            # Parse the incoming message
+            try:
+                message_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON received: {e}")
+                await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
+                continue
+            
+            # Handle ping/pong messages for keepalive
+            if message_data.get("type") == "ping":
+                logger.debug("Received ping, sending pong")
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+            
+            # Process regular chat completion request
+            request = ChatCompletionRequest(**message_data)
             
             # Validate and set default provider if empty
             provider = request.provider.strip() if request.provider else "google"
