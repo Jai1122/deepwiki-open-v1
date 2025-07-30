@@ -82,12 +82,14 @@ def is_xml_complete(xml_text: str) -> bool:
     close_count = text.count('>')
     if open_count > 0 and close_count > 0:
         imbalance_ratio = abs(open_count - close_count) / max(open_count, close_count)
-        if imbalance_ratio > 0.3:  # Further increased threshold to 30% to reduce false positives  
+        # For longer responses, be even more lenient
+        threshold = 0.5 if len(text) > 10000 else 0.4  # Increased thresholds
+        if imbalance_ratio > threshold:
             logger.warning(f"XML incomplete: severe bracket imbalance (open: {open_count}, close: {close_count}, ratio: {imbalance_ratio:.2f})")
             return False
     
     # If response is suspiciously short for XML structure generation, flag it
-    if '<wiki_structure>' in text and len(text) < 200:
+    if '<wiki_structure>' in text and len(text) < 100:  # Reduced minimum to be more lenient
         logger.warning("XML incomplete: structure too short")
         return False
     
@@ -175,10 +177,27 @@ async def handle_streaming_response(response_stream, validate_xml=False):
                 logger.warning(f"Response buffer starts with: {response_buffer[:500]}...")
                 logger.warning(f"Response buffer ends with: ...{response_buffer[-500:]}")
                 
-                # Check if this might be a false positive - if response is very long and has basic structure, allow it
-                if len(response_buffer) > 10000 and '<wiki_structure>' in response_buffer and '</wiki_structure>' in response_buffer:
-                    logger.info("Large response with complete wiki_structure detected - allowing despite validation failure")
-                else:
+                # Check if this might be a false positive - be more lenient with longer responses
+                should_allow = False
+                
+                # Allow if it has complete wiki_structure tags (most important)
+                if '<wiki_structure>' in response_buffer and '</wiki_structure>' in response_buffer:
+                    logger.info("Response has complete wiki_structure - allowing despite other validation issues")
+                    should_allow = True
+                
+                # Allow if response is reasonably long and contains substantial content
+                elif len(response_buffer) > 8000:
+                    # Check if it contains meaningful XML content
+                    if response_buffer.count('<') > 10 and response_buffer.count('>') > 10:
+                        logger.info(f"Long response ({len(response_buffer)} chars) with XML content - allowing despite validation issues")
+                        should_allow = True
+                
+                # Allow if response ends with proper XML closing pattern
+                elif response_buffer.strip().endswith('>') and not response_buffer.strip().endswith('<'):
+                    logger.info("Response ends with proper XML closing - allowing")
+                    should_allow = True
+                    
+                if not should_allow:
                     # For incomplete responses, yield an error to prevent client processing
                     yield json.dumps({"error": "Incomplete response detected - please retry"})
                     return
@@ -700,7 +719,7 @@ async def stream_response(
         if total_tokens > context_window:
             logger.warning(f"⚠️  Structure query prompt too large: {prompt_tokens} + {max_completion_tokens} = {total_tokens} > {context_window}")
             # Emergency truncation for structure queries
-            max_prompt_tokens = context_window - max_completion_tokens - 50  # Extra safety buffer
+            max_prompt_tokens = context_window - max_completion_tokens - 200  # Extra safety buffer for complete responses
             if max_prompt_tokens > 0:
                 truncation_ratio = max_prompt_tokens / prompt_tokens
                 if truncation_ratio < 1:
@@ -726,7 +745,7 @@ async def stream_response(
         if total_tokens > context_window:
             logger.warning(f"⚠️  Final prompt still too large: {prompt_tokens} + {max_completion_tokens} = {total_tokens} > {context_window}")
             # Emergency truncation: cut the prompt to fit
-            max_prompt_tokens = context_window - max_completion_tokens - 50  # Extra safety buffer
+            max_prompt_tokens = context_window - max_completion_tokens - 200  # Extra safety buffer for complete responses
             if max_prompt_tokens > 0:
                 # Simple truncation - keep the beginning (system prompt) and end (query)
                 truncation_ratio = max_prompt_tokens / prompt_tokens

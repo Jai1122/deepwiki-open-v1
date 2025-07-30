@@ -349,9 +349,9 @@ def truncate_prompt_to_fit(
     query_tokens = count_tokens(query, is_ollama)
 
     # Calculate the available token budget for the variable parts (file and RAG context)
-    # Add a small safety buffer (100 tokens) to account for token counting variations
+    # Add a safety buffer (200 tokens) to account for token counting variations and ensure complete responses
     static_tokens = system_prompt_tokens + history_tokens + query_tokens
-    safety_buffer = 100
+    safety_buffer = 200
     available_tokens = context_window - static_tokens - max_completion_tokens - safety_buffer
 
     if available_tokens <= 0:
