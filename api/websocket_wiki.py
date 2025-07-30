@@ -254,7 +254,7 @@ async def handle_websocket_chat(websocket: WebSocket):
                 
             # Add timeout to websocket receive to prevent indefinite waiting
             try:
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=300)  # 5 minute timeout
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=600)  # 10 minute timeout for large repos
             except asyncio.TimeoutError:
                 logger.warning("WebSocket receive timeout - checking connection and sending heartbeat")
                 # Check if still connected before sending heartbeat
@@ -535,7 +535,7 @@ async def stream_response(
             try:
                 response_stream = await asyncio.wait_for(
                     client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
-                    timeout=120  # 2 minute timeout for initial connection
+                    timeout=180  # 3 minute timeout for initial connection (increased)
                 )
                 logger.info("Successfully connected to LLM API and received response stream (structure query)")
             except asyncio.TimeoutError:
@@ -832,7 +832,7 @@ async def stream_response(
         try:
             response_stream = await asyncio.wait_for(
                 client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
-                timeout=120  # 2 minute timeout for initial connection
+                timeout=180  # 3 minute timeout for initial connection (increased)
             )
             logger.info("Successfully connected to LLM API and received response stream")
         except asyncio.TimeoutError:

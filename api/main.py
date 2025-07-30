@@ -76,7 +76,10 @@ def validate_configuration():
 
 # Validate configuration
 if not validate_configuration():
-    logger.warning("⚠️  Starting server with limited functionality due to configuration issues")
+    logger.error("🚨 CRITICAL: Cannot start server - no working LLM providers configured!")
+    logger.error("   Please configure at least one of: GOOGLE_API_KEY, VLLM_API_KEY+BASE_URL, OPENAI_API_KEY")
+    logger.error("   Server will NOT start without proper configuration.")
+    sys.exit(1)  # Exit instead of starting with broken configuration
 
 # Configure Google Generative AI
 import google.generativeai as genai

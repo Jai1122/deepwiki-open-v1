@@ -53,10 +53,10 @@ export const createChatWebSocket = (
   const ws = new WebSocket(getWebSocketUrl());
   
   // Timeout configuration - increased for complex responses
-  const CONNECTION_TIMEOUT = 30000; // 30 seconds for connection
-  const RESPONSE_TIMEOUT = 600000;  // 10 minutes for response (increased)
-  const CHUNK_TIMEOUT = 300000;    // 5 minutes between chunks (increased)
-  const HEARTBEAT_INTERVAL = 60000; // Send heartbeat every 1 minute
+  const CONNECTION_TIMEOUT = 60000; // 1 minute for connection (increased)
+  const RESPONSE_TIMEOUT = 900000;  // 15 minutes for response (increased)
+  const CHUNK_TIMEOUT = 600000;    // 10 minutes between chunks (increased)
+  const HEARTBEAT_INTERVAL = 30000; // Send heartbeat every 30 seconds (more frequent)
   
   let connectionTimeout: NodeJS.Timeout;
   let responseTimeout: NodeJS.Timeout;
@@ -83,9 +83,9 @@ export const createChatWebSocket = (
     clearAllTimeouts();
     
     const timeoutMessages = {
-      connection: 'Connection timeout - failed to establish connection within 30 seconds',
-      response: 'Response timeout - no response received within 5 minutes',
-      chunk: 'Stream timeout - no data received within 2 minutes'
+      connection: 'Connection timeout - failed to establish connection within 1 minute. Check if API server is running.',
+      response: 'Response timeout - no response received within 15 minutes. Repository may be too large.',
+      chunk: 'Stream timeout - no data received within 10 minutes. Check server logs for issues.'
     };
     
     onStatus('timeout', timeoutMessages[type as keyof typeof timeoutMessages] || 'Timeout occurred');

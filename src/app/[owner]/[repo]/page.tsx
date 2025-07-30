@@ -537,6 +537,8 @@ export default function RepoWikiPage() {
         console.log(`Structure status: ${status} - ${msg}`);
         if (status === 'error') {
           handleError(`WebSocket error while determining structure: ${msg}`);
+        } else if (status === 'timeout') {
+          handleError(`Connection timeout: ${msg}. Please check if the API server is running on port 8001.`);
         }
       },
       (err) => handleError(`WebSocket error while determining structure: ${err}`),
@@ -715,6 +717,16 @@ export default function RepoWikiPage() {
             if (status === 'error') {
               console.error(`Error generating page ${page.id}: ${msg}`);
               setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: ${msg}` } }));
+              activeRequestsRef.current--;
+              setPagesInProgress(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(page.id);
+                return newSet;
+              });
+              processQueue(); // Continue with next
+            } else if (status === 'timeout') {
+              console.error(`Timeout generating page ${page.id}: ${msg}`);
+              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Timeout: ${msg}. Please check server connection.` } }));
               activeRequestsRef.current--;
               setPagesInProgress(prev => {
                 const newSet = new Set(prev);

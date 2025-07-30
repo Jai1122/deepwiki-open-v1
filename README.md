@@ -90,9 +90,14 @@ OLLAMA_HOST=your_ollama_host
 # Install Python dependencies
 pip install -r api/requirements.txt
 
-# Start the API server
+# Start the API server (recommended - includes validation)
+python start_api.py
+
+# Or manually start the server
 python -m api.main
 ```
+
+> **⚠️ Important**: The API server must be running on port 8001 before the frontend can generate wikis. If you see connection timeout errors in the UI, check that the API server started successfully.
 
 #### Step 3: Start the Frontend
 
