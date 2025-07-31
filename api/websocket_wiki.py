@@ -16,6 +16,25 @@ from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PRO
 
 logger = logging.getLogger(__name__)
 
+async def safe_websocket_send(websocket: WebSocket, message: dict) -> bool:
+    """
+    Safely send a message via WebSocket with error handling.
+    Returns True if successful, False if failed.
+    """
+    if not is_websocket_connected(websocket):
+        logger.warning("Attempted to send message to disconnected WebSocket")
+        return False
+    
+    try:
+        await websocket.send_text(json.dumps(message))
+        return True
+    except WebSocketDisconnect:
+        logger.info("Client disconnected during message send")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to send WebSocket message: {e}")
+        return False
+
 def is_websocket_connected(websocket: WebSocket) -> bool:
     """Safely check if WebSocket is still connected"""
     try:
@@ -160,13 +179,13 @@ async def handle_streaming_response(response_stream, validate_xml=False):
             stream_gen = process_stream()
             while True:
                 try:
-                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=120)  # 2 minute chunk timeout for complex responses
+                    chunk_result = await asyncio.wait_for(stream_gen.__anext__(), timeout=180)  # 3 minute chunk timeout (increased)
                     yield chunk_result
                 except StopAsyncIteration:
                     break
         except asyncio.TimeoutError:
             logger.error(f"Chunk timeout exceeded - stream terminated prematurely")
-            yield json.dumps({"error": "Stream processing timed out"})
+            yield json.dumps({"error": "Stream processing timed out - the repository may be too complex. Please try with a smaller repository or contact support."})
             return  # Don't validate incomplete buffer
             
         # Validate response completeness after streaming is done (only for XML responses)
@@ -360,44 +379,54 @@ async def handle_websocket_chat(websocket: WebSocket):
             # Send status update that we're starting processing
             await websocket.send_text(json.dumps({"status": "processing", "message": f"Starting processing with {provider} {model}"}))
             
-            try:
-                logger.info(f"🔧 Creating RAG instance with provider: {provider}, model: {model}")
-                rag_instance = RAG(provider=provider, model=model)
-                logger.info(f"🔧 Getting model config for provider: {provider}, model: {model}")
-                model_config = get_model_config(provider=provider, model=model)
-                logger.info(f"✅ Successfully configured provider: {provider}, model: {model}")
-                await websocket.send_text(json.dumps({"status": "configured", "message": f"Successfully configured {provider} {model}"}))
-            except Exception as config_error:
-                logger.error(f"Configuration error for provider '{provider}', model '{model}': {config_error}")
-                
-                # Check if this is an API key issue
-                error_msg = str(config_error).lower()
-                if any(keyword in error_msg for keyword in ['api key', 'authentication', 'unauthorized', 'invalid key', 'missing key']):
-                    detailed_error = f"❌ API Key Error: No valid API key found for {provider}. Please check your .env file and ensure you have set a real API key, not a placeholder value."
-                else:
-                    detailed_error = f"Configuration error for {provider}: {config_error}"
-                
-                # Send specific error to client
-                await websocket.send_text(json.dumps({"error": detailed_error}))
-                
-                # Don't try fallback if it's an API key issue - all providers will likely fail
-                if 'api key' in error_msg or 'authentication' in error_msg:
-                    logger.error("🚨 API key authentication failed. Skipping fallback attempts.")
-                    await websocket.send_text(json.dumps({"error": "No working LLM providers available. Please configure valid API keys in your .env file."}))
-                    continue
-                
-                # Try with default fallback only for other types of errors
-                provider = "google"  # Try Google as fallback since it's most commonly configured
-                model = "gemini-2.0-flash"
-                logger.info(f"Falling back to default provider: {provider}, model: {model}")
+            # Try multiple providers with fallback
+            fallback_providers = [
+                (provider, model),  # Try requested first
+                ("google", "gemini-2.0-flash"),
+                ("vllm", "/app/models/Qwen3-32B"), 
+                ("openai", "gpt-4o"),
+                ("azure", "gpt-4o")
+            ]
+            
+            rag_instance = None
+            model_config = None
+            successful_provider = None
+            successful_model = None
+            
+            for try_provider, try_model in fallback_providers:
                 try:
-                    rag_instance = RAG(provider=provider, model=model)
-                    model_config = get_model_config(provider=provider, model=model)
-                    await websocket.send_text(json.dumps({"status": "fallback", "message": f"Using fallback: {provider} {model}"}))
-                except Exception as fallback_error:
-                    logger.error(f"Fallback configuration also failed: {fallback_error}")
-                    await websocket.send_text(json.dumps({"error": f"All providers failed. Please check your .env file and ensure you have configured valid API keys for at least one LLM provider (Google, OpenAI, vLLM, etc.)"}))
+                    logger.info(f"🔧 Attempting provider: {try_provider}, model: {try_model}")
+                    test_rag = RAG(provider=try_provider, model=try_model)
+                    test_config = get_model_config(provider=try_provider, model=try_model)
+                    
+                    # If we get here, configuration succeeded
+                    rag_instance = test_rag
+                    model_config = test_config
+                    successful_provider = try_provider
+                    successful_model = try_model
+                    
+                    logger.info(f"✅ Successfully configured provider: {try_provider}, model: {try_model}")
+                    await websocket.send_text(json.dumps({"status": "configured", "message": f"Successfully configured {try_provider} {try_model}"}))
+                    break
+                    
+                except Exception as config_error:
+                    logger.warning(f"Provider {try_provider} failed: {config_error}")
+                    error_msg = str(config_error).lower()
+                    if any(keyword in error_msg for keyword in ['api key', 'authentication', 'unauthorized', 'invalid key', 'missing key']):
+                        await websocket.send_text(json.dumps({"status": "provider_failed", "message": f"{try_provider} API key invalid, trying next provider..."}))
+                    else:
+                        await websocket.send_text(json.dumps({"status": "provider_failed", "message": f"{try_provider} configuration failed, trying next provider..."}))
                     continue
+            
+            # Check if any provider worked
+            if rag_instance is None or model_config is None:
+                logger.error("🚨 All LLM providers failed!")
+                await websocket.send_text(json.dumps({"error": "No working LLM providers available. Please check your .env file and ensure you have configured valid API keys for at least one LLM provider (Google, OpenAI, vLLM, etc.)"}))
+                continue
+                
+            # Update request with successful provider/model
+            provider = successful_provider
+            model = successful_model
 
             # Create updated request with validated provider and model
             validated_request = ChatCompletionRequest(
@@ -557,12 +586,12 @@ async def stream_response(
             try:
                 response_stream = await asyncio.wait_for(
                     client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
-                    timeout=180  # 3 minute timeout for initial connection (increased)
+                    timeout=300  # 5 minute timeout for initial connection (increased from 3 min)
                 )
                 logger.info("Successfully connected to LLM API and received response stream (structure query)")
             except asyncio.TimeoutError:
-                logger.error("LLM API connection timeout - no response within 2 minutes (structure query)")
-                yield json.dumps({"error": "LLM API connection timeout"})
+                logger.error("LLM API connection timeout - no response within 5 minutes (structure query)")
+                yield json.dumps({"error": "LLM API connection timeout - repository may be too large. Please try a smaller repository or contact support."})
                 return
                 
             # Handle streaming response with XML validation for structure queries
@@ -579,6 +608,8 @@ async def stream_response(
 
     # For content generation queries, continue with RAG preparation
     logger.info("🔧 Starting RAG preparation for content generation")
+    yield json.dumps({"status": "preparing_rag", "message": "Analyzing repository structure and content..."})
+    
     try:
         logger.info(f"📂 Preparing retriever for: {request.repo_url} (type: {request.type})")
         rag_instance.prepare_retriever(
@@ -589,6 +620,7 @@ async def stream_response(
             request.included_files.split(',') if request.included_files else None,
         )
         logger.info("✅ RAG retriever preparation completed")
+        yield json.dumps({"status": "rag_ready", "message": "Repository analysis complete"})
         
         # Diagnostic check for retriever state
         if not hasattr(rag_instance, 'retriever') or rag_instance.retriever is None:
@@ -607,6 +639,7 @@ async def stream_response(
         return
         
     logger.info(f"✅ Retriever ready with {len(rag_instance.transformed_docs)} documents")
+    yield json.dumps({"status": "retrieving_context", "message": f"Retrieving relevant context from {len(rag_instance.transformed_docs)} documents..."})
 
     # For wiki generation, we need comprehensive repository content, not just query-specific matches
     # Use multiple broad queries to get comprehensive codebase coverage
@@ -751,6 +784,7 @@ async def stream_response(
     
     logger.info(f"📊 Wiki generation final stats: {len(all_retrieved_docs)} documents from {len(seen_sources)} unique sources")
     logger.info(f"📝 Total context length: {len(context_text)} characters")
+    yield json.dumps({"status": "context_ready", "message": f"Retrieved {len(context_text)} characters of context from {len(seen_sources)} files"})
     
     # Enhanced logging for debugging and content validation
     if len(seen_sources) > 0:
@@ -848,6 +882,7 @@ async def stream_response(
     client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
     model_kwargs["stream"] = True
 
+    yield json.dumps({"status": "generating", "message": "Generating AI response..."})
     logger.info("Preparing to stream response from LLM.")
     try:
         logger.info(f"🔧 Creating API kwargs for content generation - provider: {request.provider}, model: {request.model}")
@@ -859,12 +894,12 @@ async def stream_response(
         try:
             response_stream = await asyncio.wait_for(
                 client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
-                timeout=180  # 3 minute timeout for initial connection (increased)
+                timeout=300  # 5 minute timeout for initial connection (increased from 3 min)
             )
             logger.info("Successfully connected to LLM API and received response stream")
         except asyncio.TimeoutError:
-            logger.error("LLM API connection timeout - no response within 2 minutes")
-            yield json.dumps({"error": "LLM API connection timeout"})
+            logger.error("LLM API connection timeout - no response within 5 minutes")
+            yield json.dumps({"error": "LLM API connection timeout - repository may be too large. Please try a smaller repository or contact support."})
             return
         
         # Use the shared streaming handler (no XML validation for page content)
