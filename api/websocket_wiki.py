@@ -469,26 +469,26 @@ async def handle_websocket_chat(websocket: WebSocket):
                 
                 # Wrap the entire stream processing in a timeout
                 try:
-                    async def process_stream_with_validation():
-                        stream_started = False
-                        chunk_count = 0
-                        
-                        async for chunk in stream_response(validated_request, rag_instance, model_config):
-                            if not stream_started:
-                                logger.info("✅ Stream response generation started successfully")
-                                stream_started = True
-                            
-                            chunk_count += 1
-                            yield chunk
-                        
-                        if not stream_started:
-                            logger.error("❌ Stream response generator never yielded any content")
-                            raise RuntimeError("Stream response generator failed to start - no content was generated")
-                        
-                        logger.info(f"✅ Stream response completed successfully with {chunk_count} chunks")
+                    stream_started = False
+                    last_activity = asyncio.get_event_loop().time()
                     
-                    async for chunk in asyncio.wait_for(process_stream_with_validation(), timeout=stream_timeout):
+                    async for chunk in stream_response(validated_request, rag_instance, model_config):
+                        # Track first chunk received
+                        if not stream_started:
+                            logger.info("✅ Stream response generation started successfully")
+                            stream_started = True
+                        
                         chunk_count += 1
+                        last_activity = asyncio.get_event_loop().time()
+                        
+                        # Check for overall timeout
+                        if last_activity - start_time > stream_timeout:
+                            logger.error(f"🚨 Stream processing exceeded {stream_timeout} second timeout")
+                            if is_websocket_connected(websocket):
+                                await websocket.send_text(json.dumps({
+                                    "error": f"Request timed out after {stream_timeout//60} minutes. The repository may be too complex or the AI service is overloaded."
+                                }))
+                            break
                         
                         # Check if websocket is still connected before sending
                         if not is_websocket_connected(websocket):
@@ -523,14 +523,16 @@ async def handle_websocket_chat(websocket: WebSocket):
                             if elapsed > 60 and not is_websocket_connected(websocket):
                                 logger.warning("WebSocket connection lost during long stream, terminating")
                                 break
+                    
+                    # Check if stream ever started
+                    if not stream_started:
+                        logger.error("❌ Stream response generator never yielded any content")
+                        if is_websocket_connected(websocket):
+                            await websocket.send_text(json.dumps({
+                                "error": "Stream response generator failed to start - no content was generated. Please check server logs."
+                            }))
+                        chunk_count = 0
                 
-                except asyncio.TimeoutError:
-                    logger.error(f"🚨 Stream processing timed out after {stream_timeout} seconds")
-                    if is_websocket_connected(websocket):
-                        await websocket.send_text(json.dumps({
-                            "error": f"Request timed out after {stream_timeout//60} minutes. The repository may be too complex or the AI service is overloaded. Please try again with a smaller repository or contact support."
-                        }))
-                    chunk_count = 0  # Ensure completion signal reflects timeout
                 except Exception as stream_gen_error:
                     logger.error(f"🚨 Critical error in stream response generator: {stream_gen_error}", exc_info=True)
                     if is_websocket_connected(websocket):
