@@ -348,10 +348,18 @@ async def handle_websocket_chat(websocket: WebSocket):
             
             # Process regular chat completion request
             try:
+                logger.info(f"🔍 Attempting to create ChatCompletionRequest from message_data")
+                logger.debug(f"Message data keys: {list(message_data.keys())}")
+                logger.debug(f"Messages field: {message_data.get('messages', 'MISSING')}")
+                
                 request = ChatCompletionRequest(**message_data)
+                logger.info(f"✅ Successfully created ChatCompletionRequest")
+                logger.info(f"Request details: repo_url={request.repo_url[:50]}..., provider={request.provider}, model={request.model}")
+                
             except Exception as validation_error:
-                logger.error(f"Validation error for ChatCompletionRequest: {validation_error}")
-                await websocket.send_text(json.dumps({"error": f"Invalid request: {validation_error}"}))
+                logger.error(f"🚨 Validation error for ChatCompletionRequest: {validation_error}", exc_info=True)
+                logger.error(f"Failed message_data: {message_data}")
+                await websocket.send_text(json.dumps({"error": f"Invalid request format: {validation_error}. Please check your request structure."}))
                 continue
             
             # Validate and set default provider if empty
@@ -447,44 +455,83 @@ async def handle_websocket_chat(websocket: WebSocket):
             chunk_count = 0
             start_time = asyncio.get_event_loop().time()
             
+            # Add timeout protection for the entire stream_response process
+            stream_timeout = 1200  # 20 minutes total timeout for entire process
+            
             try:
                 logger.info(f"🚀 Starting stream_response with request: {validated_request.repo_url}")
-                async for chunk in stream_response(validated_request, rag_instance, model_config):
-                    chunk_count += 1
-                    
-                    # Check if websocket is still connected before sending
-                    if not is_websocket_connected(websocket):
-                        logger.warning("Client disconnected during stream, stopping generation")
-                        break
-                    
-                    try:
-                        await websocket.send_text(chunk)
-                    except WebSocketDisconnect as disconnect_error:
-                        logger.info(f"WebSocket client disconnected during send: {disconnect_error}")
-                        break
-                    except Exception as send_error:
-                        # Check if this is a connection close event
-                        error_str = str(send_error)
-                        if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
-                            "connection closed" in error_str.lower() or 
-                            "1005" in error_str or "1006" in error_str or 
-                            "abnormal closure" in error_str.lower()):
-                            logger.info(f"WebSocket connection closed during send: {send_error}")
-                        else:
-                            logger.warning(f"Failed to send chunk {chunk_count}: {send_error}")
-                        # If we can't send, client probably disconnected
-                        break
-                    
-                    # Send periodic heartbeats and connection checks during long streams
-                    if chunk_count % 25 == 0:  # More frequent checks
-                        current_time = asyncio.get_event_loop().time()
-                        elapsed = current_time - start_time
-                        logger.debug(f"Stream progress: {chunk_count} chunks, {elapsed:.1f}s elapsed")
+                
+                # Wrap the entire stream processing in a timeout
+                try:
+                    async def process_stream_with_validation():
+                        stream_started = False
+                        chunk_count = 0
                         
-                        # Additional connection health check for long streams
-                        if elapsed > 60 and not is_websocket_connected(websocket):
-                            logger.warning("WebSocket connection lost during long stream, terminating")
+                        async for chunk in stream_response(validated_request, rag_instance, model_config):
+                            if not stream_started:
+                                logger.info("✅ Stream response generation started successfully")
+                                stream_started = True
+                            
+                            chunk_count += 1
+                            yield chunk
+                        
+                        if not stream_started:
+                            logger.error("❌ Stream response generator never yielded any content")
+                            raise RuntimeError("Stream response generator failed to start - no content was generated")
+                        
+                        logger.info(f"✅ Stream response completed successfully with {chunk_count} chunks")
+                    
+                    async for chunk in asyncio.wait_for(process_stream_with_validation(), timeout=stream_timeout):
+                        chunk_count += 1
+                        
+                        # Check if websocket is still connected before sending
+                        if not is_websocket_connected(websocket):
+                            logger.warning("Client disconnected during stream, stopping generation")
                             break
+                        
+                        try:
+                            await websocket.send_text(chunk)
+                        except WebSocketDisconnect as disconnect_error:
+                            logger.info(f"WebSocket client disconnected during send: {disconnect_error}")
+                            break
+                        except Exception as send_error:
+                            # Check if this is a connection close event
+                            error_str = str(send_error)
+                            if ("CloseCode" in error_str or "NO_STATUS_RCVD" in error_str or 
+                                "connection closed" in error_str.lower() or 
+                                "1005" in error_str or "1006" in error_str or 
+                                "abnormal closure" in error_str.lower()):
+                                logger.info(f"WebSocket connection closed during send: {send_error}")
+                            else:
+                                logger.warning(f"Failed to send chunk {chunk_count}: {send_error}")
+                            # If we can't send, client probably disconnected
+                            break
+                        
+                        # Send periodic heartbeats and connection checks during long streams
+                        if chunk_count % 25 == 0:  # More frequent checks
+                            current_time = asyncio.get_event_loop().time()
+                            elapsed = current_time - start_time
+                            logger.debug(f"Stream progress: {chunk_count} chunks, {elapsed:.1f}s elapsed")
+                            
+                            # Additional connection health check for long streams
+                            if elapsed > 60 and not is_websocket_connected(websocket):
+                                logger.warning("WebSocket connection lost during long stream, terminating")
+                                break
+                
+                except asyncio.TimeoutError:
+                    logger.error(f"🚨 Stream processing timed out after {stream_timeout} seconds")
+                    if is_websocket_connected(websocket):
+                        await websocket.send_text(json.dumps({
+                            "error": f"Request timed out after {stream_timeout//60} minutes. The repository may be too complex or the AI service is overloaded. Please try again with a smaller repository or contact support."
+                        }))
+                    chunk_count = 0  # Ensure completion signal reflects timeout
+                except Exception as stream_gen_error:
+                    logger.error(f"🚨 Critical error in stream response generator: {stream_gen_error}", exc_info=True)
+                    if is_websocket_connected(websocket):
+                        await websocket.send_text(json.dumps({
+                            "error": f"Stream generation failed: {stream_gen_error}. Please check server logs and try again."
+                        }))
+                    chunk_count = 0  # Ensure completion signal reflects error
                         
             except Exception as stream_error:
                 logger.error(f"Error in stream processing: {stream_error}")
@@ -538,13 +585,48 @@ async def stream_response(
     model_config: dict
 ) -> AsyncGenerator[str, None]:
     logger.info(f"🔄 stream_response started for repo: {request.repo_url}")
-    query = request.messages[-1].content if request.messages else ""
-    logger.info(f"📝 Query length: {len(query)} characters")
-    model_kwargs = model_config.get("model_kwargs", {})
-    context_window = get_context_window_for_model(request.provider, request.model)
-    max_completion_tokens = get_max_tokens_for_model(request.provider, request.model)
-    allowed_prompt_size = context_window - max_completion_tokens
-    logger.info(f"🔧 Model config - Context: {context_window}, Max tokens: {max_completion_tokens}")
+    
+    # Add validation for required parameters
+    if not request or not request.repo_url:
+        logger.error("❌ Invalid request: missing repo_url")
+        yield json.dumps({"error": "Invalid request: missing repository URL"})
+        return
+    
+    if not rag_instance:
+        logger.error("❌ Invalid request: RAG instance is None")
+        yield json.dumps({"error": "Internal error: RAG instance not initialized"})
+        return
+        
+    if not model_config:
+        logger.error("❌ Invalid request: model_config is None")
+        yield json.dumps({"error": "Internal error: model configuration not available"})
+        return
+    
+    try:
+        query = request.messages[-1].content if request.messages else ""
+        logger.info(f"📝 Query length: {len(query)} characters")
+        
+        if not query.strip():
+            logger.error("❌ Empty query received")
+            yield json.dumps({"error": "Empty query - please provide a question or request"})
+            return
+        
+        model_kwargs = model_config.get("model_kwargs", {})
+        context_window = get_context_window_for_model(request.provider, request.model)
+        max_completion_tokens = get_max_tokens_for_model(request.provider, request.model)
+        allowed_prompt_size = context_window - max_completion_tokens
+        logger.info(f"🔧 Model config - Context: {context_window}, Max tokens: {max_completion_tokens}")
+        
+        # Validate model configuration
+        if context_window <= 0 or max_completion_tokens <= 0:
+            logger.error(f"❌ Invalid model configuration: context_window={context_window}, max_tokens={max_completion_tokens}")
+            yield json.dumps({"error": f"Invalid model configuration for {request.provider}/{request.model}"})
+            return
+            
+    except Exception as init_error:
+        logger.error(f"❌ Error in stream_response initialization: {init_error}", exc_info=True)
+        yield json.dumps({"error": f"Failed to initialize response generation: {init_error}"})
+        return
     
     # Ensure max_tokens in model_kwargs doesn't exceed the configured limit
     if "max_tokens" in model_kwargs:
@@ -612,30 +694,60 @@ async def stream_response(
     
     try:
         logger.info(f"📂 Preparing retriever for: {request.repo_url} (type: {request.type})")
-        rag_instance.prepare_retriever(
-            request.repo_url, request.type, request.token,
-            request.excluded_dirs.split(',') if request.excluded_dirs else None,
-            request.excluded_files.split(',') if request.excluded_files else None,
-            request.included_dirs.split(',') if request.included_dirs else None,
-            request.included_files.split(',') if request.included_files else None,
-        )
+        
+        # Add timeout protection for RAG preparation
+        rag_preparation_timeout = 600  # 10 minutes for repository analysis
+        
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    rag_instance.prepare_retriever,
+                    request.repo_url, 
+                    request.type, 
+                    request.token,
+                    request.excluded_dirs.split(',') if request.excluded_dirs else None,
+                    request.excluded_files.split(',') if request.excluded_files else None,
+                    request.included_dirs.split(',') if request.included_dirs else None,
+                    request.included_files.split(',') if request.included_files else None,
+                ),
+                timeout=rag_preparation_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"🚨 RAG preparation timed out after {rag_preparation_timeout} seconds")
+            yield json.dumps({"error": f"Repository analysis timed out after {rag_preparation_timeout//60} minutes. The repository may be too large or complex. Please try with a smaller repository."})
+            return
+        except Exception as prep_error:
+            logger.error(f"🚨 RAG preparation failed with exception: {prep_error}", exc_info=True)
+            yield json.dumps({"error": f"Repository analysis failed: {prep_error}. Please check if the repository URL is accessible and try again."})
+            return
+        
         logger.info("✅ RAG retriever preparation completed")
         yield json.dumps({"status": "rag_ready", "message": "Repository analysis complete"})
         
-        # Diagnostic check for retriever state
-        if not hasattr(rag_instance, 'retriever') or rag_instance.retriever is None:
-            logger.error("❌ Retriever not initialized after prepare_retriever call")
-            yield json.dumps({"error": "Repository retriever failed to initialize"})
-            return
+        # Enhanced diagnostic checks for retriever state
+        try:
+            if not hasattr(rag_instance, 'retriever') or rag_instance.retriever is None:
+                logger.error("❌ Retriever not initialized after prepare_retriever call")
+                logger.error(f"RAG instance attributes: {dir(rag_instance)}")
+                yield json.dumps({"error": "Repository retriever failed to initialize. Please check if the repository contains valid source code files."})
+                return
+                
+            if not hasattr(rag_instance, 'transformed_docs') or not rag_instance.transformed_docs:
+                logger.error("❌ No transformed documents available for retrieval")
+                logger.error(f"RAG instance transformed_docs: {getattr(rag_instance, 'transformed_docs', 'MISSING')}")
+                yield json.dumps({"error": "No repository documents available for wiki generation. The repository may be empty or contain only unsupported file types."})
+                return
+                
+            logger.info(f"✅ RAG validation passed - retriever ready with {len(rag_instance.transformed_docs)} documents")
             
-        if not hasattr(rag_instance, 'transformed_docs') or not rag_instance.transformed_docs:
-            logger.error("❌ No transformed documents available for retrieval")
-            yield json.dumps({"error": "No repository documents available for wiki generation"})
+        except Exception as validation_error:
+            logger.error(f"❌ RAG validation failed: {validation_error}", exc_info=True)
+            yield json.dumps({"error": f"Repository validation failed: {validation_error}"})
             return
             
     except Exception as rag_error:
-        logger.error(f"RAG preparation failed: {rag_error}", exc_info=True)
-        yield json.dumps({"error": f"Repository processing failed: {rag_error}"})
+        logger.error(f"🚨 Critical RAG preparation error: {rag_error}", exc_info=True)
+        yield json.dumps({"error": f"Repository processing failed: {rag_error}. Please check server logs and try again."})
         return
         
     logger.info(f"✅ Retriever ready with {len(rag_instance.transformed_docs)} documents")
@@ -656,47 +768,57 @@ async def stream_response(
     seen_sources = set()  # Avoid duplicate content from same source
     context_text = ""  # Initialize to prevent UnboundLocalError
     
-    for broad_query in comprehensive_queries:
-        try:
-            result = rag_instance.call(broad_query, language=request.language)
-            logger.debug(f"RAG call result type: {type(result)}, content: {result}")
-            
-            # Handle different return formats from RAG
-            if result is None:
-                logger.warning(f"RAG returned None for query: '{broad_query}'")
-                continue
+    try:
+        for broad_query in comprehensive_queries:
+            try:
+                logger.debug(f"🔍 Executing RAG query: '{broad_query[:50]}...'")
+                result = rag_instance.call(broad_query, language=request.language)
+                logger.debug(f"RAG call result type: {type(result)}, content preview: {str(result)[:100]}...")
                 
-            if isinstance(result, tuple) and len(result) >= 2:
-                docs, _ = result
-            else:
-                logger.warning(f"Unexpected RAG result format: {type(result)} for query: '{broad_query}'")
-                continue
-            
-            # Ensure docs is a list
-            if docs is None:
-                logger.warning(f"RAG returned None docs for query: '{broad_query}'")
-                continue
-                
-            if not isinstance(docs, list):
-                logger.warning(f"RAG docs is not a list: {type(docs)} for query: '{broad_query}'")
-                continue
-            
-            logger.info(f"✅ Retrieved {len(docs)} docs for query: '{broad_query}'")
-            
-            for doc in docs:
-                if doc is None:
+                # Handle different return formats from RAG
+                if result is None:
+                    logger.warning(f"RAG returned None for query: '{broad_query}'")
                     continue
                     
-                source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') and doc.metadata else 'unknown'
-                if source not in seen_sources:
-                    all_retrieved_docs.append(doc)
-                    seen_sources.add(source)
-                    logger.debug(f"Added doc from source: {source}")
+                if isinstance(result, tuple) and len(result) >= 2:
+                    docs, _ = result
+                else:
+                    logger.warning(f"Unexpected RAG result format: {type(result)} for query: '{broad_query}'")
+                    continue
+                
+                # Ensure docs is a list
+                if docs is None:
+                    logger.warning(f"RAG returned None docs for query: '{broad_query}'")
+                    continue
                     
-        except Exception as e:
-            logger.warning(f"Failed to retrieve docs for query '{broad_query}': {e}")
-            logger.debug(f"Exception details: {type(e).__name__}: {str(e)}")
-            continue
+                if not isinstance(docs, list):
+                    logger.warning(f"RAG docs is not a list: {type(docs)} for query: '{broad_query}'")
+                    continue
+                
+                logger.info(f"✅ Retrieved {len(docs)} docs for query: '{broad_query[:30]}...'")
+                
+                for doc in docs:
+                    if doc is None:
+                        continue
+                        
+                    try:
+                        source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') and doc.metadata else 'unknown'
+                        if source not in seen_sources:
+                            all_retrieved_docs.append(doc)
+                            seen_sources.add(source)
+                            logger.debug(f"Added doc from source: {source}")
+                    except Exception as doc_error:
+                        logger.warning(f"Error processing document: {doc_error}")
+                        continue
+                        
+            except Exception as query_error:
+                logger.warning(f"Failed to retrieve docs for query '{broad_query[:30]}...': {query_error}")
+                logger.debug(f"Query exception details: {type(query_error).__name__}: {str(query_error)}")
+                continue
+    except Exception as retrieval_error:
+        logger.error(f"🚨 Critical error during context retrieval: {retrieval_error}", exc_info=True)
+        yield json.dumps({"error": f"Context retrieval failed: {retrieval_error}. Please try again."})
+        return
     
     # If we still don't have enough content, try to get more documents with a very broad query
     if len(all_retrieved_docs) < 10:
@@ -884,10 +1006,24 @@ async def stream_response(
 
     yield json.dumps({"status": "generating", "message": "Generating AI response..."})
     logger.info("Preparing to stream response from LLM.")
+    
     try:
         logger.info(f"🔧 Creating API kwargs for content generation - provider: {request.provider}, model: {request.model}")
-        api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
-        logger.info(f"✅ API kwargs prepared: {list(api_kwargs.keys())}")
+        
+        # Validate client is available
+        if not client:
+            logger.error("❌ LLM client is None")
+            yield json.dumps({"error": "LLM client not available. Please check provider configuration."})
+            return
+            
+        try:
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=prompt, model_kwargs=model_kwargs, model_type=ModelType.LLM)
+            logger.info(f"✅ API kwargs prepared: {list(api_kwargs.keys())}")
+        except Exception as kwargs_error:
+            logger.error(f"❌ Failed to create API kwargs: {kwargs_error}", exc_info=True)
+            yield json.dumps({"error": f"Failed to prepare API request: {kwargs_error}"})
+            return
+        
         logger.info(f"🚀 About to call LLM API for content generation...")
         
         # Add timeout to the initial LLM call to prevent hanging on connection
@@ -896,19 +1032,51 @@ async def stream_response(
                 client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM),
                 timeout=300  # 5 minute timeout for initial connection (increased from 3 min)
             )
-            logger.info("Successfully connected to LLM API and received response stream")
+            logger.info("✅ Successfully connected to LLM API and received response stream")
+            
+            # Validate response stream
+            if response_stream is None:
+                logger.error("❌ LLM API returned None response stream")
+                yield json.dumps({"error": "LLM API returned empty response. Please try again."})
+                return
+                
         except asyncio.TimeoutError:
-            logger.error("LLM API connection timeout - no response within 5 minutes")
-            yield json.dumps({"error": "LLM API connection timeout - repository may be too large. Please try a smaller repository or contact support."})
+            logger.error("🚨 LLM API connection timeout - no response within 5 minutes")
+            yield json.dumps({"error": "LLM API connection timeout - the repository may be too complex or the AI service is overloaded. Please try a smaller repository or contact support."})
+            return
+        except Exception as api_error:
+            logger.error(f"🚨 LLM API call failed: {api_error}", exc_info=True)
+            error_msg = str(api_error).lower()
+            if "api key" in error_msg or "unauthorized" in error_msg or "authentication" in error_msg:
+                yield json.dumps({"error": f"API authentication failed for {request.provider}. Please check your API key configuration."})
+            elif "quota" in error_msg or "rate limit" in error_msg:
+                yield json.dumps({"error": f"API quota exceeded for {request.provider}. Please try again later or use a different provider."})
+            elif "timeout" in error_msg:
+                yield json.dumps({"error": f"API request timed out for {request.provider}. Please try again."})
+            else:
+                yield json.dumps({"error": f"LLM API error ({request.provider}): {api_error}"})
             return
         
         # Use the shared streaming handler (no XML validation for page content)
-        async for chunk in handle_streaming_response(response_stream, validate_xml=False):
-            yield chunk
+        chunk_yielded = False
+        try:
+            async for chunk in handle_streaming_response(response_stream, validate_xml=False):
+                chunk_yielded = True
+                yield chunk
+                
+            if not chunk_yielded:
+                logger.warning("⚠️  No chunks received from streaming handler")
+                yield json.dumps({"error": "No response generated. The request may have failed silently."})
+                
+        except Exception as stream_error:
+            logger.error(f"🚨 Error in streaming response handler: {stream_error}", exc_info=True)
+            yield json.dumps({"error": f"Streaming response failed: {stream_error}"})
+            return
 
-    except Exception as e:
-        logger.error(f"Error in streaming response: {e}", exc_info=True)
-        yield json.dumps({"error": f"Error generating response: {e}"})
+    except Exception as generation_error:
+        logger.error(f"🚨 Critical error in response generation: {generation_error}", exc_info=True)
+        yield json.dumps({"error": f"Response generation failed: {generation_error}. Please check server logs and try again."})
+        return
 
     logger.info("Sending 'done' status.")
     yield json.dumps({"status": "done"})
