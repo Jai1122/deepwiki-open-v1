@@ -333,11 +333,17 @@ async def handle_websocket_chat(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 continue
             
-            # Handle any other control messages
-            if message_data.get("type"):
-                logger.debug(f"Received control message type: {message_data.get('type')}")
+            # Handle control messages (but NOT repository type messages)
+            # Repository "type" (github, local, gitlab) is part of chat requests, not control messages
+            message_type = message_data.get("type")
+            if message_type and message_type in ["ping", "pong", "heartbeat", "control"]:  # Only actual control message types
+                logger.debug(f"Received control message type: {message_type}")
                 # For now, just ignore unknown control message types
                 continue
+            
+            # Log if we have a "type" field that might be repo type vs control type
+            if message_type:
+                logger.info(f"🔍 Message has type='{message_type}' - treating as repository type, not control message")
             
             # Validate that this is a chat completion request before processing
             if not isinstance(message_data, dict) or "repo_url" not in message_data:
