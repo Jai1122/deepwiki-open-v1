@@ -1,20 +1,11 @@
 # DeepWiki-Open
 
-![DeepWiki Banner](screenshots/Deepwiki.png)
-
 **DeepWiki** is my own implementation attempt of DeepWiki, automatically creates beautiful, interactive wikis for any GitHub, GitLab, or BitBucket repository! Just enter a repo name, and DeepWiki will:
 
 1. Analyze the code structure
 2. Generate comprehensive documentation
 3. Create visual diagrams to explain how everything works
 4. Organize it all into an easy-to-navigate wiki
-
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/sheing)
-[![Tip in Crypto](https://tip.md/badge.svg)](https://tip.md/sng-asyncfunc)
-[![Twitter/X](https://img.shields.io/badge/Twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://x.com/sashimikun_void)
-[![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/VQMBGR8u5v)
-
-[English](./README.md) | [简体中文](./README.zh.md) | [繁體中文](./README.zh-tw.md) | [日本語](./README.ja.md) | [Español](./README.es.md) | [한국어](./README.kr.md) | [Tiếng Việt](./README.vi.md) | [Português Brasileiro](./README.pt-br.md) | [Français](./README.fr.md)
 
 ## ✨ Features
 
@@ -25,9 +16,12 @@
 - **Easy Navigation**: Simple, intuitive interface to explore the wiki
 - **Ask Feature**: Chat with your repository using RAG-powered AI to get accurate answers
 - **DeepResearch**: Multi-turn research process that thoroughly investigates complex topics
-- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, vLLM, and local Ollama models
+- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, vLLM, Azure OpenAI, and local Ollama models
 - **Large Repository Support**: Intelligent processing of large codebases with smart chunking and summarization
 - **vLLM Integration**: Full support for secured, remote vLLM deployments with configurable endpoints
+- **Enhanced Stability**: Robust error handling, timeout protection, and comprehensive validation for reliable operation
+- **Real-time Processing**: WebSocket-based streaming with progress updates and comprehensive error reporting
+- **English-focused**: Optimized for English documentation generation with streamlined processing
 
 ## 🚀 Quick Start (Super Easy!)
 
@@ -134,7 +128,7 @@ DeepWiki now includes enhanced support for secured, remote vLLM deployments and 
    ```
 
 2. **Model Configuration**: The system automatically uses:
-   - **LLM Model**: `Qwen3-14B-FP8` (or your configured model)
+   - **LLM Model**: `Qwen3-32B` (or your configured model)
    - **Embedding Model**: `jina-embeddings-v3`
    - **Context Window**: Up to 131K tokens
    - **Max Completion**: Up to 8K tokens
@@ -230,11 +224,33 @@ DeepWiki uses AI to:
 
 1. Clone and analyze the GitHub, GitLab, or Bitbucket repository (including private repos with token authentication)
 2. Create embeddings of the code for smart retrieval
-3. Generate documentation with context-aware AI (using Google Gemini, OpenAI, OpenRouter, Azure OpenAI, or local Ollama models)
+3. Generate documentation with context-aware AI (using Google Gemini, OpenAI, OpenRouter, Azure OpenAI, vLLM, or local Ollama models)
 4. Create visual diagrams to explain code relationships
 5. Organize everything into a structured wiki
 6. Enable intelligent Q&A with the repository through the Ask feature
 7. Provide in-depth research capabilities with DeepResearch
+
+## 🛡️ Enhanced Stability & Reliability
+
+DeepWiki now includes comprehensive stability improvements for production use:
+
+### WebSocket-Based Architecture
+- **Real-time streaming**: Live progress updates during wiki generation
+- **Robust connection handling**: Automatic reconnection and error recovery
+- **Timeout protection**: Prevents hanging operations with configurable timeouts
+- **Heartbeat monitoring**: Maintains connection health during long operations
+
+### Advanced Error Handling
+- **Provider fallback**: Automatically tries alternative AI providers if one fails
+- **Comprehensive validation**: Input validation and error reporting at every step
+- **Graceful degradation**: Clear error messages instead of silent failures
+- **Resource protection**: Memory and processing limits prevent system overload
+
+### Production-Ready Features
+- **Progress tracking**: Real-time status updates for complex repositories
+- **Cache optimization**: Intelligent caching for faster repeated operations
+- **Resource management**: Efficient handling of large codebases
+- **Diagnostic logging**: Comprehensive logging for troubleshooting and monitoring
 
 ```mermaid
 graph TD
@@ -639,27 +655,40 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 ## ❓ Troubleshooting
 
 ### API Key Issues
-- **"Missing environment variables"** or **"No working LLM providers found"**: Your `.env` file contains placeholder values like `your-google-api-key-here`. Replace these with real API keys from [Google AI Studio](https://makersuite.google.com/app/apikey) or [OpenAI Platform](https://platform.openai.com/api-keys)
-- **"API key not valid"**: Check that you've copied the full key correctly with no extra spaces
+- **"Missing environment variables"** or **"No working LLM providers available"**: Your `.env` file contains placeholder values like `your-google-api-key-here`. Replace these with real API keys from [Google AI Studio](https://makersuite.google.com/app/apikey) or [OpenAI Platform](https://platform.openai.com/api-keys)
+- **"API authentication failed"**: Check that you've copied the full key correctly with no extra spaces
+- **"API quota exceeded"**: You've hit rate limits. Try using a different provider or wait before retrying
 - **"Configuration error for provider"**: The API key is invalid or expired. Get a new key from the provider
 - **"OpenRouter API error"**: Verify your OpenRouter API key is valid and has sufficient credits
 - **"Azure OpenAI API error"**: Verify your Azure OpenAI credentials (API key, endpoint, and version) are correct and the service is properly deployed
 
 ### Connection Problems
-- **"Cannot connect to API server"** or **"Connection timeout"**: Make sure the API server is running on port 8001. Check with `lsof -i :8001`
-- **"WebSocket connection failed"**: The API server isn't running or is unreachable
-- **"CORS error"**: The API is configured to allow all origins, but if you're having issues, try running both frontend and backend on the same machine
+- **"WebSocket connection failed"**: The API server isn't running or is unreachable. Check that the API server is running on port 8001 with `lsof -i :8001`
+- **"Connection timeout"**: The server is taking too long to respond. This may indicate network issues or overloaded services
+- **"Stream processing timed out"**: The repository may be too complex. Try with a smaller repository or contact support
+- **"Connection lost"**: Network interruption occurred during processing. The system will attempt to reconnect automatically
 
 ### Generation Issues
-- **"Error generating wiki"** or **Wiki generation stops**: Usually an API key issue. Check server logs and ensure you have valid API keys in `.env`
+- **"Repository analysis failed"**: Check if the repository URL is accessible and you have proper permissions for private repos
+- **"Stream response generator failed to start"**: Usually indicates a provider configuration issue. Check server logs for specific errors
+- **"Repository processing failed"**: The repository may be too large or contain unsupported file types
 - **"Invalid repository format"**: Make sure you're using a valid GitHub, GitLab or Bitbucket URL format
 - **"Could not fetch repository structure"**: For private repositories, ensure you've entered a valid personal access token with appropriate permissions
 - **"Diagram rendering error"**: The app will automatically try to fix broken diagrams
 
+### Enhanced Error Reporting
+DeepWiki now provides detailed error messages that help identify the specific issue:
+- **Provider-specific errors**: Messages indicate which AI provider failed and why
+- **Timeout information**: Clear indication when operations exceed time limits
+- **Progress indicators**: Real-time status updates show where processing stopped
+- **Validation errors**: Specific feedback on malformed requests or invalid parameters
+
 ### Common Solutions
-1. **Restart both servers**: Sometimes a simple restart fixes most issues
-2. **Check console logs**: Open browser developer tools to see any JavaScript errors
-3. **Check API logs**: Look at the terminal where the API is running for Python errors
+1. **Check real-time error messages**: The UI now displays specific error details with actionable guidance
+2. **Review server logs**: Comprehensive logging helps identify the exact failure point
+3. **Try provider fallback**: The system automatically attempts multiple providers if one fails
+4. **Monitor progress updates**: Real-time status messages indicate processing stage
+5. **Restart if needed**: Sometimes a simple restart fixes persistent issues
 
 ## 🤝 Contributing
 

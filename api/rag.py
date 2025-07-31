@@ -139,7 +139,7 @@ class RAG(adal.Component):
             document_map_func=lambda doc: doc.vector,
         )
 
-    def call(self, query: str, language: str = "en") -> Tuple[List, List]:
+    def call(self, query: str) -> Tuple[List, List]:
         """
         Performs a retrieval call.
         Returns a tuple containing the list of retrieved documents and an empty list.

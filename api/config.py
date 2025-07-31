@@ -205,33 +205,7 @@ def is_ollama_embedder():
 def load_repo_config():
     return load_json_config("repo.json")
 
-# Load language configuration
-def load_lang_config():
-    default_config = {
-        "supported_languages": {
-            "en": "English",
-            "ja": "Japanese (日本語)",
-            "zh": "Mandarin Chinese (中文)",
-            "zh-tw": "Traditional Chinese (繁體中文)",
-            "es": "Spanish (Español)",
-            "kr": "Korean (한국어)",
-            "vi": "Vietnamese (Tiếng Việt)",
-            "pt-br": "Brazilian Portuguese (Português Brasileiro)",
-            "fr": "Français (French)"
-        },
-        "default": "en"
-    }
-
-    loaded_config = load_json_config("lang.json") # Let load_json_config handle path and loading
-
-    if not loaded_config:
-        return default_config
-
-    if "supported_languages" not in loaded_config or "default" not in loaded_config:
-        logger.warning("Language configuration file 'lang.json' is malformed. Using default language configuration.")
-        return default_config
-
-    return loaded_config
+# Language configuration removed - English only support
 
 # Default excluded directories and files
 DEFAULT_EXCLUDED_DIRS: List[str] = [
@@ -281,7 +255,6 @@ configs = {}
 generator_config = load_generator_config()
 embedder_config = load_embedder_config()
 repo_config = load_repo_config()
-lang_config = load_lang_config()
 
 # Update configuration
 if generator_config:
@@ -300,9 +273,7 @@ if repo_config:
         if key in repo_config:
             configs[key] = repo_config[key]
 
-# Update language configuration
-if lang_config:
-    configs["lang_config"] = lang_config
+# Language configuration removed - English only support
 
 
 def get_model_config(provider="google", model=None):

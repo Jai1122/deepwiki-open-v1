@@ -245,7 +245,6 @@ class ChatCompletionRequest(BaseModel):
     type: Optional[str] = "github"
     provider: str = "vllm"
     model: Optional[str] = "/app/models/Qwen3-32B"
-    language: Optional[str] = "en"
     excluded_dirs: Optional[str] = None
     excluded_files: Optional[str] = None
     included_dirs: Optional[str] = None
@@ -451,7 +450,6 @@ async def handle_websocket_chat(websocket: WebSocket):
                 type=request.type,
                 provider=provider,
                 model=model,
-                language=request.language,
                 excluded_dirs=request.excluded_dirs,
                 excluded_files=request.excluded_files,
                 included_dirs=request.included_dirs,
@@ -780,7 +778,7 @@ async def stream_response(
         for broad_query in comprehensive_queries:
             try:
                 logger.debug(f"🔍 Executing RAG query: '{broad_query[:50]}...'")
-                result = rag_instance.call(broad_query, language=request.language)
+                result = rag_instance.call(broad_query)
                 logger.debug(f"RAG call result type: {type(result)}, content preview: {str(result)[:100]}...")
                 
                 # Handle different return formats from RAG
@@ -832,7 +830,7 @@ async def stream_response(
     if len(all_retrieved_docs) < 10:
         try:
             # Use a very broad query to capture more of the codebase
-            result = rag_instance.call("source code implementation functions classes", language=request.language)
+            result = rag_instance.call("source code implementation functions classes")
             
             if result is not None and isinstance(result, tuple) and len(result) >= 2:
                 broad_docs, _ = result
