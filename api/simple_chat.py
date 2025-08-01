@@ -61,11 +61,7 @@ class ChatCompletionRequest(BaseModel):
     provider: str = Field("google", description="Model provider (google, openai, openrouter, ollama, bedrock, azure)")
     model: Optional[str] = Field(None, description="Model name for the specified provider")
 
-    language: Optional[str] = Field("en", description="Language for content generation (e.g., 'en', 'ja', 'zh', 'es', 'kr', 'vi')")
-    excluded_dirs: Optional[str] = Field(None, description="Comma-separated list of directories to exclude from processing")
-    excluded_files: Optional[str] = Field(None, description="Comma-separated list of file patterns to exclude from processing")
-    included_dirs: Optional[str] = Field(None, description="Comma-separated list of directories to include exclusively")
-    included_files: Optional[str] = Field(None, description="Comma-separated list of file patterns to include exclusively")
+    language: Optional[str] = Field("en", description="Language for content generation (English only)")
 
 @app.post("/chat/completions/stream")
 async def chat_completions_stream(request: ChatCompletionRequest):
@@ -76,14 +72,8 @@ async def chat_completions_stream(request: ChatCompletionRequest):
 
         # Prepare retriever
         try:
-            excluded_dirs = [unquote(d) for d in request.excluded_dirs.split(',') if d] if request.excluded_dirs else None
-            excluded_files = [unquote(f) for f in request.excluded_files.split(',') if f] if request.excluded_files else None
-            included_dirs = [unquote(d) for d in request.included_dirs.split(',') if d] if request.included_dirs else None
-            included_files = [unquote(f) for f in request.included_files.split(',') if f] if request.included_files else None
-            
             request_rag.prepare_retriever(
-                request.repo_url, request.type, request.token,
-                excluded_dirs, excluded_files, included_dirs, included_files
+                request.repo_url, request.type, request.token
             )
             logger.info(f"Retriever prepared for {request.repo_url}")
         except Exception as e:

@@ -98,16 +98,13 @@ class RAG(adal.Component):
 
         return valid_documents
 
-    def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
-                      excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                      included_dirs: List[str] = None, included_files: List[str] = None):
+    def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None):
         """
         Prepares the FAISS retriever by processing the repository and building the index.
         """
         try:
             self.transformed_docs = self.db_manager.prepare_database(
-                repo_url_or_path, type, access_token, self.is_ollama_embedder,
-                excluded_dirs, excluded_files, included_dirs, included_files
+                repo_url_or_path, type, access_token, self.is_ollama_embedder
             )
         except Exception as e:
             logger.error(f"Failed to prepare database: {e}", exc_info=True)

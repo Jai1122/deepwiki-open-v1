@@ -149,7 +149,7 @@ export default function ProcessedProjects({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('searchPlaceholder')}
-            className="input-japanese block w-full pl-4 pr-12 py-2.5 border border-[var(--border-color)] rounded-lg bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]"
+            className="input-confluence block w-full pl-4 pr-12 py-2.5 rounded-lg"
           />
           {searchQuery && (
             <button
@@ -162,13 +162,13 @@ export default function ProcessedProjects({
         </div>
 
         {/* View Toggle */}
-        <div className="flex items-center bg-[var(--background)] border border-[var(--border-color)] rounded-lg p-1">
+        <div className="flex items-center bg-[var(--card-bg)] border-2 border-[var(--border-color)] rounded p-1">
           <button
             onClick={() => setViewMode('card')}
             className={`p-2 rounded transition-colors ${
               viewMode === 'card'
                 ? 'bg-[var(--accent-primary)] text-white'
-                : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--card-bg)]'
+                : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
             }`}
             title="Card View"
           >
@@ -179,7 +179,7 @@ export default function ProcessedProjects({
             className={`p-2 rounded transition-colors ${
               viewMode === 'list'
                 ? 'bg-[var(--accent-primary)] text-white'
-                : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--card-bg)]'
+                : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
             }`}
             title="List View"
           >
@@ -195,7 +195,7 @@ export default function ProcessedProjects({
         <div className={viewMode === 'card' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-2'}>
             {filteredProjects.map((project) => (
             viewMode === 'card' ? (
-              <div key={project.id} className="relative p-4 border border-[var(--border-color)] rounded-lg bg-[var(--card-bg)] shadow-sm hover:shadow-md transition-all duration-200 hover:scale-[1.02]">
+              <div key={project.id} className="card-confluence relative p-4 hover:scale-[1.02] transition-all duration-200">
                 <button
                   type="button"
                   onClick={() => handleDelete(project)}
@@ -225,7 +225,7 @@ export default function ProcessedProjects({
                 </Link>
               </div>
             ) : (
-              <div key={project.id} className="relative p-3 border border-[var(--border-color)] rounded-lg bg-[var(--card-bg)] hover:bg-[var(--background)] transition-colors">
+              <div key={project.id} className="card-confluence relative p-3 hover:bg-[var(--hover-bg)] transition-colors">
                 <button
                   type="button"
                   onClick={() => handleDelete(project)}

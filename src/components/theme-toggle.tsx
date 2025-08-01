@@ -8,7 +8,7 @@ export default function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle-button cursor-pointer bg-transparent border border-[var(--border-color)] text-[var(--foreground)] hover:border-[var(--accent-primary)] active:bg-[var(--accent-secondary)]/10 rounded-md p-2 transition-all duration-300"
+      className="theme-toggle-button cursor-pointer bg-transparent border-2 border-[var(--border-color)] text-[var(--foreground)] hover:border-[var(--accent-primary)] hover:bg-[var(--hover-bg)] active:bg-[var(--accent-primary)]/10 rounded p-2 transition-all duration-200"
       title="Toggle theme"
       aria-label="Toggle theme"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

@@ -11,11 +11,11 @@ export default function WikiProjectsPage() {
   const { messages } = useLanguage();
 
   return (
-    <div className="h-screen bg-white dark:bg-gray-900 flex flex-col">
+    <div className="h-screen bg-[var(--background)] flex flex-col">
       {/* Top navigation bar - Google style */}
       <nav className="flex justify-between items-center p-4">
         <Link href="/"
-          className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:underline flex items-center gap-2">
+          className="text-sm text-[var(--muted)] hover:text-[var(--accent-primary)] transition-colors hover:underline flex items-center gap-2">
           <FaHome className="h-4 w-4" />
           Home
         </Link>

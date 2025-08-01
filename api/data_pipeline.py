@@ -157,10 +157,6 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
 def read_all_documents(
     path: str,
     is_ollama_embedder: bool = None,
-    excluded_dirs: List[str] = None,
-    excluded_files: List[str] = None,
-    included_dirs: List[str] = None,
-    included_files: List[str] = None,
     max_total_tokens: int = 1000000,  # Max tokens to process across all files
     prioritize_files: bool = True      # Whether to prioritize important files
 ) -> List[Document]:
@@ -187,8 +183,8 @@ def read_all_documents(
     rejected_files_log = []
     file_candidates = []  # Store files with their priorities for processing
     
-    final_excluded_dirs = DEFAULT_EXCLUDED_DIRS + (excluded_dirs or [])
-    final_excluded_files = DEFAULT_EXCLUDED_FILES + (excluded_files or [])
+    final_excluded_dirs = DEFAULT_EXCLUDED_DIRS
+    final_excluded_files = DEFAULT_EXCLUDED_FILES
     
     # Get filename patterns for exclusion from repo config
     file_filters_config = configs.get("file_filters", {})
@@ -638,8 +634,6 @@ class DatabaseManager:
         self.db_docs: Optional[List[Document]] = None
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None, is_ollama_embedder: bool = None,
-                       excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                       included_dirs: List[str] = None, included_files: List[str] = None,
                        max_total_tokens: int = 1000000, prioritize_files: bool = True) -> List[Document]:
         """
         Main method to prepare the database. It handles cloning, loading from cache,
@@ -684,8 +678,7 @@ class DatabaseManager:
             download_repo(repo_url_or_path, repo_path, type, access_token)
 
         documents = read_all_documents(
-            repo_path, is_ollama_embedder, excluded_dirs, excluded_files, included_dirs, included_files,
-            max_total_tokens, prioritize_files
+            repo_path, is_ollama_embedder, max_total_tokens, prioritize_files
         )
         
         if not documents:

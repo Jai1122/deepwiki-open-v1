@@ -12,7 +12,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function Home() {
   const router = useRouter();
-  const { language, setLanguage, messages, supportedLanguages } = useLanguage();
+  const { messages } = useLanguage();
 
   // Create a simple translation function
   const t = (key: string, params: Record<string, string | number> = {}): string => {
@@ -54,17 +54,12 @@ export default function Home() {
         const configs = JSON.parse(cachedConfigs);
         const config = configs[repoUrl.trim()];
         if (config) {
-          setSelectedLanguage(config.selectedLanguage || language);
           setIsComprehensiveView(config.isComprehensiveView === undefined ? true : config.isComprehensiveView);
           setProvider(config.provider || '');
           setModel(config.model || '');
           setIsCustomModel(config.isCustomModel || false);
           setCustomModel(config.customModel || '');
           setSelectedPlatform(config.selectedPlatform || 'github');
-          setExcludedDirs(config.excludedDirs || '');
-          setExcludedFiles(config.excludedFiles || '');
-          setIncludedDirs(config.includedDirs || '');
-          setIncludedFiles(config.includedFiles || '');
         }
       }
     } catch (error) {
@@ -97,25 +92,16 @@ export default function Home() {
   // Wiki type state - default to comprehensive view
   const [isComprehensiveView, setIsComprehensiveView] = useState<boolean>(true);
 
-  const [excludedDirs, setExcludedDirs] = useState('');
-  const [excludedFiles, setExcludedFiles] = useState('');
-  const [includedDirs, setIncludedDirs] = useState('');
-  const [includedFiles, setIncludedFiles] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState<'github' | 'gitlab' | 'bitbucket'>('github');
   const [accessToken, setAccessToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState<string>(language);
 
   // Authentication state
   const [authRequired, setAuthRequired] = useState<boolean>(false);
   const [authCode, setAuthCode] = useState<string>('');
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
 
-  // Sync the language context with the selectedLanguage state
-  useEffect(() => {
-    setLanguage(selectedLanguage);
-  }, [selectedLanguage, setLanguage]);
 
   // Fetch authentication status on component mount
   useEffect(() => {
@@ -278,17 +264,12 @@ export default function Home() {
       if (currentRepoUrl) {
         const existingConfigs = JSON.parse(localStorage.getItem(REPO_CONFIG_CACHE_KEY) || '{}');
         const configToSave = {
-          selectedLanguage,
           isComprehensiveView,
           provider,
           model,
           isCustomModel,
           customModel,
           selectedPlatform,
-          excludedDirs,
-          excludedFiles,
-          includedDirs,
-          includedFiles,
         };
         existingConfigs[currentRepoUrl] = configToSave;
         localStorage.setItem(REPO_CONFIG_CACHE_KEY, JSON.stringify(existingConfigs));
@@ -329,22 +310,9 @@ export default function Home() {
     if (isCustomModel && customModel) {
       params.append('custom_model', customModel);
     }
-    // Add file filters configuration
-    if (excludedDirs) {
-      params.append('excluded_dirs', excludedDirs);
-    }
-    if (excludedFiles) {
-      params.append('excluded_files', excludedFiles);
-    }
-    if (includedDirs) {
-      params.append('included_dirs', includedDirs);
-    }
-    if (includedFiles) {
-      params.append('included_files', includedFiles);
-    }
 
-    // Add language parameter
-    params.append('language', selectedLanguage);
+    // Add language parameter (English only)
+    params.append('language', 'en');
 
     // Add comprehensive parameter
     params.append('comprehensive', isComprehensiveView.toString());
@@ -358,11 +326,11 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen bg-white dark:bg-gray-900 flex flex-col">
+    <div className="h-screen bg-[var(--background)] flex flex-col">
       {/* Top navigation bar */}
       <nav className="flex justify-between items-center p-4">
         <Link href="/wiki/projects"
-          className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:underline">
+          className="text-sm text-[var(--muted)] hover:text-[var(--accent-primary)] transition-colors hover:underline">
           {t('nav.wikiProjects')}
         </Link>
         <ThemeToggle />
@@ -372,37 +340,37 @@ export default function Home() {
       <div className="flex-1 flex flex-col justify-center items-center px-4">
         {/* DeepWiki Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-6xl md:text-7xl font-light text-gray-700 dark:text-gray-300 mb-2">
-            <span className="text-blue-600">D</span>
-            <span className="text-red-500">e</span>
-            <span className="text-yellow-500">e</span>
-            <span className="text-blue-600">p</span>
-            <span className="text-green-500">W</span>
-            <span className="text-red-500">i</span>
-            <span className="text-yellow-500">k</span>
-            <span className="text-blue-600">i</span>
+          <h1 className="text-6xl md:text-7xl font-light text-[var(--foreground)] mb-2">
+            <span className="text-[var(--accent-primary)]">D</span>
+            <span className="text-[var(--accent-secondary)]">e</span>
+            <span className="text-[var(--highlight)]">e</span>
+            <span className="text-[var(--accent-primary)]">p</span>
+            <span className="text-[var(--accent-secondary)]">W</span>
+            <span className="text-[var(--accent-primary)]">i</span>
+            <span className="text-[var(--highlight)]">k</span>
+            <span className="text-[var(--accent-primary)]">i</span>
           </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400">{t('common.tagline')}</p>
+          <p className="text-sm text-[var(--muted)]">{t('common.tagline')}</p>
         </div>
 
         {/* Search bar */}
         <div className="w-full max-w-xl mb-8">
           <form onSubmit={handleFormSubmit}>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaGithub className="h-5 w-5 text-gray-400" />
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <FaGithub className="h-5 w-5 text-[var(--muted)]" />
               </div>
               <input
                 type="text"
                 value={repositoryInput}
                 onChange={handleRepositoryInputChange}
                 placeholder="Enter repository URL or owner/repo..."
-                className="block w-full pl-10 pr-12 py-4 text-lg border border-gray-300 rounded-full shadow-lg hover:shadow-xl focus:shadow-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-400 transition-all duration-200"
+                className="input-confluence block w-full pl-12 pr-16 py-4 text-lg rounded-full shadow-lg hover:shadow-xl focus:shadow-xl transition-all duration-200"
               />
               <div className="absolute inset-y-0 right-0 flex items-center">
                 <button
                   type="submit"
-                  className="mr-3 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="mr-4 p-2 text-[var(--muted)] hover:text-[var(--accent-primary)] transition-colors"
                   disabled={isSubmitting}
                   title="Generate Wiki"
                 >
@@ -413,25 +381,25 @@ export default function Home() {
               </div>
             </div>
             {error && (
-              <div className="text-red-500 text-sm mt-2 text-center">
+              <div className="text-[var(--error)] text-sm mt-2 text-center">
                 {error}
               </div>
             )}
           </form>
         </div>
 
-        {/* Google-style buttons */}
+        {/* Confluence-style buttons */}
         <div className="flex gap-3 mb-8">
           <button
             onClick={handleFormSubmit}
             disabled={isSubmitting}
-            className="px-6 py-3 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded hover:shadow-sm transition-all duration-150 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-50"
+            className="btn-confluence"
           >
             {isSubmitting ? 'Processing...' : 'Generate Wiki'}
           </button>
           <Link 
             href="/wiki/projects"
-            className="px-6 py-3 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded hover:shadow-sm transition-all duration-150 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700"
+            className="btn-confluence-secondary no-underline"
           >
             Browse Projects
           </Link>
@@ -439,23 +407,23 @@ export default function Home() {
 
         {/* Quick examples */}
         <div className="text-center max-w-2xl">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Try these examples:</p>
+          <p className="text-sm text-[var(--muted)] mb-3">Try these examples:</p>
           <div className="flex flex-wrap justify-center gap-2 text-xs">
             <button 
               onClick={() => setRepositoryInput('AsyncFuncAI/deepwiki-open')}
-              className="px-3 py-1 text-blue-600 hover:underline cursor-pointer"
+              className="px-3 py-1 text-[var(--accent-primary)] hover:underline cursor-pointer transition-colors"
             >
               AsyncFuncAI/deepwiki-open
             </button>
             <button 
               onClick={() => setRepositoryInput('https://github.com/vercel/next.js')}
-              className="px-3 py-1 text-blue-600 hover:underline cursor-pointer"
+              className="px-3 py-1 text-[var(--accent-primary)] hover:underline cursor-pointer transition-colors"
             >
               vercel/next.js
             </button>
             <button 
               onClick={() => setRepositoryInput('facebook/react')}
-              className="px-3 py-1 text-blue-600 hover:underline cursor-pointer"
+              className="px-3 py-1 text-[var(--accent-primary)] hover:underline cursor-pointer transition-colors"
             >
               facebook/react
             </button>
@@ -468,9 +436,6 @@ export default function Home() {
         isOpen={isConfigModalOpen}
         onClose={() => setIsConfigModalOpen(false)}
         repositoryInput={repositoryInput}
-        selectedLanguage={selectedLanguage}
-        setSelectedLanguage={setSelectedLanguage}
-        supportedLanguages={supportedLanguages}
         isComprehensiveView={isComprehensiveView}
         setIsComprehensiveView={setIsComprehensiveView}
         provider={provider}
@@ -485,14 +450,6 @@ export default function Home() {
         setSelectedPlatform={setSelectedPlatform}
         accessToken={accessToken}
         setAccessToken={setAccessToken}
-        excludedDirs={excludedDirs}
-        setExcludedDirs={setExcludedDirs}
-        excludedFiles={excludedFiles}
-        setExcludedFiles={setExcludedFiles}
-        includedDirs={includedDirs}
-        setIncludedDirs={setIncludedDirs}
-        includedFiles={includedFiles}
-        setIncludedFiles={setIncludedFiles}
         onSubmit={handleGenerateWiki}
         isSubmitting={isSubmitting}
         authRequired={authRequired}
@@ -503,18 +460,18 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="p-4 text-center">
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 text-sm text-[var(--muted)]">
           <div className="flex items-center space-x-4">
             <a href="https://github.com/AsyncFuncAI/deepwiki-open" target="_blank" rel="noopener noreferrer"
-              className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+              className="hover:text-[var(--accent-primary)] transition-colors">
               <FaGithub className="text-lg" />
             </a>
             <a href="https://buymeacoffee.com/sheing" target="_blank" rel="noopener noreferrer"
-              className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+              className="hover:text-[var(--accent-primary)] transition-colors">
               <FaCoffee className="text-lg" />
             </a>
             <a href="https://x.com/sashimikun_void" target="_blank" rel="noopener noreferrer"
-              className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+              className="hover:text-[var(--accent-primary)] transition-colors">
               <FaTwitter className="text-lg" />
             </a>
           </div>

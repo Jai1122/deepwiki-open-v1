@@ -245,10 +245,7 @@ class ChatCompletionRequest(BaseModel):
     type: Optional[str] = "github"
     provider: str = "vllm"
     model: Optional[str] = "/app/models/Qwen3-32B"
-    excluded_dirs: Optional[str] = None
-    excluded_files: Optional[str] = None
-    included_dirs: Optional[str] = None
-    included_files: Optional[str] = None
+    # Advanced file filtering options removed
 
 async def handle_websocket_chat(websocket: WebSocket):
     logger.info("WebSocket connection request received")
@@ -449,11 +446,7 @@ async def handle_websocket_chat(websocket: WebSocket):
                 token=request.token,
                 type=request.type,
                 provider=provider,
-                model=model,
-                excluded_dirs=request.excluded_dirs,
-                excluded_files=request.excluded_files,
-                included_dirs=request.included_dirs,
-                included_files=request.included_files
+                model=model
             )
 
             chunk_count = 0
@@ -711,10 +704,10 @@ async def stream_response(
                     request.repo_url, 
                     request.type, 
                     request.token,
-                    request.excluded_dirs.split(',') if request.excluded_dirs else None,
-                    request.excluded_files.split(',') if request.excluded_files else None,
-                    request.included_dirs.split(',') if request.included_dirs else None,
-                    request.included_files.split(',') if request.included_files else None,
+                    None,  # excluded_dirs - removed
+                    None,  # excluded_files - removed
+                    None,  # included_dirs - removed  
+                    None,  # included_files - removed
                 ),
                 timeout=rag_preparation_timeout
             )

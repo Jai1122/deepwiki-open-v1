@@ -12,10 +12,6 @@ interface ConfigurationModalProps {
   // Repository input
   repositoryInput: string;
 
-  // Language selection
-  selectedLanguage: string;
-  setSelectedLanguage: (value: string) => void;
-  supportedLanguages: Record<string, string>;
 
   // Wiki type options
   isComprehensiveView: boolean;
@@ -39,15 +35,6 @@ interface ConfigurationModalProps {
   accessToken: string;
   setAccessToken: (value: string) => void;
 
-  // File filter options
-  excludedDirs: string;
-  setExcludedDirs: (value: string) => void;
-  excludedFiles: string;
-  setExcludedFiles: (value: string) => void;
-  includedDirs: string;
-  setIncludedDirs: (value: string) => void;
-  includedFiles: string;
-  setIncludedFiles: (value: string) => void;
 
   // Form submission
   onSubmit: () => void;
@@ -64,9 +51,6 @@ export default function ConfigurationModal({
   isOpen,
   onClose,
   repositoryInput,
-  selectedLanguage,
-  setSelectedLanguage,
-  supportedLanguages,
   isComprehensiveView,
   setIsComprehensiveView,
   provider,
@@ -81,14 +65,6 @@ export default function ConfigurationModal({
   setSelectedPlatform,
   accessToken,
   setAccessToken,
-  excludedDirs,
-  setExcludedDirs,
-  excludedFiles,
-  setExcludedFiles,
-  includedDirs,
-  setIncludedDirs,
-  includedFiles,
-  setIncludedFiles,
   onSubmit,
   isSubmitting,
   authRequired,
@@ -106,7 +82,7 @@ export default function ConfigurationModal({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4 text-center bg-black/50">
-        <div className="relative transform overflow-hidden rounded-lg bg-[var(--card-bg)] text-left shadow-xl transition-all sm:my-8 sm:max-w-2xl sm:w-full">
+        <div className="modal-confluence relative transform overflow-hidden text-left transition-all sm:my-8 sm:max-w-2xl sm:w-full">
           {/* Modal header with close button */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-color)]">
             <h3 className="text-lg font-medium text-[var(--accent-primary)]">
@@ -130,27 +106,11 @@ export default function ConfigurationModal({
               <label className="block text-sm font-medium text-[var(--foreground)] mb-2">
                 {t.form?.repository || 'Repository'}
               </label>
-              <div className="bg-[var(--background)]/70 p-3 rounded-md border border-[var(--border-color)] text-sm text-[var(--foreground)]">
+              <div className="card-confluence p-3 text-sm text-[var(--foreground)]">
                 {repositoryInput}
               </div>
             </div>
 
-            {/* Language selection */}
-            <div className="mb-4">
-              <label htmlFor="language-select" className="block text-sm font-medium text-[var(--foreground)] mb-2">
-                {t.form?.wikiLanguage || 'Wiki Language'}
-              </label>
-              <select
-                id="language-select"
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                className="input-japanese block w-full px-3 py-2 text-sm rounded-md bg-transparent text-[var(--foreground)] focus:outline-none focus:border-[var(--accent-primary)]"
-              >
-                {
-                  Object.entries(supportedLanguages).map(([key, value])=> <option key={key} value={key}>{value}</option>)
-                }
-              </select>
-            </div>
 
             {/* Wiki Type Selector - more compact version */}
             <div className="mb-4">
@@ -161,10 +121,10 @@ export default function ConfigurationModal({
                 <button
                   type="button"
                   onClick={() => setIsComprehensiveView(true)}
-                  className={`flex-1 flex items-center justify-between p-2 rounded-md border transition-colors ${
+                  className={`flex-1 flex items-center justify-between p-3 rounded border-2 transition-colors ${
                     isComprehensiveView
-                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30 text-[var(--accent-primary)]'
-                      : 'bg-[var(--background)]/50 border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
+                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
+                      : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
                   }`}
                 >
                   <div className="flex items-center">
@@ -185,10 +145,10 @@ export default function ConfigurationModal({
                 <button
                   type="button"
                   onClick={() => setIsComprehensiveView(false)}
-                  className={`flex-1 flex items-center justify-between p-2 rounded-md border transition-colors ${
+                  className={`flex-1 flex items-center justify-between p-3 rounded border-2 transition-colors ${
                     !isComprehensiveView
-                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30 text-[var(--accent-primary)]'
-                      : 'bg-[var(--background)]/50 border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
+                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
+                      : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
                   }`}
                 >
                   <div className="flex items-center">
@@ -219,15 +179,7 @@ export default function ConfigurationModal({
                 setIsCustomModel={setIsCustomModel}
                 customModel={customModel}
                 setCustomModel={setCustomModel}
-                showFileFilters={true}
-                excludedDirs={excludedDirs}
-                setExcludedDirs={setExcludedDirs}
-                excludedFiles={excludedFiles}
-                setExcludedFiles={setExcludedFiles}
-                includedDirs={includedDirs}
-                setIncludedDirs={setIncludedDirs}
-                includedFiles={includedFiles}
-                setIncludedFiles={setIncludedFiles}
+                showFileFilters={false}
               />
             </div>
 
@@ -278,7 +230,7 @@ export default function ConfigurationModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium rounded-md border border-[var(--border-color)]/50 text-[var(--muted)] bg-transparent hover:bg-[var(--background)] hover:text-[var(--foreground)] transition-colors"
+              className="btn-confluence-secondary"
             >
               {t.common?.cancel || 'Cancel'}
             </button>
@@ -286,7 +238,7 @@ export default function ConfigurationModal({
               type="button"
               onClick={onSubmit}
               disabled={isSubmitting}
-              className="px-4 py-2 text-sm font-medium rounded-md border border-transparent bg-[var(--accent-primary)]/90 text-white hover:bg-[var(--accent-primary)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-confluence disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (t.common?.processing || 'Processing...') : (t.common?.generateWiki || 'Generate Wiki')}
             </button>
