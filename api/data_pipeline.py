@@ -328,9 +328,7 @@ def read_all_documents(
                 rejected_files_log.append(f"{normalized_relative_path} (matches excluded file pattern)")
                 continue
             
-            if included_files and not any(fnmatch.fnmatch(normalized_relative_path, pattern) for pattern in included_files):
-                rejected_files_log.append(f"{normalized_relative_path} (not in included files)")
-                continue
+            # Skip included_files filtering - using default filtering only
 
             # Estimate file size and priority
             try:
