@@ -703,11 +703,7 @@ async def stream_response(
                     rag_instance.prepare_retriever,
                     request.repo_url, 
                     request.type, 
-                    request.token,
-                    None,  # excluded_dirs - removed
-                    None,  # excluded_files - removed
-                    None,  # included_dirs - removed  
-                    None,  # included_files - removed
+                    request.token
                 ),
                 timeout=rag_preparation_timeout
             )
