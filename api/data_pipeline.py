@@ -102,6 +102,15 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
     """
     Clones a repository from GitHub, GitLab, or Bitbucket.
     Handles authentication for private repositories.
+    
+    Args:
+        repo_url: The repository URL to clone
+        local_path: Local path where repository will be cloned
+        type: Repository type ("github", "gitlab", "bitbucket")
+        access_token: Authentication token
+            - GitHub: Personal Access Token
+            - GitLab: Personal Access Token
+            - Bitbucket: App Password (username extracted from repo URL)
     """
     if os.path.exists(local_path):
         logger.info(f"Repository already exists at {local_path}, skipping download.")
@@ -110,12 +119,24 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     
     clone_url = repo_url
-    if type in ["github", "gitlab"] and access_token:
+    if type in ["github", "gitlab", "bitbucket"] and access_token:
         parsed_url = urlparse(repo_url)
         if type == "github":
             clone_url = f"https://{access_token}@{parsed_url.netloc}{parsed_url.path}"
         elif type == "gitlab":
             clone_url = f"https://oauth2:{access_token}@{parsed_url.netloc}{parsed_url.path}"
+        elif type == "bitbucket":
+            # Bitbucket uses app password as bearer token for authentication
+            # For git clone, we need to use the app password with username
+            # Format: https://username:app_password@bitbucket.org/user/repo.git
+            # Since we only have the app password token, we'll extract username from URL
+            path_parts = parsed_url.path.strip('/').split('/')
+            if len(path_parts) >= 1:
+                username = path_parts[0]  # First part is username/workspace
+                clone_url = f"https://{username}:{access_token}@{parsed_url.netloc}{parsed_url.path}"
+            else:
+                # Fallback if we can't extract username
+                clone_url = f"https://x-token-auth:{access_token}@{parsed_url.netloc}{parsed_url.path}"
 
     logger.info(f"Cloning repository from {repo_url} to {local_path}...")
     

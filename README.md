@@ -106,7 +106,10 @@ yarn dev
 
 1. Open [http://localhost:3000](http://localhost:3000) in your browser
 2. Enter a GitHub, GitLab, or Bitbucket repository (like `https://github.com/openai/codex`, `https://github.com/microsoft/autogen`, `https://gitlab.com/gitlab-org/gitlab`, or `https://bitbucket.org/redradish/atlassian_app_versions`)
-3. For private repositories, click "+ Add access tokens" and enter your GitHub or GitLab personal access token
+3. For private repositories, click "+ Add access tokens" and enter your access token:
+   - **GitHub**: Personal Access Token
+   - **GitLab**: Personal Access Token  
+   - **Bitbucket**: App Password (create one in Bitbucket Settings → App passwords)
 4. Click "Generate Wiki" and watch the magic happen!
 
 ## 🏗️ vLLM Configuration for Large Repositories

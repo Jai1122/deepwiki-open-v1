@@ -452,26 +452,43 @@ def get_gitlab_file_content(repo_url: str, file_path: str, access_token: str = N
 def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
     """
     Fetches file content from a Bitbucket repository.
+    Tries multiple branches (main, master) and handles proper authentication.
     """
     parsed_url = urlparse(repo_url)
     path_parts = parsed_url.path.strip('/').split('/')
     workspace, repo_slug = path_parts[0], path_parts[1]
     
-    api_url = f"https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}/src/master/{file_path}"
-    
     headers = {}
     if access_token:
-        # Bitbucket uses app passwords or OAuth, passed as a standard Auth header
-        # Assuming the token is a base64 encoded "user:password" for basic auth
-        headers['Authorization'] = f'Bearer {access_token}'
+        # Bitbucket app passwords can be used with Bearer authentication
+        # or with Basic auth using username:app_password format
+        # For API calls, we'll use the app password with the username from the URL
+        import base64
+        username_password = f"{workspace}:{access_token}"
+        encoded_token = base64.b64encode(username_password.encode()).decode()
+        headers['Authorization'] = f'Basic {encoded_token}'
+    
+    # Try multiple branches - modern repos often use 'main' instead of 'master'
+    branches_to_try = ['main', 'master', 'develop']
+    
+    for branch in branches_to_try:
+        api_url = f"https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}/src/{branch}/{file_path}"
         
-    try:
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        return response.text
-    except RequestException as e:
-        logger.error(f"Error fetching file from Bitbucket {api_url}: {e}")
-        return ""
+        try:
+            response = requests.get(api_url, headers=headers)
+            if response.status_code == 200:
+                return response.text
+            elif response.status_code == 404:
+                # Try next branch
+                continue
+            else:
+                response.raise_for_status()
+        except RequestException as e:
+            logger.debug(f"Error fetching file from Bitbucket branch '{branch}' {api_url}: {e}")
+            continue
+    
+    logger.error(f"Error fetching file from Bitbucket {repo_url}/{file_path}: file not found in any branch")
+    return ""
 
 def get_local_file_content(file_path: str) -> str:
     """

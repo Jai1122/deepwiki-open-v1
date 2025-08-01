@@ -114,7 +114,11 @@ const createGitlabHeaders = (gitlabToken: string): HeadersInit => {
 
 const createBitbucketHeaders = (bitbucketToken: string): HeadersInit => {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (bitbucketToken) headers['Authorization'] = `Bearer ${bitbucketToken}`;
+  if (bitbucketToken) {
+    // Bitbucket app password is passed as a token
+    // The backend will combine it with the username from the repo URL
+    headers['Authorization'] = `Bearer ${bitbucketToken}`;
+  }
   return headers;
 };
 
