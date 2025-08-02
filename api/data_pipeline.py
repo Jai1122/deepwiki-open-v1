@@ -110,7 +110,7 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
         access_token: Authentication token
             - GitHub: Personal Access Token
             - GitLab: Personal Access Token
-            - Bitbucket: App Password (username extracted from repo URL)
+            - Bitbucket: HTTP Access Token
     """
     if os.path.exists(local_path):
         logger.info(f"Repository already exists at {local_path}, skipping download.")
@@ -130,21 +130,10 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
             encoded_token = quote(access_token, safe='')
             clone_url = f"https://oauth2:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
         elif type == "bitbucket":
-            # Bitbucket uses app password as bearer token for authentication
-            # For git clone, we need to use the app password with username
-            # Format: https://username:app_password@bitbucket.org/user/repo.git
-            # Since we only have the app password token, we'll extract username from URL
-            path_parts = parsed_url.path.strip('/').split('/')
-            if len(path_parts) >= 1:
-                username = path_parts[0]  # First part is username/workspace
-                # URL encode the credentials to handle special characters like @, :, etc.
-                encoded_username = quote(username, safe='')
-                encoded_token = quote(access_token, safe='')
-                clone_url = f"https://{encoded_username}:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
-            else:
-                # Fallback if we can't extract username
-                encoded_token = quote(access_token, safe='')
-                clone_url = f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
+            # Bitbucket HTTP access tokens only - use x-token-auth as username
+            # Format: https://x-token-auth:access_token@bitbucket.org/user/repo.git
+            encoded_token = quote(access_token, safe='')
+            clone_url = f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
 
     logger.info(f"Cloning repository from {repo_url} to {local_path}...")
     
@@ -163,7 +152,7 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
         # Provide specific error messages for common issues
         if "Authentication failed" in error_output or "invalid username or password" in error_output.lower():
             if type == "bitbucket":
-                error_message = f"Authentication failed for Bitbucket repository. Please check your App Password. Make sure you're using an App Password (not your account password) and it has the correct permissions (Repository read access). Error details: {error_output}"
+                error_message = f"Authentication failed for Bitbucket repository. Please check your HTTP access token. Make sure you're using a valid HTTP access token (not App Password) with Repository read permissions. Error details: {error_output}"
             else:
                 error_message = f"Authentication failed for {type} repository. Please check your access token. Error details: {error_output}"
         elif "could not resolve host" in error_output.lower() or "name resolution" in error_output.lower():

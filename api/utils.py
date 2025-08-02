@@ -461,14 +461,8 @@ def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str 
     
     headers = {}
     if access_token:
-        # Bitbucket app passwords can be used with Bearer authentication
-        # or with Basic auth using username:app_password format
-        # For API calls, we'll use the app password with the username from the URL
-        # Handle special characters in credentials by proper encoding
-        import base64
-        username_password = f"{workspace}:{access_token}"
-        encoded_token = base64.b64encode(username_password.encode()).decode()
-        headers['Authorization'] = f'Basic {encoded_token}'
+        # Bitbucket HTTP access tokens should be used as Bearer tokens only
+        headers['Authorization'] = f'Bearer {access_token}'
     
     # Try multiple branches - modern repos often use 'main' instead of 'master'
     branches_to_try = ['main', 'master', 'develop']
