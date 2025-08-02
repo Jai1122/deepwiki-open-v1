@@ -122,9 +122,13 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
     if type in ["github", "gitlab", "bitbucket"] and access_token:
         parsed_url = urlparse(repo_url)
         if type == "github":
-            clone_url = f"https://{access_token}@{parsed_url.netloc}{parsed_url.path}"
+            # URL encode the token to handle special characters
+            encoded_token = quote(access_token, safe='')
+            clone_url = f"https://{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
         elif type == "gitlab":
-            clone_url = f"https://oauth2:{access_token}@{parsed_url.netloc}{parsed_url.path}"
+            # URL encode the token to handle special characters
+            encoded_token = quote(access_token, safe='')
+            clone_url = f"https://oauth2:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
         elif type == "bitbucket":
             # Bitbucket uses app password as bearer token for authentication
             # For git clone, we need to use the app password with username
@@ -133,10 +137,14 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
             path_parts = parsed_url.path.strip('/').split('/')
             if len(path_parts) >= 1:
                 username = path_parts[0]  # First part is username/workspace
-                clone_url = f"https://{username}:{access_token}@{parsed_url.netloc}{parsed_url.path}"
+                # URL encode the credentials to handle special characters like @, :, etc.
+                encoded_username = quote(username, safe='')
+                encoded_token = quote(access_token, safe='')
+                clone_url = f"https://{encoded_username}:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
             else:
                 # Fallback if we can't extract username
-                clone_url = f"https://x-token-auth:{access_token}@{parsed_url.netloc}{parsed_url.path}"
+                encoded_token = quote(access_token, safe='')
+                clone_url = f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
 
     logger.info(f"Cloning repository from {repo_url} to {local_path}...")
     
@@ -150,7 +158,23 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
         logger.info("Repository cloned successfully.")
         return local_path
     except subprocess.CalledProcessError as e:
-        error_message = f"Failed to clone repository: {e.stderr}"
+        error_output = e.stderr or e.stdout or ""
+        
+        # Provide specific error messages for common issues
+        if "Authentication failed" in error_output or "invalid username or password" in error_output.lower():
+            if type == "bitbucket":
+                error_message = f"Authentication failed for Bitbucket repository. Please check your App Password. Make sure you're using an App Password (not your account password) and it has the correct permissions (Repository read access). Error details: {error_output}"
+            else:
+                error_message = f"Authentication failed for {type} repository. Please check your access token. Error details: {error_output}"
+        elif "could not resolve host" in error_output.lower() or "name resolution" in error_output.lower():
+            error_message = f"Network error: Could not resolve repository host. Please check your internet connection and repository URL. Error details: {error_output}"
+        elif "repository not found" in error_output.lower() or "does not exist" in error_output.lower():
+            error_message = f"Repository not found. Please check the repository URL and ensure you have access to it. Error details: {error_output}"
+        elif "unable to update url base from redirection" in error_output.lower():
+            error_message = f"Redirection error encountered. This may be due to special characters in credentials or repository access issues. Please verify your credentials and repository URL. Error details: {error_output}"
+        else:
+            error_message = f"Failed to clone repository from {repo_url}. Error details: {error_output}"
+        
         logger.error(error_message)
         raise RuntimeError(error_message)
 
