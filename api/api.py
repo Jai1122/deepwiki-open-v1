@@ -222,7 +222,7 @@ async def get_embedding_models():
         
         # Get embedding models from embedder config
         embedding_models = embedder_config.get("embedding_models", {})
-        default_model = embedder_config.get("default_embedding_model", "jina-embeddings-v3")
+        default_model = embedder_config.get("default_embedding_model", "/app/models/jina-embeddings-v3")
         
         # Format for frontend consumption
         models = []
@@ -245,13 +245,13 @@ async def get_embedding_models():
         return {
             "models": [
                 {
-                    "id": "jina-embeddings-v3",
+                    "id": "/app/models/jina-embeddings-v3",
                     "name": "Jina Embeddings v3",
                     "dimensions": 1024,
                     "api_url": "https://vllm.com/jina-embeddings-v3/v1"
                 }
             ],
-            "defaultModel": "jina-embeddings-v3"
+            "defaultModel": "/app/models/jina-embeddings-v3"
         }
 
 @app.get("/models/config", response_model=ModelConfig)

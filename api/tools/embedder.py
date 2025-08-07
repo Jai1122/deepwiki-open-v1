@@ -35,7 +35,7 @@ def get_embedder(is_ollama_embedder: bool = False) -> adal.Embedder:
     model_kwargs = embedder_config.get("model_kwargs", {}).copy()
     
     # Resolve dynamic configuration from current embedding model
-    current_embedding_model = os.environ.get("EMBEDDING_MODEL_NAME", "jina-embeddings-v3")
+    current_embedding_model = os.environ.get("EMBEDDING_MODEL_NAME", "/app/models/jina-embeddings-v3")
     embedding_config = resolve_embedding_config(current_embedding_model)
     
     # Replace dynamic placeholders with actual values

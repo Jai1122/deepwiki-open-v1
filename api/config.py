@@ -29,7 +29,7 @@ VLLM_MODEL_NAME = os.environ.get('VLLM_MODEL_NAME')
 OPENAI_API_BASE_URL = os.environ.get('OPENAI_API_BASE_URL')
 
 # Embedding Configuration
-EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL_NAME', 'jina-embeddings-v3')
+EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL_NAME', '/app/models/jina-embeddings-v3')
 EMBEDDING_DIMENSIONS = os.environ.get('EMBEDDING_DIMENSIONS', '1024')
 
 # Set keys in environment (in case they're needed elsewhere in the code)

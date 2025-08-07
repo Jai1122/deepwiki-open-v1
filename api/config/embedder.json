@@ -1,22 +1,22 @@
 {
   "embedding_models": {
-    "jina-embeddings-v3": {
+    "/app/models/jina-embeddings-v3": {
       "api_url": "https://vllm.com/jina-embeddings-v3/v1",
       "dimensions": 1024,
       "display_name": "Jina Embeddings v3"
     },
-    "text-embedding-ada-002": {
+    "/app/models/text-embedding-ada-002": {
       "api_url": "https://api.openai.com/v1",
       "dimensions": 1536,
       "display_name": "OpenAI Ada 002"
     },
-    "bge-large-en-v1.5": {
+    "/app/models/bge-large-en-v1.5": {
       "api_url": "https://vllm.com/bge-large-en-v1.5/v1",
       "dimensions": 1024,
       "display_name": "BGE Large EN v1.5"
     }
   },
-  "default_embedding_model": "jina-embeddings-v3",
+  "default_embedding_model": "/app/models/jina-embeddings-v3",
   "embedder": {
     "client_class": "OpenAIClient",
     "initialize_kwargs": {

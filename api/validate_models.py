@@ -110,7 +110,7 @@ def main():
     
     embedding_api_key = env_vars.get('OPENAI_API_KEY') or os.getenv('OPENAI_API_KEY')
     embedding_base_url = env_vars.get('OPENAI_API_BASE_URL') or os.getenv('OPENAI_API_BASE_URL')
-    embedding_model_name = env_vars.get('EMBEDDING_MODEL_NAME') or os.getenv('EMBEDDING_MODEL_NAME', 'jina-embeddings-v3')
+    embedding_model_name = env_vars.get('EMBEDDING_MODEL_NAME') or os.getenv('EMBEDDING_MODEL_NAME', '/app/models/jina-embeddings-v3')
     
     print(f"📋 Configuration Summary:")
     print(f"   vLLM API Key: {'✅ Set' if vllm_api_key else '❌ Missing'}")
