@@ -142,7 +142,7 @@ class ModelConfig(BaseModel):
 class AuthorizationConfig(BaseModel):
     code: str = Field(..., description="Authorization code")
 
-from .config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE
+from .config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE, embedder_config
 
 @app.get("/lang/config")
 async def get_lang_config():
