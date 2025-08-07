@@ -1,6 +1,7 @@
 import adalflow as adal
 import logging
-from api.config import configs
+import os
+from api.config import configs, resolve_embedding_config
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,30 @@ def get_embedder(is_ollama_embedder: bool = False) -> adal.Embedder:
     if not model_client_class:
         raise ValueError(f"model_client not specified for embedder '{embedder_key}'.")
 
-    initialize_kwargs = embedder_config.get("initialize_kwargs", {})
-    model_kwargs = embedder_config.get("model_kwargs", {})
+    initialize_kwargs = embedder_config.get("initialize_kwargs", {}).copy()
+    model_kwargs = embedder_config.get("model_kwargs", {}).copy()
     
-    # Log configuration for debugging
-    logger.info(f"Embedder configuration:")
+    # Resolve dynamic configuration from current embedding model
+    current_embedding_model = os.environ.get("EMBEDDING_MODEL_NAME", "jina-embeddings-v3")
+    embedding_config = resolve_embedding_config(current_embedding_model)
+    
+    # Replace dynamic placeholders with actual values
+    if initialize_kwargs.get("base_url") == "DYNAMIC_FROM_MODEL_CONFIG":
+        initialize_kwargs["base_url"] = embedding_config["api_url"]
+        
+    if model_kwargs.get("model") == "DYNAMIC_FROM_MODEL_CONFIG":
+        model_kwargs["model"] = embedding_config["model"]
+        
+    if model_kwargs.get("dimensions") == "DYNAMIC_FROM_MODEL_CONFIG":
+        model_kwargs["dimensions"] = embedding_config["dimensions"]
+        
+    # Ensure API key is resolved from environment variable
+    if initialize_kwargs.get("api_key") and "${VLLM_API_KEY}" in str(initialize_kwargs.get("api_key")):
+        initialize_kwargs["api_key"] = os.environ.get("VLLM_API_KEY", "")
+    
+    # Log resolved configuration for debugging
+    logger.info(f"Embedder configuration (resolved):")
+    logger.info(f"  Current embedding model: {current_embedding_model}")
     logger.info(f"  Model: {model_kwargs.get('model', 'NOT_SET')}")
     logger.info(f"  Base URL: {initialize_kwargs.get('base_url', 'NOT_SET')}")
     logger.info(f"  Dimensions: {model_kwargs.get('dimensions', 'NOT_SET')}")
