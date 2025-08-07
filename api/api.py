@@ -170,6 +170,90 @@ async def validate_auth_code(request: AuthorizationConfig):
     """
     return {"success": WIKI_AUTH_CODE == request.code}
 
+@app.post("/models/update")
+async def update_model_selection(request: dict):
+    """
+    Update the current model and embedding model selections.
+    This syncs the selections with environment variables.
+    """
+    try:
+        provider = request.get("provider")
+        model = request.get("model")
+        embedding_model = request.get("embeddingModel")
+        
+        logger.info(f"Updating model selection - Provider: {provider}, Model: {model}, Embedding: {embedding_model}")
+        
+        # Update provider model selection
+        if provider and model:
+            from api.config import get_model_config
+            # This will sync VLLM_MODEL_NAME if provider is vllm
+            get_model_config(provider, model)
+        
+        # Update embedding model selection  
+        if embedding_model:
+            from api.config import set_embedding_model
+            set_embedding_model(embedding_model)
+        
+        return {
+            "success": True,
+            "message": "Model selection updated successfully",
+            "provider": provider,
+            "model": model,
+            "embeddingModel": embedding_model
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating model selection: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@app.get("/models/embeddings", response_model=dict)
+async def get_embedding_models():
+    """
+    Get available embedding models configuration.
+    
+    Returns:
+        dict: Embedding models configuration with display names and API URLs
+    """
+    try:
+        logger.info("Fetching embedding models configuration")
+        
+        # Get embedding models from embedder config
+        embedding_models = embedder_config.get("embedding_models", {})
+        default_model = embedder_config.get("default_embedding_model", "jina-embeddings-v3")
+        
+        # Format for frontend consumption
+        models = []
+        for model_id, model_config in embedding_models.items():
+            models.append({
+                "id": model_id,
+                "name": model_config.get("display_name", model_id),
+                "dimensions": model_config.get("dimensions", 1024),
+                "api_url": model_config.get("api_url", "")
+            })
+        
+        return {
+            "models": models,
+            "defaultModel": default_model
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching embedding models: {str(e)}")
+        # Return default configuration
+        return {
+            "models": [
+                {
+                    "id": "jina-embeddings-v3",
+                    "name": "Jina Embeddings v3",
+                    "dimensions": 1024,
+                    "api_url": "https://vllm.com/jina-embeddings-v3/v1"
+                }
+            ],
+            "defaultModel": "jina-embeddings-v3"
+        }
+
 @app.get("/models/config", response_model=ModelConfig)
 async def get_model_config():
     """
@@ -192,9 +276,10 @@ async def get_model_config():
         for provider_id, provider_config in configs["providers"].items():
             models = []
             # Add models from config
-            for model_id in provider_config["models"].keys():
-                # Get a more user-friendly display name if possible
-                models.append(Model(id=model_id, name=model_id))
+            for model_id, model_config in provider_config["models"].items():
+                # Get display name or use model_id as fallback
+                display_name = model_config.get("display_name", model_id)
+                models.append(Model(id=model_id, name=display_name))
 
             # Add provider with its models
             providers.append(

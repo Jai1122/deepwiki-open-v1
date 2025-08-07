@@ -19,6 +19,10 @@ interface ModelSelectionModalProps {
   setCustomModel: (value: string) => void;
   onApply: (token?: string) => void;
 
+  // Embedding model selection
+  embeddingModel?: string;
+  setEmbeddingModel?: (value: string) => void;
+
   // Wiki type options
   isComprehensiveView: boolean;
   setIsComprehensiveView: (value: boolean) => void;
@@ -57,6 +61,8 @@ export default function ModelSelectionModal({
   customModel,
   setCustomModel,
   onApply,
+  embeddingModel,
+  setEmbeddingModel,
   isComprehensiveView,
   setIsComprehensiveView,
   excludedDirs = '',
@@ -83,6 +89,7 @@ export default function ModelSelectionModal({
   const [localModel, setLocalModel] = useState(model);
   const [localIsCustomModel, setLocalIsCustomModel] = useState(isCustomModel);
   const [localCustomModel, setLocalCustomModel] = useState(customModel);
+  const [localEmbeddingModel, setLocalEmbeddingModel] = useState(embeddingModel || '');
   const [localIsComprehensiveView, setLocalIsComprehensiveView] = useState(isComprehensiveView);
   const [localExcludedDirs, setLocalExcludedDirs] = useState(excludedDirs);
   const [localExcludedFiles, setLocalExcludedFiles] = useState(excludedFiles);
@@ -101,6 +108,7 @@ export default function ModelSelectionModal({
       setLocalModel(model);
       setLocalIsCustomModel(isCustomModel);
       setLocalCustomModel(customModel);
+      setLocalEmbeddingModel(embeddingModel || '');
       setLocalIsComprehensiveView(isComprehensiveView);
       setLocalExcludedDirs(excludedDirs);
       setLocalExcludedFiles(excludedFiles);
@@ -110,7 +118,7 @@ export default function ModelSelectionModal({
       setLocalAccessToken('');
       setShowTokenSection(showTokenInput);
     }
-  }, [isOpen, provider, model, isCustomModel, customModel, isComprehensiveView, excludedDirs, excludedFiles, includedDirs, includedFiles, repositoryType, showTokenInput]);
+  }, [isOpen, provider, model, isCustomModel, customModel, embeddingModel, isComprehensiveView, excludedDirs, excludedFiles, includedDirs, includedFiles, repositoryType, showTokenInput]);
 
   // Handler for applying changes
   const handleApply = () => {
@@ -118,6 +126,7 @@ export default function ModelSelectionModal({
     setModel(localModel);
     setIsCustomModel(localIsCustomModel);
     setCustomModel(localCustomModel);
+    if (setEmbeddingModel) setEmbeddingModel(localEmbeddingModel);
     setIsComprehensiveView(localIsComprehensiveView);
     if (setExcludedDirs) setExcludedDirs(localExcludedDirs);
     if (setExcludedFiles) setExcludedFiles(localExcludedFiles);
@@ -178,6 +187,8 @@ export default function ModelSelectionModal({
               setIsCustomModel={setLocalIsCustomModel}
               customModel={localCustomModel}
               setCustomModel={setLocalCustomModel}
+              embeddingModel={localEmbeddingModel}
+              setEmbeddingModel={setEmbeddingModel ? setLocalEmbeddingModel : undefined}
               showFileFilters={showFileFilters}
               excludedDirs={localExcludedDirs}
               setExcludedDirs={showFileFilters ? (value: string) => setLocalExcludedDirs(value) : undefined}

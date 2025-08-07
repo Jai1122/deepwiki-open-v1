@@ -27,6 +27,10 @@ interface ConfigurationModalProps {
   customModel: string;
   setCustomModel: (value: string) => void;
 
+  // Embedding model selection
+  embeddingModel?: string;
+  setEmbeddingModel?: (value: string) => void;
+
   // Platform selection
   selectedPlatform: 'github' | 'gitlab' | 'bitbucket';
   setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket') => void;
@@ -61,6 +65,8 @@ export default function ConfigurationModal({
   setIsCustomModel,
   customModel,
   setCustomModel,
+  embeddingModel,
+  setEmbeddingModel,
   selectedPlatform,
   setSelectedPlatform,
   accessToken,
@@ -76,6 +82,29 @@ export default function ConfigurationModal({
 
   // Show token section state
   const [showTokenSection, setShowTokenSection] = useState(false);
+
+  // Sync model selections with backend
+  const syncModelSelections = async () => {
+    try {
+      const response = await fetch('/api/models/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          model,
+          embeddingModel
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to sync model selections');
+      } else {
+        console.log('Model selections synced successfully');
+      }
+    } catch (error) {
+      console.error('Error syncing model selections:', error);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -179,6 +208,8 @@ export default function ConfigurationModal({
                 setIsCustomModel={setIsCustomModel}
                 customModel={customModel}
                 setCustomModel={setCustomModel}
+                embeddingModel={embeddingModel}
+                setEmbeddingModel={setEmbeddingModel}
                 showFileFilters={false}
               />
             </div>
@@ -236,7 +267,11 @@ export default function ConfigurationModal({
             </button>
             <button
               type="button"
-              onClick={onSubmit}
+              onClick={async () => {
+                // Sync model selections with backend before submitting
+                await syncModelSelections();
+                onSubmit();
+              }}
               disabled={isSubmitting}
               className="btn-confluence disabled:opacity-50 disabled:cursor-not-allowed"
             >

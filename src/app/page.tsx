@@ -88,6 +88,7 @@ export default function Home() {
   const [model, setModel] = useState<string>('');
   const [isCustomModel, setIsCustomModel] = useState<boolean>(false);
   const [customModel, setCustomModel] = useState<string>('');
+  const [embeddingModel, setEmbeddingModel] = useState<string>('');
 
   // Wiki type state - default to comprehensive view
   const [isComprehensiveView, setIsComprehensiveView] = useState<boolean>(true);
@@ -446,6 +447,8 @@ export default function Home() {
         setIsCustomModel={setIsCustomModel}
         customModel={customModel}
         setCustomModel={setCustomModel}
+        embeddingModel={embeddingModel}
+        setEmbeddingModel={setEmbeddingModel}
         selectedPlatform={selectedPlatform}
         setSelectedPlatform={setSelectedPlatform}
         accessToken={accessToken}

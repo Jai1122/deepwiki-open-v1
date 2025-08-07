@@ -275,6 +275,69 @@ if repo_config:
 
 # Language configuration removed - English only support
 
+def resolve_dynamic_url(provider, model, config_key):
+    """
+    Resolve dynamic URLs for VLLM models based on model configuration
+    
+    Args:
+        provider (str): Provider name (e.g., 'vllm')
+        model (str): Model name (e.g., '/app/models/Qwen3-32B')
+        config_key (str): Configuration key to resolve ('base_url', 'model', 'dimensions')
+    
+    Returns:
+        str: Resolved value or original value if not dynamic
+    """
+    if provider != "vllm":
+        return None
+        
+    provider_config = configs.get("providers", {}).get(provider, {})
+    model_config = provider_config.get("models", {}).get(model, {})
+    
+    if config_key == "base_url":
+        return model_config.get("api_url")
+    elif config_key == "model":
+        return model
+    
+    return None
+
+def resolve_embedding_config(embedding_model):
+    """
+    Resolve embedding model configuration from embedder.json
+    
+    Args:
+        embedding_model (str): Embedding model name
+        
+    Returns:
+        dict: Configuration with api_url, dimensions, model name
+    """
+    embedding_models = embedder_config.get("embedding_models", {})
+    model_config = embedding_models.get(embedding_model, {})
+    
+    return {
+        "api_url": model_config.get("api_url"),
+        "dimensions": model_config.get("dimensions", 1024),
+        "model": embedding_model,
+        "display_name": model_config.get("display_name", embedding_model)
+    }
+
+def set_embedding_model(embedding_model):
+    """
+    Set the current embedding model and sync environment variables
+    
+    Args:
+        embedding_model (str): Embedding model name
+    """
+    embedding_config = resolve_embedding_config(embedding_model)
+    
+    # Update environment variables
+    if embedding_config["api_url"]:
+        os.environ["OPENAI_API_BASE_URL"] = embedding_config["api_url"]
+        logger.info(f"Updated OPENAI_API_BASE_URL to: {embedding_config['api_url']}")
+    
+    os.environ["EMBEDDING_MODEL_NAME"] = embedding_model
+    os.environ["EMBEDDING_DIMENSIONS"] = str(embedding_config["dimensions"])
+    
+    logger.info(f"Updated embedding model configuration to: {embedding_model} ({embedding_config['dimensions']}D)")
 
 def get_model_config(provider="google", model=None):
     """
@@ -287,6 +350,13 @@ def get_model_config(provider="google", model=None):
     Returns:
         dict: Configuration containing model_client, model and other parameters
     """
+    # Sync environment variable for VLLM
+    if provider == "vllm" and model:
+        os.environ["VLLM_MODEL_NAME"] = model
+        logger.info(f"Updated VLLM_MODEL_NAME environment variable to: {model}")
+    
+    # Sync OPENAI_BASE_URL for embedding model configuration - will be handled separately
+    # when embedding model is selected
     if "providers" not in configs:
         raise ValueError("Provider configuration not loaded")
 
@@ -310,9 +380,21 @@ def get_model_config(provider="google", model=None):
         default_model_key = provider_config.get("default_model")
         model_params = provider_config.get("models", {}).get(default_model_key, {})
 
+    # Get initialize_kwargs and resolve dynamic URLs for VLLM
+    initialize_kwargs = provider_config.get("initialize_kwargs", {}).copy()
+    
+    # Resolve dynamic base_url for VLLM
+    if provider == "vllm":
+        dynamic_url = resolve_dynamic_url(provider, model, "base_url")
+        if dynamic_url:
+            initialize_kwargs["base_url"] = dynamic_url
+        else:
+            # Fallback to environment variable if no specific URL mapping
+            initialize_kwargs["base_url"] = os.environ.get('VLLM_API_BASE_URL', 'http://localhost:8000/v1')
+    
     result = {
         "model_client": model_client,
-        "initialize_kwargs": provider_config.get("initialize_kwargs", {})
+        "initialize_kwargs": initialize_kwargs
     }
     
     # Standardize model_kwargs, preparing for the API call

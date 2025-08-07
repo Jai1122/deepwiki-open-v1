@@ -5,15 +5,65 @@
       "client_class": "OpenAIClient",
       "initialize_kwargs": {
         "api_key": "${VLLM_API_KEY}",
-        "base_url": "${VLLM_API_BASE_URL}"
+        "base_url": "DYNAMIC_FROM_MODEL_CONFIG"
       },
-      "default_model": "${VLLM_MODEL_NAME}",
+      "default_model": "/app/models/Qwen2.5-VL-7B-Instruct",
       "supportsCustomModel": true,
       "models": {
-        "/app/models/Qwen3-32B": {
+        "/app/models/Qwen2.5-VL-7B-Instruct": {
+          "api_url": "https://vllm.com/qwen-vl-7b/v1",
+          "display_name": "Qwen2.5 VL 7B Instruct",
           "temperature": 0.7,
           "top_p": 0.8,
-          "context_window": 40960,
+          "context_window": 32768,
+          "max_completion_tokens": 8000
+        },
+        "/app/models/Mistral-Small-3.1-24B": {
+          "api_url": "https://vllm.com/mistral-24b/v1",
+          "display_name": "Mistral Small 3.1 24B",
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "context_window": 32768,
+          "max_completion_tokens": 8000
+        },
+        "/app/models/Llama-3.3-70B-Instruct": {
+          "api_url": "https://vllm.com/llama3-70b/v1",
+          "display_name": "Llama 3.3 70B Instruct",
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "context_window": 131072,
+          "max_completion_tokens": 8000
+        },
+        "/app/models/Qwen3-14B-FP8": {
+          "api_url": "https://vllm.com/qwen3-14b/v1",
+          "display_name": "Qwen3 14B FP8",
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "context_window": 32768,
+          "max_completion_tokens": 8000
+        },
+        "/app/models/Devstral-Small-2505": {
+          "api_url": "https://vllm.com/devstral-25b/v1",
+          "display_name": "Devstral Small 2505",
+          "temperature": 0.2,
+          "top_p": 0.9,
+          "context_window": 32768,
+          "max_completion_tokens": 8000
+        },
+        "/app/models/Qwen3-32B": {
+          "api_url": "https://vllm.com/qwen3-32b/v1",
+          "display_name": "Qwen3 32B",
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "context_window": 32768,
+          "max_completion_tokens": 8000
+        },
+        "/app/models/Pixtral-12B-2409": {
+          "api_url": "https://vllm.com/pixtral-12b/v1",
+          "display_name": "Pixtral 12B 2409",
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "context_window": 32768,
           "max_completion_tokens": 8000
         }
       }

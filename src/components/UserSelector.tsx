@@ -21,6 +21,18 @@ interface ModelConfig {
   defaultProvider: string;
 }
 
+interface EmbeddingModel {
+  id: string;
+  name: string;
+  dimensions: number;
+  api_url: string;
+}
+
+interface EmbeddingConfig {
+  models: EmbeddingModel[];
+  defaultModel: string;
+}
+
 interface ModelSelectorProps {
   provider: string;
   setProvider: (value: string) => void;
@@ -30,6 +42,10 @@ interface ModelSelectorProps {
   setIsCustomModel: (value: boolean) => void;
   customModel: string;
   setCustomModel: (value: string) => void;
+
+  // Embedding model selection
+  embeddingModel?: string;
+  setEmbeddingModel?: (value: string) => void;
 
   // File filter configuration (deprecated - no longer used)
   showFileFilters?: boolean;
@@ -52,6 +68,8 @@ export default function UserSelector({
   setIsCustomModel,
   customModel,
   setCustomModel,
+  embeddingModel = '',
+  setEmbeddingModel,
   
   // File filter options are deprecated but kept for backward compatibility
   showFileFilters = false,
@@ -60,33 +78,46 @@ export default function UserSelector({
 
   // State for model configurations from backend
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch model configurations from the backend
   useEffect(() => {
-    const fetchModelConfig = async () => {
+    const fetchConfigurations = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch('/api/models/config');
+        // Fetch both model and embedding configurations in parallel
+        const [modelResponse, embeddingResponse] = await Promise.all([
+          fetch('/api/models/config'),
+          fetch('/api/models/embeddings')
+        ]);
 
-        if (!response.ok) {
-          throw new Error(`Error fetching model configurations: ${response.status}`);
+        if (!modelResponse.ok) {
+          throw new Error(`Error fetching model configurations: ${modelResponse.status}`);
+        }
+        if (!embeddingResponse.ok) {
+          throw new Error(`Error fetching embedding configurations: ${embeddingResponse.status}`);
         }
 
-        const data = await response.json();
-        setModelConfig(data);
+        const [modelData, embeddingData] = await Promise.all([
+          modelResponse.json(),
+          embeddingResponse.json()
+        ]);
+
+        setModelConfig(modelData);
+        setEmbeddingConfig(embeddingData);
 
         // Initialize provider and model with defaults from API if not already set
-        if (!provider && data.defaultProvider) {
-          setProvider(data.defaultProvider);
+        if (!provider && modelData.defaultProvider) {
+          setProvider(modelData.defaultProvider);
         }
 
         // Initialize model with the default model for the provider
-        if (!model || !data.providers.find((p: Provider) => p.id === provider)?.models.find((m: Model) => m.id === model)) {
-          const selectedProvider = data.providers.find((p: Provider) => p.id === (provider || data.defaultProvider));
+        if (!model || !modelData.providers.find((p: Provider) => p.id === provider)?.models.find((m: Model) => m.id === model)) {
+          const selectedProvider = modelData.providers.find((p: Provider) => p.id === (provider || modelData.defaultProvider));
           if (selectedProvider && selectedProvider.models.length > 0) {
             const defaultModel = selectedProvider.models.find((m: Model) => m.id === selectedProvider.models[0].id);
             if (defaultModel) {
@@ -94,16 +125,21 @@ export default function UserSelector({
             }
           }
         }
+
+        // Initialize embedding model if not set
+        if (!embeddingModel && embeddingData.defaultModel && setEmbeddingModel) {
+          setEmbeddingModel(embeddingData.defaultModel);
+        }
       } catch (err) {
-        console.error('Error fetching model configurations:', err);
+        console.error('Error fetching configurations:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchModelConfig();
-  }, [provider, model, setProvider, setModel]);
+    fetchConfigurations();
+  }, [provider, model, setProvider, setModel, embeddingModel, setEmbeddingModel]);
 
   // Get available models for the selected provider
   const getModelsForProvider = (providerId: string): Model[] => {
@@ -246,6 +282,30 @@ export default function UserSelector({
               )}
             </div>
           </div>
+
+          {/* Embedding Model Selection */}
+          {setEmbeddingModel && embeddingConfig && (
+            <div>
+              <label htmlFor="embedding-select" className="block text-sm font-medium text-[var(--foreground)] mb-2">
+                {t.form?.embeddingModel || 'Embedding Model'}
+              </label>
+              <select
+                id="embedding-select"
+                value={embeddingModel}
+                onChange={(e) => setEmbeddingModel(e.target.value)}
+                className="select-confluence block w-full"
+              >
+                {embeddingConfig.models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} ({model.dimensions}D)
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-[var(--muted)] mt-1">
+                Selected embedding model will be used for document processing and similarity search.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Advanced file filtering options removed */}
