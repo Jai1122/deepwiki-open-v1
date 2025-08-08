@@ -67,3 +67,21 @@ next-env.d.ts
 
 # ignore adding self-signed certs
 certs/
+
+# Development and testing files
+debug_*.py
+test_*.py
+check_*.py
+diagnose_*.py
+minimal_*.py
+*_test.py
+*_debug.py
+pytest.ini
+!api/validate_models.py
+!api/clear_cache.py
+
+# Temporary and backup files
+*.bak
+*.tmp
+*.temp
+*~

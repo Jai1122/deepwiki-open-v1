@@ -666,23 +666,6 @@ DeepResearch takes repository analysis to the next level with a multi-turn resea
 
 To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interface before submitting your question.
 
-## 📱 Screenshots
-
-![DeepWiki Main Interface](screenshots/Interface.png)
-*The main interface of DeepWiki*
-
-![Private Repository Support](screenshots/privaterepo.png)
-*Access private repositories with personal access tokens*
-
-![DeepResearch Feature](screenshots/DeepResearch.png)
-*DeepResearch conducts multi-turn investigations for complex topics*
-
-### Demo Video
-
-[![DeepWiki Demo Video](https://img.youtube.com/vi/zGANs8US8B4/0.jpg)](https://youtu.be/zGANs8US8B4)
-
-*Watch DeepWiki in action!*
-
 ## ❓ Troubleshooting
 
 ### API Key Issues
@@ -736,7 +719,3 @@ Contributions are welcome! Feel free to:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=AsyncFuncAI/deepwiki-open&type=Date)](https://star-history.com/#AsyncFuncAI/deepwiki-open&Date)
