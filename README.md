@@ -1,6 +1,6 @@
 # DeepWiki-Open
 
-**DeepWiki** is my own implementation attempt of DeepWiki, automatically creates beautiful, interactive wikis for any GitHub, GitLab, or BitBucket repository! Just enter a repo name, and DeepWiki will:
+**DeepWiki** is an AI-powered documentation generator that automatically creates beautiful, interactive wikis for any GitHub, GitLab, or Bitbucket repository! Just enter a repo name, and DeepWiki will:
 
 1. Analyze the code structure
 2. Generate comprehensive documentation
@@ -9,7 +9,7 @@
 
 ## ✨ Features
 
-- **Instant Documentation**: Turn any GitHub, GitLab or BitBucket repo into a wiki in seconds
+- **Instant Documentation**: Turn any GitHub, GitLab or Bitbucket repo into a wiki in seconds
 - **Private Repository Support**: Securely access private repositories with personal access tokens
 - **Smart Analysis**: AI-powered understanding of code structure and relationships
 - **Beautiful Diagrams**: Automatic Mermaid diagrams to visualize architecture and data flow
@@ -21,7 +21,7 @@
 - **vLLM Integration**: Full support for secured, remote vLLM deployments with configurable endpoints
 - **Enhanced Stability**: Robust error handling, timeout protection, and comprehensive validation for reliable operation
 - **Real-time Processing**: WebSocket-based streaming with progress updates and comprehensive error reporting
-- **English-focused**: Optimized for English documentation generation with streamlined processing
+- **Streamlined Experience**: Clean, focused interface optimized for documentation generation
 
 ## 🚀 Quick Start (Super Easy!)
 
@@ -114,7 +114,7 @@ yarn dev
 
 ## 🏗️ vLLM Configuration for Large Repositories
 
-DeepWiki now includes enhanced support for secured, remote vLLM deployments and robust handling of large repositories. This is particularly useful for complex enterprise codebases.
+DeepWiki includes enhanced support for secured, remote vLLM deployments and robust handling of large repositories. This is particularly useful for complex enterprise codebases.
 
 ### vLLM Setup
 
@@ -132,7 +132,7 @@ DeepWiki now includes enhanced support for secured, remote vLLM deployments and 
 
 2. **Model Configuration**: The system automatically uses:
    - **LLM Model**: `Qwen3-32B` (or your configured model)
-   - **Embedding Model**: `jina-embeddings-v3`
+   - **Embedding Model**: `/app/models/jina-embeddings-v3` (note the `/app/models/` prefix)
    - **Context Window**: Up to 131K tokens
    - **Max Completion**: Up to 8K tokens
 
@@ -173,22 +173,25 @@ If you encounter issues with vLLM configuration:
 #### Common Error: "Model does not exist"
 If you see errors like `"the model 'jina-embeddings-v3' does not exist"`:
 
-1. **Check available models** on your vLLM deployment:
+1. **Update model names** with the correct `/app/models/` prefix:
+   ```bash
+   # The embedding model name MUST include /app/models/ prefix
+   # Update api/config/embedder.json to use:
+   "/app/models/jina-embeddings-v3": {
+     "api_url": "https://vllm.com/jina-embeddings-v3/v1",
+     "dimensions": 1024,
+     "display_name": "Jina Embeddings v3"
+   }
+   ```
+
+2. **Check available models** on your vLLM deployment:
    ```bash
    # Run the validation script
    cd api && python validate_models.py
    ```
 
-2. **Update model names** in your `.env` file to match your deployment:
-   ```bash
-   # Find the correct model names and update these:
-   EMBEDDING_MODEL_NAME=your_actual_embedding_model_name
-   VLLM_MODEL_NAME=your_actual_llm_model_name
-   EMBEDDING_DIMENSIONS=1024  # Adjust based on your model
-   ```
-
 3. **Common model names** to try:
-   - For embeddings: `jina-embeddings-v2`, `text-embedding-ada-002`, `sentence-transformers/all-MiniLM-L6-v2`
+   - For embeddings: `/app/models/jina-embeddings-v3`, `/app/models/text-embedding-ada-002`
    - For LLM: Check your vLLM deployment's model list
 
 #### Common Error: "AssertionError" in FAISS (Dimension Mismatch)
@@ -206,7 +209,7 @@ If you see errors like `assert d == self.d` or `AssertionError` in FAISS retriev
    cd api && python validate_models.py
    
    # Update .env with correct dimensions
-   EMBEDDING_DIMENSIONS=1536  # Example: adjust to match your model
+   EMBEDDING_DIMENSIONS=1024  # Example: adjust to match your model
    ```
 
 3. **Common causes**:
@@ -217,9 +220,10 @@ If you see errors like `assert d == self.d` or `AssertionError` in FAISS retriev
 #### General Troubleshooting:
 1. **Check API Keys**: Ensure your vLLM API keys are correctly set in `.env`
 2. **Verify Endpoints**: Confirm your vLLM base URLs are accessible
-3. **Network Access**: Ensure your deployment has network access to the vLLM endpoints
-4. **Test Connectivity**: Use the validation script: `cd api && python validate_models.py`
-5. **Fallback**: You can always switch to other providers (Google, OpenAI, etc.) by updating the `default_provider` in `api/config/generator.json`
+3. **Model Name Format**: Ensure embedding models use `/app/models/` prefix
+4. **Network Access**: Ensure your deployment has network access to the vLLM endpoints
+5. **Test Connectivity**: Use the validation script: `cd api && python validate_models.py`
+6. **Fallback**: You can always switch to other providers (Google, OpenAI, etc.) by updating the `default_provider` in `api/config/generator.json`
 
 ## 🔍 How It Works
 
@@ -229,13 +233,13 @@ DeepWiki uses AI to:
 2. Create embeddings of the code for smart retrieval
 3. Generate documentation with context-aware AI (using Google Gemini, OpenAI, OpenRouter, Azure OpenAI, vLLM, or local Ollama models)
 4. Create visual diagrams to explain code relationships
-5. Organize everything into a structured wiki
+5. Organize everything into a structured wiki with concise, focused content
 6. Enable intelligent Q&A with the repository through the Ask feature
 7. Provide in-depth research capabilities with DeepResearch
 
 ## 🛡️ Enhanced Stability & Reliability
 
-DeepWiki now includes comprehensive stability improvements for production use:
+DeepWiki includes comprehensive stability improvements for production use:
 
 ### WebSocket-Based Architecture
 - **Real-time streaming**: Live progress updates during wiki generation
@@ -272,7 +276,7 @@ graph TD
     M -->|Azure| E5[Generate with Azure]
     M -->|vLLM| E6[Generate with vLLM]
 
-    E1 --> E[Generate Documentation]
+    E1 --> E[Generate Concise Documentation]
     E2 --> E
     E3 --> E
     E4 --> E
@@ -299,54 +303,76 @@ graph TD
 
 ```
 deepwiki/
-├── api/                  # Backend API server
-│   ├── main.py           # API entry point
-│   ├── api.py            # FastAPI implementation
+├── api/                  # Backend API server (FastAPI + Python)
+│   ├── main.py           # API entry point with provider validation
+│   ├── api.py            # FastAPI implementation with WebSocket support
 │   ├── rag.py            # Retrieval Augmented Generation
-│   ├── data_pipeline.py  # Data processing utilities
+│   ├── data_pipeline.py  # Repository processing and embeddings
+│   ├── websocket_wiki.py # Real-time wiki generation
+│   ├── config/           # Configuration files
+│   │   ├── generator.json    # Model providers and parameters
+│   │   ├── embedder.json     # Embedding models and chunking
+│   │   └── repo.json         # File filters and processing rules
+│   ├── tools/            # Core processing tools
+│   │   └── embedder.py       # Embedding system with dynamic config
 │   └── requirements.txt  # Python dependencies
 │
-├── src/                  # Frontend Next.js app
+├── src/                  # Frontend Next.js app (Next.js 15 + React 19)
 │   ├── app/              # Next.js app directory
-│   │   └── page.tsx      # Main application page
-│   └── components/       # React components
-│       └── Mermaid.tsx   # Mermaid diagram renderer
+│   │   ├── page.tsx      # Clean main application page
+│   │   └── [owner]/[repo]/   # Repository viewer pages
+│   ├── components/       # React components
+│   │   ├── Ask.tsx           # Chat/RAG interface
+│   │   ├── WikiTreeView.tsx  # Navigation tree
+│   │   ├── Markdown.tsx      # Content renderer
+│   │   └── ConfigurationModal.tsx  # Streamlined configuration
+│   ├── contexts/         # React contexts
+│   │   └── LanguageContext.tsx  # English-only language support
+│   └── messages/         # Translation files
+│       └── en.json           # English translations only
 │
 ├── public/               # Static assets
-├── package.json          # JavaScript dependencies
+├── package.json          # JavaScript dependencies (Next.js 15)
 └── .env                  # Environment variables (create this)
 ```
 
 ## 🤖 Provider-Based Model Selection System
 
-DeepWiki now implements a flexible provider-based model selection system supporting multiple LLM providers:
+DeepWiki implements a flexible provider-based model selection system supporting multiple LLM providers:
 
 ### Supported Providers and Models
 
-- **Google**: Default `gemini-2.0-flash`, also supports `gemini-1.5-flash`, `gemini-1.0-pro`, etc.
-- **OpenAI**: Default `gpt-4o`, also supports `o4-mini`, etc.
-- **OpenRouter**: Access to multiple models via a unified API, including Claude, Llama, Mistral, etc.
-- **Azure OpenAI**: Default `gpt-4o`, also supports `o4-mini`, etc.
-- **Ollama**: Support for locally running open-source models like `llama3`
+- **vLLM**: Default provider for enterprise deployments with models like `Qwen3-32B`, `Mistral-Small-3.1-24B`, `Llama-3.3-70B`
+- **Google**: Default `gemini-2.0-flash-preview`, also supports `gemini-2.5-pro-preview`, `gemini-1.5-flash`
+- **OpenAI**: Default `gpt-4o`, also supports `o1`, `o3`, `o4-mini`
+- **OpenRouter**: Access to multiple models via a unified API, including Claude, Llama, Mistral
+- **Azure OpenAI**: Default `gpt-4o`, also supports `o4-mini`
+- **Ollama**: Support for locally running open-source models like `qwen3:1.7b`, `llama3:8b`
 
 ### Environment Variables
 
 Each provider requires its corresponding API key environment variables:
 
-```
-# API Keys
-GOOGLE_API_KEY=your_google_api_key        # Required for Google Gemini models
-OPENAI_API_KEY=your_openai_api_key        # Required for OpenAI models
-OPENROUTER_API_KEY=your_openrouter_api_key # Required for OpenRouter models
-AZURE_OPENAI_API_KEY=your_azure_openai_api_key  #Required for Azure OpenAI models
-AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint  #Required for Azure OpenAI models
-AZURE_OPENAI_VERSION=your_azure_openai_version  #Required for Azure OpenAI models
+```bash
+# Core Model Providers (choose at least one)
+VLLM_API_KEY=your_vllm_key                    # vLLM provider (recommended)
+VLLM_API_BASE_URL=https://api.example.com/v1  # vLLM endpoint
+GOOGLE_API_KEY=your_google_key                # Google Gemini
+OPENAI_API_KEY=your_openai_key                # OpenAI/embeddings
 
-# OpenAI API Base URL Configuration
-OPENAI_BASE_URL=https://custom-api-endpoint.com/v1  # Optional, for custom OpenAI API endpoints
+# Optional Providers  
+OPENROUTER_API_KEY=your_openrouter_key        # OpenRouter
+AZURE_OPENAI_API_KEY=your_azure_key          # Azure OpenAI
+AZURE_OPENAI_ENDPOINT=your_azure_endpoint    # Azure endpoint
+AZURE_OPENAI_VERSION=your_azure_version      # Azure API version
+OLLAMA_HOST=http://localhost:11434            # Ollama (default)
 
-# Ollama host
-OLLAMA_HOST=your_ollama_host # Optional, if Ollama is not local. default: http://localhost:11434
+# System Configuration
+PORT=8001                                     # API server port
+SERVER_BASE_URL=http://localhost:8001         # API base URL
+DEEPWIKI_AUTH_MODE=false                     # Authorization mode
+DEEPWIKI_AUTH_CODE=secret                    # Auth code if enabled
+LOG_LEVEL=INFO                               # Logging level
 
 # Configuration Directory
 DEEPWIKI_CONFIG_DIR=/path/to/custom/config/dir  # Optional, for custom config file location
@@ -357,28 +383,29 @@ DEEPWIKI_CONFIG_DIR=/path/to/custom/config/dir  # Optional, for custom config fi
 DeepWiki uses JSON configuration files to manage various aspects of the system:
 
 1. **`generator.json`**: Configuration for text generation models
-   - Defines available model providers (Google, OpenAI, OpenRouter, Azure, Ollama)
+   - Defines available model providers (vLLM, Google, OpenAI, OpenRouter, Azure, Ollama)
    - Specifies default and available models for each provider
    - Contains model-specific parameters like temperature and top_p
 
 2. **`embedder.json`**: Configuration for embedding models and text processing
-   - Defines embedding models for vector storage
+   - Defines embedding models with `/app/models/` prefix for vLLM compatibility
    - Contains retriever configuration for RAG
-   - Specifies text splitter settings for document chunking
+   - Specifies text splitter settings for document chunking (400-word chunks, 50-word overlap)
 
 3. **`repo.json`**: Configuration for repository handling
    - Contains file filters to exclude certain files and directories
    - Defines repository size limits and processing rules
+   - Smart prioritization settings for large repositories
 
 By default, these files are located in the `api/config/` directory. You can customize their location using the `DEEPWIKI_CONFIG_DIR` environment variable.
 
 ### Custom Model Selection for Service Providers
 
-The custom model selection feature is specifically designed for service providers who need to:
+The custom model selection feature is designed for service providers who need to:
 
-- You can offer multiple AI model choices to users within your organization
-- You can quickly adapt to the rapidly evolving LLM landscape without code changes
-- You can support specialized or fine-tuned models that aren't in the predefined list
+- Offer multiple AI model choices to users within your organization
+- Quickly adapt to the rapidly evolving LLM landscape without code changes
+- Support specialized or fine-tuned models that aren't in the predefined list
 
 Service providers can implement their model offerings by selecting from the predefined options or entering custom model identifiers in the frontend interface.
 
@@ -493,7 +520,6 @@ docker run -p 8001:8001 -p 3000:3000 \
   -e AZURE_OPENAI_API_KEY=your_azure_openai_api_key \
   -e AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint \
   -e AZURE_OPENAI_VERSION=your_azure_openai_version \
-
   -v ~/.adalflow:/root/.adalflow \
   ghcr.io/asyncfuncai/deepwiki-open:latest
 ```
@@ -588,12 +614,14 @@ The API server provides:
 - Repository cloning and indexing
 - RAG (Retrieval Augmented Generation)
 - Streaming chat completions
+- Real-time wiki generation via WebSocket
+- Provider validation and fallback
 
 For more details, see the [API README](./api/README.md).
 
 ## 🔌 OpenRouter Integration
 
-DeepWiki now supports [OpenRouter](https://openrouter.ai/) as a model provider, giving you access to hundreds of AI models through a single API:
+DeepWiki supports [OpenRouter](https://openrouter.ai/) as a model provider, giving you access to hundreds of AI models through a single API:
 
 - **Multiple Model Options**: Access models from OpenAI, Anthropic, Google, Meta, Mistral, and more
 - **Simple Configuration**: Just add your OpenRouter API key and select the model you want to use
@@ -665,6 +693,11 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 - **"OpenRouter API error"**: Verify your OpenRouter API key is valid and has sufficient credits
 - **"Azure OpenAI API error"**: Verify your Azure OpenAI credentials (API key, endpoint, and version) are correct and the service is properly deployed
 
+### vLLM-Specific Issues
+- **"Model does not exist" with embedding models**: Ensure your embedding model names use the `/app/models/` prefix (e.g., `/app/models/jina-embeddings-v3`)
+- **"Dimension mismatch" in FAISS**: Clear the embedding cache with `cd api && python clear_cache.py` and ensure consistent embedding model usage
+- **vLLM connection failures**: Verify your `VLLM_API_BASE_URL` and `VLLM_API_KEY` are correct and the endpoint is accessible
+
 ### Connection Problems
 - **"WebSocket connection failed"**: The API server isn't running or is unreachable. Check that the API server is running on port 8001 with `lsof -i :8001`
 - **"Connection timeout"**: The server is taking too long to respond. This may indicate network issues or overloaded services
@@ -680,7 +713,7 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 - **"Diagram rendering error"**: The app will automatically try to fix broken diagrams
 
 ### Enhanced Error Reporting
-DeepWiki now provides detailed error messages that help identify the specific issue:
+DeepWiki provides detailed error messages that help identify the specific issue:
 - **Provider-specific errors**: Messages indicate which AI provider failed and why
 - **Timeout information**: Clear indication when operations exceed time limits
 - **Progress indicators**: Real-time status updates show where processing stopped
