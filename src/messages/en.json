@@ -87,9 +87,6 @@
     "authorizationCode": "Authorization Code",
     "authorizationRequired": "Authentication is required to generate the wiki."
   },
-  "footer": {
-    "copyright": "DeepWiki - AI-powered documentation for code repositories"
-  },
   "ask": {
     "placeholder": "Ask a question about this repository...",
     "askButton": "Ask",

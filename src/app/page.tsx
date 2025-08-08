@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { FaGithub, FaCoffee, FaTwitter } from 'react-icons/fa';
+import { FaGithub } from 'react-icons/fa';
 import ThemeToggle from '@/components/theme-toggle';
 import ConfigurationModal from '@/components/ConfigurationModal';
 import { extractUrlPath, extractUrlDomain } from '@/utils/urlDecoder';
@@ -403,30 +403,6 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Quick examples */}
-        <div className="text-center max-w-2xl">
-          <p className="text-sm text-[var(--muted)] mb-3">Try these examples:</p>
-          <div className="flex flex-wrap justify-center gap-2 text-xs">
-            <button 
-              onClick={() => setRepositoryInput('AsyncFuncAI/deepwiki-open')}
-              className="px-3 py-1 text-[var(--accent-primary)] hover:underline cursor-pointer transition-colors"
-            >
-              AsyncFuncAI/deepwiki-open
-            </button>
-            <button 
-              onClick={() => setRepositoryInput('https://github.com/vercel/next.js')}
-              className="px-3 py-1 text-[var(--accent-primary)] hover:underline cursor-pointer transition-colors"
-            >
-              vercel/next.js
-            </button>
-            <button 
-              onClick={() => setRepositoryInput('facebook/react')}
-              className="px-3 py-1 text-[var(--accent-primary)] hover:underline cursor-pointer transition-colors"
-            >
-              facebook/react
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* Configuration Modal */}
@@ -456,26 +432,6 @@ export default function Home() {
         isAuthLoading={isAuthLoading}
       />
 
-      {/* Footer */}
-      <footer className="p-4 text-center">
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 text-sm text-[var(--muted)]">
-          <div className="flex items-center space-x-4">
-            <a href="https://github.com/AsyncFuncAI/deepwiki-open" target="_blank" rel="noopener noreferrer"
-              className="hover:text-[var(--accent-primary)] transition-colors">
-              <FaGithub className="text-lg" />
-            </a>
-            <a href="https://buymeacoffee.com/sheing" target="_blank" rel="noopener noreferrer"
-              className="hover:text-[var(--accent-primary)] transition-colors">
-              <FaCoffee className="text-lg" />
-            </a>
-            <a href="https://x.com/sashimikun_void" target="_blank" rel="noopener noreferrer"
-              className="hover:text-[var(--accent-primary)] transition-colors">
-              <FaTwitter className="text-lg" />
-            </a>
-          </div>
-          <p>{t('footer.copyright')}</p>
-        </div>
-      </footer>
     </div>
   );
 }
