@@ -54,7 +54,6 @@ export default function Home() {
         const configs = JSON.parse(cachedConfigs);
         const config = configs[repoUrl.trim()];
         if (config) {
-          setIsComprehensiveView(config.isComprehensiveView === undefined ? true : config.isComprehensiveView);
           setProvider(config.provider || '');
           setModel(config.model || '');
           setIsCustomModel(config.isCustomModel || false);
@@ -90,8 +89,7 @@ export default function Home() {
   const [customModel, setCustomModel] = useState<string>('');
   const [embeddingModel, setEmbeddingModel] = useState<string>('');
 
-  // Wiki type state - default to comprehensive view
-  const [isComprehensiveView, setIsComprehensiveView] = useState<boolean>(true);
+  // Wiki type is now fixed to concise mode (comprehensive mode removed)
 
   const [selectedPlatform, setSelectedPlatform] = useState<'github' | 'gitlab' | 'bitbucket'>('github');
   const [accessToken, setAccessToken] = useState('');
@@ -265,7 +263,6 @@ export default function Home() {
       if (currentRepoUrl) {
         const existingConfigs = JSON.parse(localStorage.getItem(REPO_CONFIG_CACHE_KEY) || '{}');
         const configToSave = {
-          isComprehensiveView,
           provider,
           model,
           isCustomModel,
@@ -315,8 +312,8 @@ export default function Home() {
     // Add language parameter (English only)
     params.append('language', 'en');
 
-    // Add comprehensive parameter
-    params.append('comprehensive', isComprehensiveView.toString());
+    // Wiki generation always uses concise mode (comprehensive mode removed)
+    params.append('comprehensive', 'false');
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
 
@@ -437,8 +434,6 @@ export default function Home() {
         isOpen={isConfigModalOpen}
         onClose={() => setIsConfigModalOpen(false)}
         repositoryInput={repositoryInput}
-        isComprehensiveView={isComprehensiveView}
-        setIsComprehensiveView={setIsComprehensiveView}
         provider={provider}
         setProvider={setProvider}
         model={model}

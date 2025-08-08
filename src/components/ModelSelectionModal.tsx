@@ -3,7 +3,7 @@
 import React, {useEffect, useState} from 'react';
 import {useLanguage} from '@/contexts/LanguageContext';
 import UserSelector from './UserSelector';
-import WikiTypeSelector from './WikiTypeSelector';
+// WikiTypeSelector removed - always uses concise mode
 import TokenInput from './TokenInput';
 
 interface ModelSelectionModalProps {
@@ -23,9 +23,7 @@ interface ModelSelectionModalProps {
   embeddingModel?: string;
   setEmbeddingModel?: (value: string) => void;
 
-  // Wiki type options
-  isComprehensiveView: boolean;
-  setIsComprehensiveView: (value: boolean) => void;
+  // Wiki type options removed - always uses concise mode
 
   // File filter options - optional
   excludedDirs?: string;
@@ -37,7 +35,7 @@ interface ModelSelectionModalProps {
   includedFiles?: string;
   setIncludedFiles?: (value: string) => void;
   showFileFilters?: boolean;
-  showWikiType: boolean;
+  // showWikiType removed - always uses concise mode
   
   // Token input for refresh
   showTokenInput?: boolean;
@@ -63,8 +61,6 @@ export default function ModelSelectionModal({
   onApply,
   embeddingModel,
   setEmbeddingModel,
-  isComprehensiveView,
-  setIsComprehensiveView,
   excludedDirs = '',
   setExcludedDirs,
   excludedFiles = '',
@@ -78,7 +74,6 @@ export default function ModelSelectionModal({
   authCode = '',
   setAuthCode,
   isAuthLoading,
-  showWikiType = true,
   showTokenInput = false,
   repositoryType = 'github',
 }: ModelSelectionModalProps) {
@@ -90,7 +85,7 @@ export default function ModelSelectionModal({
   const [localIsCustomModel, setLocalIsCustomModel] = useState(isCustomModel);
   const [localCustomModel, setLocalCustomModel] = useState(customModel);
   const [localEmbeddingModel, setLocalEmbeddingModel] = useState(embeddingModel || '');
-  const [localIsComprehensiveView, setLocalIsComprehensiveView] = useState(isComprehensiveView);
+  // Wiki type removed - always uses concise mode
   const [localExcludedDirs, setLocalExcludedDirs] = useState(excludedDirs);
   const [localExcludedFiles, setLocalExcludedFiles] = useState(excludedFiles);
   const [localIncludedDirs, setLocalIncludedDirs] = useState(includedDirs);
@@ -109,7 +104,7 @@ export default function ModelSelectionModal({
       setLocalIsCustomModel(isCustomModel);
       setLocalCustomModel(customModel);
       setLocalEmbeddingModel(embeddingModel || '');
-      setLocalIsComprehensiveView(isComprehensiveView);
+      // Wiki type removed - always uses concise mode
       setLocalExcludedDirs(excludedDirs);
       setLocalExcludedFiles(excludedFiles);
       setLocalIncludedDirs(includedDirs);
@@ -118,7 +113,7 @@ export default function ModelSelectionModal({
       setLocalAccessToken('');
       setShowTokenSection(showTokenInput);
     }
-  }, [isOpen, provider, model, isCustomModel, customModel, embeddingModel, isComprehensiveView, excludedDirs, excludedFiles, includedDirs, includedFiles, repositoryType, showTokenInput]);
+  }, [isOpen, provider, model, isCustomModel, customModel, embeddingModel, excludedDirs, excludedFiles, includedDirs, includedFiles, repositoryType, showTokenInput]);
 
   // Handler for applying changes
   const handleApply = () => {
@@ -127,7 +122,7 @@ export default function ModelSelectionModal({
     setIsCustomModel(localIsCustomModel);
     setCustomModel(localCustomModel);
     if (setEmbeddingModel) setEmbeddingModel(localEmbeddingModel);
-    setIsComprehensiveView(localIsComprehensiveView);
+    // Wiki type removed - always uses concise mode
     if (setExcludedDirs) setExcludedDirs(localExcludedDirs);
     if (setExcludedFiles) setExcludedFiles(localExcludedFiles);
     if (setIncludedDirs) setIncludedDirs(localIncludedDirs);
@@ -166,13 +161,7 @@ export default function ModelSelectionModal({
 
           {/* Modal body */}
           <div className="p-6">
-            {/* Wiki Type Selector */}
-            {
-              showWikiType && <WikiTypeSelector
-                    isComprehensiveView={localIsComprehensiveView}
-                    setIsComprehensiveView={setLocalIsComprehensiveView}
-                />
-            }
+            {/* Wiki Type Selector removed - always uses concise mode */}
 
             {/* Divider */}
             <div className="my-4 border-t border-[var(--border-color)]/30"></div>

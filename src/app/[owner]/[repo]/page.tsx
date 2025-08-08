@@ -3,7 +3,7 @@
 
 import Ask from '@/components/Ask';
 import Markdown from '@/components/Markdown';
-import ModelSelectionModal from '@/components/ModelSelectionModal';
+// ModelSelectionModal removed - not used in this page
 import ThemeToggle from '@/components/theme-toggle';
 import WikiTreeView from '@/components/WikiTreeView';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -161,8 +161,9 @@ export default function RepoWikiPage() {
 
   // --- Modal and UI State ---
   const [isAskModalOpen, setIsAskModalOpen] = useState(false);
-  const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
-  const [isComprehensiveView, setIsComprehensiveView] = useState(searchParams.get('comprehensive') !== 'false');
+  // ModelSelectionModal state removed - not used in this page
+  // Wiki type is now fixed to concise mode (comprehensive mode removed)
+  const isComprehensiveView = false;
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
   // --- Model Config State ---

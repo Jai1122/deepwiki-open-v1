@@ -13,9 +13,7 @@ interface ConfigurationModalProps {
   repositoryInput: string;
 
 
-  // Wiki type options
-  isComprehensiveView: boolean;
-  setIsComprehensiveView: (value: boolean) => void;
+  // Wiki type options removed - always uses concise mode
 
   // Model selection
   provider: string;
@@ -55,8 +53,6 @@ export default function ConfigurationModal({
   isOpen,
   onClose,
   repositoryInput,
-  isComprehensiveView,
-  setIsComprehensiveView,
   provider,
   setProvider,
   model,
@@ -141,61 +137,7 @@ export default function ConfigurationModal({
             </div>
 
 
-            {/* Wiki Type Selector - more compact version */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-[var(--foreground)] mb-2">
-                {t.form?.wikiType || 'Wiki Type'}
-              </label>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsComprehensiveView(true)}
-                  className={`flex-1 flex items-center justify-between p-3 rounded border-2 transition-colors ${
-                    isComprehensiveView
-                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                      : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
-                  }`}
-                >
-                  <div className="flex items-center">
-                    <div className="text-left">
-                      <div className="font-medium text-sm">{t.form?.comprehensive || 'Comprehensive'}</div>
-                      <div className="text-xs opacity-80">
-                        {t.form?.comprehensiveDescription || 'Detailed wiki with structured sections'}
-                      </div>
-                    </div>
-                  </div>
-                  {isComprehensiveView && (
-                    <div className="ml-2 h-4 w-4 rounded-full bg-[var(--accent-primary)]/20 flex items-center justify-center">
-                      <div className="h-2 w-2 rounded-full bg-[var(--accent-primary)]"></div>
-                    </div>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsComprehensiveView(false)}
-                  className={`flex-1 flex items-center justify-between p-3 rounded border-2 transition-colors ${
-                    !isComprehensiveView
-                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                      : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
-                  }`}
-                >
-                  <div className="flex items-center">
-                    <div className="text-left">
-                      <div className="font-medium text-sm">{t.form?.concise || 'Concise'}</div>
-                      <div className="text-xs opacity-80">
-                        {t.form?.conciseDescription || 'Simplified wiki with fewer pages'}
-                      </div>
-                    </div>
-                  </div>
-                  {!isComprehensiveView && (
-                    <div className="ml-2 h-4 w-4 rounded-full bg-[var(--accent-primary)]/20 flex items-center justify-center">
-                      <div className="h-2 w-2 rounded-full bg-[var(--accent-primary)]"></div>
-                    </div>
-                  )}
-                </button>
-              </div>
-            </div>
+            {/* Wiki Type Selector removed - always uses concise mode */}
 
             {/* Model Selector */}
             <div className="mb-4">

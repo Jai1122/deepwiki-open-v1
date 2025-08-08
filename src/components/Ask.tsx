@@ -48,7 +48,7 @@ const Ask: React.FC<AskProps> = ({
   const [isCustomSelectedModel, setIsCustomSelectedModel] = useState(isCustomModel);
   const [customSelectedModel, setCustomSelectedModel] = useState(customModel);
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
-  const [isComprehensiveView, setIsComprehensiveView] = useState(true);
+  // Wiki type removed - always uses concise mode
   const [researchStages, setResearchStages] = useState<ResearchStage[]>([]);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [processState, setProcessState] = useState<'idle' | 'requesting' | 'processing_completion'>('idle');
@@ -361,11 +361,10 @@ const Ask: React.FC<AskProps> = ({
         setIsCustomModel={setIsCustomSelectedModel}
         customModel={customSelectedModel}
         setCustomModel={setCustomSelectedModel}
-        isComprehensiveView={isComprehensiveView}
-        setIsComprehensiveView={setIsComprehensiveView}
+        // Wiki type removed - always uses concise mode
         showFileFilters={false}
         onApply={() => {}}
-        showWikiType={false}
+        // showWikiType removed - always uses concise mode
         authRequired={false}
         isAuthLoading={false}
       />
