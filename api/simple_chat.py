@@ -3,21 +3,14 @@ import os
 from typing import List, Optional
 from urllib.parse import unquote
 
-import google.generativeai as genai
-from adalflow.components.model_client.ollama_client import OllamaClient
 from adalflow.core.types import ModelType
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from api.config import get_model_config, configs, OPENROUTER_API_KEY, OPENAI_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 from .config import get_model_config, configs, get_context_window_for_model, get_max_tokens_for_model
 from .utils import count_tokens, get_file_content, truncate_prompt_to_fit
-from api.openai_client import OpenAIClient
-from api.openrouter_client import OpenRouterClient
-from api.bedrock_client import BedrockClient
-from api.azureai_client import AzureAIClient
 from api.rag import RAG
 
 # Configure logging
@@ -58,7 +51,7 @@ class ChatCompletionRequest(BaseModel):
     type: Optional[str] = Field("github", description="Type of repository (e.g., 'github', 'gitlab', 'bitbucket')")
 
     # model parameters
-    provider: str = Field("google", description="Model provider (google, openai, openrouter, ollama, bedrock, azure)")
+    provider: str = Field("vllm", description="Model provider (vllm only)")
     model: Optional[str] = Field(None, description="Model name for the specified provider")
 
     language: Optional[str] = Field("en", description="Language for content generation (English only)")

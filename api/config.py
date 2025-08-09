@@ -8,19 +8,9 @@ from typing import List, Union, Dict, Any
 logger = logging.getLogger(__name__)
 
 from api.openai_client import OpenAIClient
-from api.openrouter_client import OpenRouterClient
-from api.bedrock_client import BedrockClient
-from api.azureai_client import AzureAIClient
-from adalflow import GoogleGenAIClient, OllamaClient
 
 # Get API keys from environment variables
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
-AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
-AWS_REGION = os.environ.get('AWS_REGION')
-AWS_ROLE_ARN = os.environ.get('AWS_ROLE_ARN')
 
 # vLLM Configuration
 VLLM_API_KEY = os.environ.get('VLLM_API_KEY')
@@ -35,18 +25,6 @@ EMBEDDING_DIMENSIONS = os.environ.get('EMBEDDING_DIMENSIONS', '1024')
 # Set keys in environment (in case they're needed elsewhere in the code)
 if OPENAI_API_KEY:
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-if GOOGLE_API_KEY:
-    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-if OPENROUTER_API_KEY:
-    os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
-if AWS_ACCESS_KEY_ID:
-    os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
-if AWS_SECRET_ACCESS_KEY:
-    os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
-if AWS_REGION:
-    os.environ["AWS_REGION"] = AWS_REGION
-if AWS_ROLE_ARN:
-    os.environ["AWS_ROLE_ARN"] = AWS_ROLE_ARN
 if VLLM_API_KEY:
     os.environ["VLLM_API_KEY"] = VLLM_API_KEY
 if VLLM_API_BASE_URL:
@@ -70,12 +48,7 @@ CONFIG_DIR = os.environ.get('DEEPWIKI_CONFIG_DIR', None)
 
 # Client class mapping
 CLIENT_CLASSES = {
-    "GoogleGenAIClient": GoogleGenAIClient,
-    "OpenAIClient": OpenAIClient,
-    "OpenRouterClient": OpenRouterClient,
-    "OllamaClient": OllamaClient,
-    "BedrockClient": BedrockClient,
-    "AzureAIClient": AzureAIClient
+    "OpenAIClient": OpenAIClient
 }
 
 def replace_env_placeholders(config: Union[Dict[str, Any], List[Any], str, Any]) -> Union[Dict[str, Any], List[Any], str, Any]:
@@ -143,17 +116,8 @@ def load_generator_config():
             if provider_config.get("client_class") in CLIENT_CLASSES:
                 provider_config["model_client"] = CLIENT_CLASSES[provider_config["client_class"]]
             # Fall back to default mapping based on provider_id
-            elif provider_id in ["google", "openai", "openrouter", "ollama", "bedrock", "azure", "vllm"]:
-                default_map = {
-                    "google": GoogleGenAIClient,
-                    "openai": OpenAIClient,
-                    "openrouter": OpenRouterClient,
-                    "ollama": OllamaClient,
-                    "bedrock": BedrockClient,
-                    "azure": AzureAIClient,
-                    "vllm": OpenAIClient # VLLM uses an OpenAI-compatible client
-                }
-                provider_config["model_client"] = default_map[provider_id]
+            elif provider_id == "vllm":
+                provider_config["model_client"] = OpenAIClient
             else:
                 logger.warning(f"Unknown provider or client class: {provider_id}")
 
@@ -164,11 +128,10 @@ def load_embedder_config():
     embedder_config = load_json_config("embedder.json")
 
     # Process client classes
-    for key in ["embedder", "embedder_ollama"]:
-        if key in embedder_config and "client_class" in embedder_config[key]:
-            class_name = embedder_config[key]["client_class"]
-            if class_name in CLIENT_CLASSES:
-                embedder_config[key]["model_client"] = CLIENT_CLASSES[class_name]
+    if "embedder" in embedder_config and "client_class" in embedder_config["embedder"]:
+        class_name = embedder_config["embedder"]["client_class"]
+        if class_name in CLIENT_CLASSES:
+            embedder_config["embedder"]["model_client"] = CLIENT_CLASSES[class_name]
 
     return embedder_config
 
@@ -184,22 +147,12 @@ def get_embedder_config():
 def is_ollama_embedder():
     """
     Check if the current embedder configuration uses OllamaClient.
+    Always returns False since we only support vLLM now.
 
     Returns:
-        bool: True if using OllamaClient, False otherwise
+        bool: Always False
     """
-    embedder_config = get_embedder_config()
-    if not embedder_config:
-        return False
-
-    # Check if model_client is OllamaClient
-    model_client = embedder_config.get("model_client")
-    if model_client:
-        return model_client.__name__ == "OllamaClient"
-
-    # Fallback: check client_class string
-    client_class = embedder_config.get("client_class", "")
-    return client_class == "OllamaClient"
+    return False
 
 # Load repository and file filters configuration
 def load_repo_config():
@@ -258,12 +211,12 @@ repo_config = load_repo_config()
 
 # Update configuration
 if generator_config:
-    configs["default_provider"] = generator_config.get("default_provider", "google")
+    configs["default_provider"] = generator_config.get("default_provider", "vllm")
     configs["providers"] = generator_config.get("providers", {})
 
 # Update embedder configuration
 if embedder_config:
-    for key in ["embedder", "embedder_ollama", "retriever", "text_splitter"]:
+    for key in ["embedder", "retriever", "text_splitter"]:
         if key in embedder_config:
             configs[key] = embedder_config[key]
 
@@ -339,12 +292,12 @@ def set_embedding_model(embedding_model):
     
     logger.info(f"Updated embedding model configuration to: {embedding_model} ({embedding_config['dimensions']}D)")
 
-def get_model_config(provider="google", model=None):
+def get_model_config(provider="vllm", model=None):
     """
     Get configuration for the specified provider and model
 
     Parameters:
-        provider (str): Model provider ('google', 'openai', 'openrouter', 'ollama', 'bedrock', 'vllm')
+        provider (str): Model provider ('vllm' only)
         model (str): Model name, or None to use default model
 
     Returns:
@@ -400,19 +353,14 @@ def get_model_config(provider="google", model=None):
     # Standardize model_kwargs, preparing for the API call
     model_kwargs = {"model": model}
     
-    if provider == "ollama":
-        # For Ollama, parameters are nested under 'options'
-        ollama_options = model_params.get("options", {})
-        model_kwargs.update(ollama_options)
-    else:
-        # For other providers, copy parameters directly
-        # We are especially interested in 'max_completion_tokens' which will be renamed to 'max_tokens' for the API call
-        params_to_copy = ["temperature", "top_p", "top_k", "max_completion_tokens"]
-        for param in params_to_copy:
-            if param in model_params:
-                # Rename 'max_completion_tokens' to 'max_tokens' for the actual API call
-                api_param = "max_tokens" if param == "max_completion_tokens" else param
-                model_kwargs[api_param] = model_params[param]
+    # For vLLM, copy parameters directly
+    # We are especially interested in 'max_completion_tokens' which will be renamed to 'max_tokens' for the API call
+    params_to_copy = ["temperature", "top_p", "top_k", "max_completion_tokens"]
+    for param in params_to_copy:
+        if param in model_params:
+            # Rename 'max_completion_tokens' to 'max_tokens' for the actual API call
+            api_param = "max_tokens" if param == "max_completion_tokens" else param
+            model_kwargs[api_param] = model_params[param]
 
     result["model_kwargs"] = model_kwargs
     return result
@@ -430,11 +378,9 @@ def get_context_window_for_model(provider: str, model: str) -> int:
             default_model_key = provider_config.get("default_model")
             model_config = provider_config.get("models", {}).get(default_model_key, {})
 
-        # Check for 'context_window' or ollama's 'num_ctx'
+        # Check for 'context_window'
         if 'context_window' in model_config:
             return model_config['context_window']
-        if 'options' in model_config and 'num_ctx' in model_config['options']:
-            return model_config['options']['num_ctx']
             
         # Fallback to a default value if not specified in any config
         default_context_window = 8192 # A more conservative default

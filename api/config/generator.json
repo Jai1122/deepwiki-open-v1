@@ -67,59 +67,6 @@
           "max_completion_tokens": 8000
         }
       }
-    },
-    "google": {
-      "default_model": "gemini-2.0-flash",
-      "supportsCustomModel": true,
-      "models": {
-        "gemini-2.0-flash": { "temperature": 0.7, "top_p": 0.8, "top_k": 20, "context_window": 8192, "max_completion_tokens": 2048 },
-        "gemini-2.5-flash-preview-05-20": { "temperature": 0.7, "top_p": 0.8, "top_k": 20, "context_window": 8192, "max_completion_tokens": 2048 },
-        "gemini-2.5-pro-preview-03-25": { "temperature": 0.7, "top_p": 0.8, "top_k": 20, "context_window": 8192, "max_completion_tokens": 2048 }
-      }
-    },
-    "openai": {
-      "default_model": "gpt-4o",
-      "supportsCustomModel": true,
-      "models": {
-        "/app/models/Qwen3-32B": { "temperature": 0.7, "top_p": 0.8, "context_window": 40960, "max_completion_tokens": 8000 },
-        "gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 },
-        "gpt-4.1": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 },
-        "o1": { "temperature": 1.0, "context_window": 128000, "max_completion_tokens": 8192 },
-        "o3": { "temperature": 1.0, "context_window": 128000, "max_completion_tokens": 8192 },
-        "o4-mini": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 }
-      }
-    },
-    "openrouter": {
-      "default_model": "openai/gpt-4o",
-      "supportsCustomModel": true,
-      "models": {
-        "openai/gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 },
-        "anthropic/claude-3.5-sonnet": { "temperature": 0.7, "top_p": 0.8, "context_window": 200000, "max_completion_tokens": 8192 }
-      }
-    },
-    "ollama": {
-      "default_model": "qwen3:1.7b",
-      "supportsCustomModel": true,
-      "models": {
-        "qwen3:1.7b": { "options": { "temperature": 0.7, "top_p": 0.8, "num_ctx": 32000 } },
-        "llama3:8b": { "options": { "temperature": 0.7, "top_p": 0.8, "num_ctx": 8000 } }
-      }
-    },
-    "bedrock": {
-      "client_class": "BedrockClient",
-      "default_model": "anthropic.claude-3-sonnet-20240229-v1:0",
-      "supportsCustomModel": true,
-      "models": {
-        "anthropic.claude-3-sonnet-20240229-v1:0": { "temperature": 0.7, "top_p": 0.8, "context_window": 200000, "max_completion_tokens": 8192 }
-      }
-    },
-    "azure": {
-      "client_class": "AzureAIClient",
-      "default_model": "gpt-4o",
-      "supportsCustomModel": true,
-      "models": {
-        "gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 }
-      }
     }
   }
 }

@@ -16,9 +16,8 @@
 - **Easy Navigation**: Simple, intuitive interface to explore the wiki
 - **Ask Feature**: Chat with your repository using RAG-powered AI to get accurate answers
 - **DeepResearch**: Multi-turn research process that thoroughly investigates complex topics
-- **Multiple Model Providers**: Support for Google Gemini, OpenAI, OpenRouter, vLLM, Azure OpenAI, and local Ollama models
+- **vLLM Integration**: Full support for vLLM deployments with configurable endpoints
 - **Large Repository Support**: Intelligent processing of large codebases with smart chunking and summarization
-- **vLLM Integration**: Full support for secured, remote vLLM deployments with configurable endpoints
 - **Enhanced Stability**: Robust error handling, timeout protection, and comprehensive validation for reliable operation
 - **Real-time Processing**: WebSocket-based streaming with progress updates and comprehensive error reporting
 - **Streamlined Experience**: Clean, focused interface optimized for documentation generation
@@ -32,50 +31,33 @@
 git clone https://github.com/AsyncFuncAI/deepwiki-open.git
 cd deepwiki-open
 
-# Create a .env file with your API keys
-# For vLLM deployment (recommended for large repositories):
+# Create a .env file with your vLLM API keys
 echo "VLLM_API_KEY=your_vllm_api_key" > .env
 echo "VLLM_API_BASE_URL=https://myvllm.com/qwen3-14b/v1" >> .env
-echo "VLLM_MODEL_NAME=/app/models/Qwen3-14B-FP8" >> .env
+echo "VLLM_MODEL_NAME=/app/models/Qwen2.5-VL-7B-Instruct" >> .env
 echo "OPENAI_API_KEY=your_embedding_api_key" >> .env
 echo "OPENAI_API_BASE_URL=https://myvllm.com/jina-embeddings-v3/v1" >> .env
-
-# Or use other providers:
-# echo "GOOGLE_API_KEY=your_google_api_key" > .env
-# echo "OPENAI_API_KEY=your_openai_api_key" >> .env
-# echo "OPENROUTER_API_KEY=your_openrouter_api_key" >> .env
-# echo "OLLAMA_HOST=your_ollama_host" >> .env
-# echo "AZURE_OPENAI_API_KEY=your_azure_openai_api_key" >> .env
-# echo "AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint" >> .env
-# echo "AZURE_OPENAI_VERSION=your_azure_openai_version" >> .env
 # Run with Docker Compose
 docker-compose up
 ```
 
-For detailed instructions on using DeepWiki with Ollama and Docker, see [Ollama Instructions](Ollama-instruction.md).
-
-> 💡 **Where to get these keys:**
-> - Get a Google API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-> - Get an OpenAI API key from [OpenAI Platform](https://platform.openai.com/api-keys)
-> - Get Azure OpenAI credentials from [Azure Portal](https://portal.azure.com/) - create an Azure OpenAI resource and get the API key, endpoint, and API version
+> 💡 **Where to get vLLM API access:**
+> - Set up your own vLLM server with your preferred models
+> - Configure VLLM_API_KEY and VLLM_API_BASE_URL for your deployment
+> - For embedding models, use the same vLLM server with jina-embeddings-v3
 
 ### Option 2: Manual Setup (Recommended)
 
-#### Step 1: Set Up Your API Keys
+#### Step 1: Set Up Your vLLM API Keys
 
-Create a `.env` file in the project root with these keys:
+Create a `.env` file in the project root with your vLLM configuration:
 
 ```
-GOOGLE_API_KEY=your_google_api_key
-OPENAI_API_KEY=your_openai_api_key
-# Optional: Add this if you want to use OpenRouter models
-OPENROUTER_API_KEY=your_openrouter_api_key
-# Optional: Add this if you want to use Azure OpenAI models
-AZURE_OPENAI_API_KEY=your_azure_openai_api_key
-AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint
-AZURE_OPENAI_VERSION=your_azure_openai_version
-# Optional: Add Ollama host if not local. default: http://localhost:11434
-OLLAMA_HOST=your_ollama_host
+VLLM_API_KEY=your_vllm_api_key
+VLLM_API_BASE_URL=https://your-vllm-server.com/qwen-vl-7b/v1
+VLLM_MODEL_NAME=/app/models/Qwen2.5-VL-7B-Instruct
+OPENAI_API_KEY=your_embedding_api_key
+OPENAI_API_BASE_URL=https://your-vllm-server.com/jina-embeddings-v3/v1
 ```
 
 #### Step 2: Start the Backend

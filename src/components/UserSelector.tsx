@@ -110,19 +110,14 @@ export default function UserSelector({
         setModelConfig(modelData);
         setEmbeddingConfig(embeddingData);
 
-        // Initialize provider and model with defaults from API if not already set
-        if (!provider && modelData.defaultProvider) {
-          setProvider(modelData.defaultProvider);
-        }
+        // Always use vLLM provider
+        setProvider('vllm');
 
-        // Initialize model with the default model for the provider
-        if (!model || !modelData.providers.find((p: Provider) => p.id === provider)?.models.find((m: Model) => m.id === model)) {
-          const selectedProvider = modelData.providers.find((p: Provider) => p.id === (provider || modelData.defaultProvider));
-          if (selectedProvider && selectedProvider.models.length > 0) {
-            const defaultModel = selectedProvider.models.find((m: Model) => m.id === selectedProvider.models[0].id);
-            if (defaultModel) {
-              setModel(defaultModel.id);
-            }
+        // Initialize model with the default model for vLLM provider
+        const vllmProvider = modelData.providers.find((p: Provider) => p.id === 'vllm');
+        if (!model || !vllmProvider?.models.find((m: Model) => m.id === model)) {
+          if (vllmProvider && vllmProvider.models.length > 0) {
+            setModel(vllmProvider.models[0].id);
           }
         }
 
@@ -211,24 +206,12 @@ export default function UserSelector({
   return (
     <div className="space-y-4">
       <div className="card-confluence p-4">
-        {/* Provider Selection */}
+        {/* vLLM Provider (No Selection Required) */}
         <div className="space-y-4">
           <div>
-            <label htmlFor="provider-select" className="block text-sm font-medium text-[var(--foreground)] mb-2">
-              {t.form?.provider || 'AI Provider'}
-            </label>
-            <select
-              id="provider-select"
-              value={provider}
-              onChange={(e) => handleProviderChange(e.target.value)}
-              className="select-confluence block w-full"
-            >
-              {modelConfig.providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <div className="text-sm text-[var(--foreground-muted)] mb-2">
+              Using vLLM Provider
+            </div>
           </div>
 
           {/* Model Selection */}
@@ -247,7 +230,7 @@ export default function UserSelector({
                   isCustomModel ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
-                {getModelsForProvider(provider).map((m) => (
+                {getModelsForProvider('vllm').map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
@@ -255,7 +238,7 @@ export default function UserSelector({
               </select>
 
               {/* Custom Model Option */}
-              {getSupportsCustomModel(provider) && (
+              {getSupportsCustomModel('vllm') && (
                 <div className="space-y-2">
                   <label className="flex items-center">
                     <input
