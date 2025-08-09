@@ -82,19 +82,19 @@
       "supportsCustomModel": true,
       "models": {
         "/app/models/Qwen3-32B": { "temperature": 0.7, "top_p": 0.8, "context_window": 40960, "max_completion_tokens": 8000 },
-        "gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 4096 },
-        "gpt-4.1": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 4096 },
-        "o1": { "temperature": 1.0, "context_window": 128000, "max_completion_tokens": 4096 },
-        "o3": { "temperature": 1.0, "context_window": 128000, "max_completion_tokens": 4096 },
-        "o4-mini": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 4096 }
+        "gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 },
+        "gpt-4.1": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 },
+        "o1": { "temperature": 1.0, "context_window": 128000, "max_completion_tokens": 8192 },
+        "o3": { "temperature": 1.0, "context_window": 128000, "max_completion_tokens": 8192 },
+        "o4-mini": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 }
       }
     },
     "openrouter": {
       "default_model": "openai/gpt-4o",
       "supportsCustomModel": true,
       "models": {
-        "openai/gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 4096 },
-        "anthropic/claude-3.5-sonnet": { "temperature": 0.7, "top_p": 0.8, "context_window": 200000, "max_completion_tokens": 4096 }
+        "openai/gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 },
+        "anthropic/claude-3.5-sonnet": { "temperature": 0.7, "top_p": 0.8, "context_window": 200000, "max_completion_tokens": 8192 }
       }
     },
     "ollama": {
@@ -110,7 +110,7 @@
       "default_model": "anthropic.claude-3-sonnet-20240229-v1:0",
       "supportsCustomModel": true,
       "models": {
-        "anthropic.claude-3-sonnet-20240229-v1:0": { "temperature": 0.7, "top_p": 0.8, "context_window": 200000, "max_completion_tokens": 4096 }
+        "anthropic.claude-3-sonnet-20240229-v1:0": { "temperature": 0.7, "top_p": 0.8, "context_window": 200000, "max_completion_tokens": 8192 }
       }
     },
     "azure": {
@@ -118,7 +118,7 @@
       "default_model": "gpt-4o",
       "supportsCustomModel": true,
       "models": {
-        "gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 4096 }
+        "gpt-4o": { "temperature": 0.7, "top_p": 0.8, "context_window": 128000, "max_completion_tokens": 8192 }
       }
     }
   }

@@ -101,8 +101,14 @@ def is_xml_complete(xml_text: str) -> bool:
     close_count = text.count('>')
     if open_count > 0 and close_count > 0:
         imbalance_ratio = abs(open_count - close_count) / max(open_count, close_count)
-        # For longer responses, be even more lenient
-        threshold = 0.5 if len(text) > 10000 else 0.4  # Increased thresholds
+        # For longer responses, be even more lenient - especially for wiki structure generation
+        if len(text) > 20000:  # Very large responses (likely wiki structures)
+            threshold = 0.7  # Very lenient for large structures
+        elif len(text) > 10000:
+            threshold = 0.6  # More lenient for medium responses
+        else:
+            threshold = 0.5  # Standard threshold for smaller responses
+            
         if imbalance_ratio > threshold:
             logger.warning(f"XML incomplete: severe bracket imbalance (open: {open_count}, close: {close_count}, ratio: {imbalance_ratio:.2f})")
             return False
@@ -209,6 +215,15 @@ async def handle_streaming_response(response_stream, validate_xml=False):
                     # Check if it contains meaningful XML content
                     if response_buffer.count('<') > 10 and response_buffer.count('>') > 10:
                         logger.info(f"Long response ({len(response_buffer)} chars) with XML content - allowing despite validation issues")
+                        should_allow = True
+                
+                # Special handling for wiki structure responses that might be truncated but still useful
+                elif '<wiki_structure>' in response_buffer and len(response_buffer) > 15000:
+                    # Check if we have substantial structure content even if not perfectly closed
+                    section_count = response_buffer.count('<section')
+                    subsection_count = response_buffer.count('<subsection')
+                    if section_count > 0 or subsection_count > 0:
+                        logger.info(f"Large wiki structure response ({len(response_buffer)} chars) with {section_count} sections, {subsection_count} subsections - allowing")
                         should_allow = True
                 
                 # Allow if response ends with proper XML closing pattern
@@ -652,6 +667,25 @@ async def stream_response(
         # For structure queries, we don't need RAG content, just pass through the query
         prompt = query
         logger.info(f"📋 Structure query prompt length: {len(prompt)} characters")
+        
+        # For wiki structure generation, we need more tokens to generate complete XML
+        # Increase max_completion_tokens for structure queries to prevent truncation
+        original_max_tokens = max_completion_tokens
+        
+        # Calculate dynamic token limit based on content complexity
+        file_tree_size = len([line for line in query.split('\n') if line.strip() and not line.startswith('<')])
+        estimated_structure_tokens = file_tree_size * 15  # Rough estimate: 15 tokens per file/folder
+        
+        # Set minimum safe token limit for structure generation
+        min_structure_tokens = max(12000, estimated_structure_tokens)
+        
+        # Use higher limit for structure queries, but respect context window
+        structure_max_tokens = min(min_structure_tokens, context_window - count_tokens(prompt) - 1000)
+        
+        if structure_max_tokens > max_completion_tokens:
+            logger.info(f"🔧 Increasing completion tokens for structure query: {max_completion_tokens} → {structure_max_tokens}")
+            max_completion_tokens = structure_max_tokens
+            model_kwargs["max_tokens"] = structure_max_tokens
         
         client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
         model_kwargs["stream"] = True
