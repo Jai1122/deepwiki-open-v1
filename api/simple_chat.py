@@ -4,36 +4,19 @@ from typing import List, Optional
 from urllib.parse import unquote
 
 from adalflow.core.types import ModelType
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .config import get_model_config, configs, get_context_window_for_model, get_max_tokens_for_model
 from .utils import count_tokens, get_file_content, truncate_prompt_to_fit
-from api.rag import RAG
+from .rag import RAG
 
 # Configure logging
-from api.logging_config import setup_logging
+from .logging_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
-
-
-# Initialize FastAPI app
-app = FastAPI(
-    title="Simple Chat API",
-    description="Simplified API for streaming chat completions"
-)
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
 
 # Models for the API
 class ChatMessage(BaseModel):

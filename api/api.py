@@ -599,12 +599,16 @@ def generate_json_export(repo_url: str, pages: List[WikiPage]) -> str:
     # Convert to JSON string with pretty formatting
     return json.dumps(export_data, indent=2)
 
-# Import the simplified chat implementation
-from .simple_chat import chat_completions_stream
+# Import WebSocket handler (no circular import issue)
 from .websocket_wiki import handle_websocket_chat
 
-# Add the chat_completions_stream endpoint to the main app
-app.add_api_route("/chat/completions/stream", chat_completions_stream, methods=["POST"])
+# Add the chat completions endpoint with lazy import to avoid circular import
+def _register_chat_endpoint():
+    from .simple_chat import chat_completions_stream
+    app.add_api_route("/chat/completions/stream", chat_completions_stream, methods=["POST"])
+
+# Register the chat endpoint
+_register_chat_endpoint()
 
 # Add the WebSocket endpoint
 app.add_websocket_route("/ws/chat", handle_websocket_chat)
