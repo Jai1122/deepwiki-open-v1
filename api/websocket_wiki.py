@@ -388,13 +388,9 @@ async def handle_websocket_chat(websocket: WebSocket):
             # Validate and set default model if empty
             model = request.model.strip() if request.model else None
             if not model:
-                # Set default model based on provider
+                # Set default model for vLLM provider
                 if provider == "vllm":
-                    model = "/app/models/Qwen3-32B"
-                elif provider == "google":
-                    model = "gemini-2.0-flash"
-                elif provider == "openai":
-                    model = "gpt-4"
+                    model = "/app/models/Qwen2.5-VL-7B-Instruct"
                 else:
                     model = "/app/models/Qwen3-32B"  # fallback
                 logger.warning(f"Empty model received, defaulting to: {model}")
@@ -404,13 +400,12 @@ async def handle_websocket_chat(websocket: WebSocket):
             # Send status update that we're starting processing
             await websocket.send_text(json.dumps({"status": "processing", "message": f"Starting processing with {provider} {model}"}))
             
-            # Try multiple providers with fallback
+            # Only vLLM provider is supported
             fallback_providers = [
                 (provider, model),  # Try requested first
-                ("google", "gemini-2.0-flash"),
-                ("vllm", "/app/models/Qwen3-32B"), 
-                ("openai", "gpt-4o"),
-                ("azure", "gpt-4o")
+                ("vllm", "/app/models/Qwen2.5-VL-7B-Instruct"),
+                ("vllm", "/app/models/Llama-3.3-70B-Instruct"),
+                ("vllm", "/app/models/Qwen3-32B")
             ]
             
             rag_instance = None

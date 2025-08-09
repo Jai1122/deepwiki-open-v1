@@ -5,22 +5,15 @@ from api.config import configs, resolve_embedding_config
 
 logger = logging.getLogger(__name__)
 
-def get_embedder(is_ollama_embedder: bool = False) -> adal.Embedder:
+def get_embedder() -> adal.Embedder:
     """
-    Initializes and returns the appropriate embedder based on the configuration.
-
-    Args:
-        is_ollama_embedder (bool): Flag to determine if the Ollama embedder should be used.
+    Initializes and returns the vLLM embedder based on the configuration.
 
     Returns:
         adal.Embedder: The configured embedder instance.
     """
-    if is_ollama_embedder:
-        embedder_key = "embedder_ollama"
-        logger.info("Using Ollama embedder configuration.")
-    else:
-        embedder_key = "embedder"
-        logger.info("Using default embedder configuration.")
+    embedder_key = "embedder"
+    logger.info("Using vLLM embedder configuration.")
 
     embedder_config = configs.get(embedder_key)
     if not embedder_config:

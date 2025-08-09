@@ -117,7 +117,7 @@ def is_text_file(file_path: str) -> bool:
         logger.warning(f"Error determining if {file_path} is text file: {e}")
         return False  # When in doubt, exclude to prevent binary content
 
-def count_tokens(text: str, is_ollama_embedder: bool = False) -> int:
+def count_tokens(text: str) -> int:
     """
     Counts the number of tokens in a given text.
     It uses `tiktoken` for accurate token counting and falls back to a
@@ -336,7 +336,6 @@ def truncate_prompt_to_fit(
     file_content: str,
     context_text: str,
     query: str,
-    is_ollama: bool = False
 ) -> (str, str):
     """
     Truncates file_content and context_text to ensure the total prompt
@@ -344,9 +343,9 @@ def truncate_prompt_to_fit(
     Enhanced with smart chunking and summarization.
     """
     # Calculate the token counts for fixed parts of the prompt
-    system_prompt_tokens = count_tokens(system_prompt, is_ollama)
-    history_tokens = count_tokens(conversation_history, is_ollama)
-    query_tokens = count_tokens(query, is_ollama)
+    system_prompt_tokens = count_tokens(system_prompt)
+    history_tokens = count_tokens(conversation_history)
+    query_tokens = count_tokens(query)
 
     # Calculate the available token budget for the variable parts (file and RAG context)
     # Add a safety buffer (200 tokens) to account for token counting variations and ensure complete responses
@@ -359,8 +358,8 @@ def truncate_prompt_to_fit(
         return "", ""
 
     # Get token counts for the dynamic parts
-    file_content_tokens = count_tokens(file_content, is_ollama)
-    context_text_tokens = count_tokens(context_text, is_ollama)
+    file_content_tokens = count_tokens(file_content)
+    context_text_tokens = count_tokens(context_text)
     total_dynamic_tokens = file_content_tokens + context_text_tokens
 
     # If the total fits, no truncation is needed

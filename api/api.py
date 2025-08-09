@@ -7,7 +7,6 @@ from typing import List, Optional, Dict, Any, Literal
 import json
 from datetime import datetime
 from pydantic import BaseModel, Field
-import google.generativeai as genai
 import asyncio
 
 # Configure logging
@@ -304,15 +303,15 @@ async def get_model_config():
         return ModelConfig(
             providers=[
                 Provider(
-                    id="google",
-                    name="Google",
+                    id="vllm",
+                    name="vLLM",
                     supportsCustomModel=True,
                     models=[
-                        Model(id="gemini-2.0-flash", name="Gemini 2.0 Flash")
+                        Model(id="/app/models/Qwen2.5-VL-7B-Instruct", name="Qwen2.5 VL 7B Instruct")
                     ]
                 )
             ],
-            defaultProvider="google"
+            defaultProvider="vllm"
         )
 
 @app.post("/export/wiki")

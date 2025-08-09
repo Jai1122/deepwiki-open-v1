@@ -57,14 +57,12 @@ class RAGAnswer(adal.DataClass):
     __output_fields__ = ["rationale", "answer"]
 
 class RAG(adal.Component):
-    def __init__(self, provider="google", model=None, use_s3: bool = False):
+    def __init__(self, provider="vllm", model=None, use_s3: bool = False):
         super().__init__()
         self.provider = provider
         self.model = model
-        from .config import is_ollama_embedder
-        self.is_ollama_embedder = is_ollama_embedder()
         self.memory = Memory()
-        self.embedder = get_embedder(self.is_ollama_embedder)
+        self.embedder = get_embedder()
         self.db_manager = DatabaseManager()
         self.transformed_docs: List[Document] = []
         self.retriever: Optional[FAISSRetriever] = None
@@ -104,7 +102,7 @@ class RAG(adal.Component):
         """
         try:
             self.transformed_docs = self.db_manager.prepare_database(
-                repo_url_or_path, type, access_token, self.is_ollama_embedder
+                repo_url_or_path, type, access_token
             )
         except Exception as e:
             logger.error(f"Failed to prepare database: {e}", exc_info=True)

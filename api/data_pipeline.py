@@ -12,7 +12,6 @@ import glob
 import fnmatch
 from adalflow.utils import get_adalflow_default_root_path
 from .config import configs, DEFAULT_EXCLUDED_DIRS, DEFAULT_EXCLUDED_FILES
-from .ollama_patch import OllamaDocumentProcessor
 from urllib.parse import urlparse, urlunparse, quote
 import requests
 from requests.exceptions import RequestException
@@ -169,7 +168,6 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
 
 def read_all_documents(
     path: str,
-    is_ollama_embedder: bool = None,
     max_total_tokens: int = 1000000,  # Max tokens to process across all files
     prioritize_files: bool = True      # Whether to prioritize important files
 ) -> List[Document]:
@@ -598,23 +596,19 @@ def read_all_documents(
 
 
 
-def prepare_data_pipeline(is_ollama_embedder: bool = None):
+def prepare_data_pipeline():
     """
     Prepares the data processing pipeline with an embedder.
     """
-    embedder = get_embedder(is_ollama_embedder)
+    embedder = get_embedder()
     
-    if is_ollama_embedder:
-        # Use the patched processor for Ollama
-        return OllamaDocumentProcessor(embedder=embedder)
-    else:
-        # Standard pipeline for other embedders
-        return ToEmbeddings(
-            embedder=embedder,
-            batch_size=configs.get("embedder", {}).get("batch_size", 10)
-        )
+    # Standard pipeline for vLLM embedder
+    return ToEmbeddings(
+        embedder=embedder,
+        batch_size=configs.get("embedder", {}).get("batch_size", 10)
+    )
 
-def transform_documents_and_save_to_db(documents: List[Document], db_path: str, is_ollama_embedder: bool = None) -> List[Document]:
+def transform_documents_and_save_to_db(documents: List[Document], db_path: str) -> List[Document]:
     """
     Transforms documents using the data pipeline and saves them to a pickle file.
     """
@@ -622,7 +616,7 @@ def transform_documents_and_save_to_db(documents: List[Document], db_path: str, 
         logger.warning("No documents to process.")
         return []
 
-    pipeline = prepare_data_pipeline(is_ollama_embedder)
+    pipeline = prepare_data_pipeline()
     transformed_docs = pipeline(documents)
 
     if not transformed_docs:
@@ -644,7 +638,7 @@ class DatabaseManager:
     def __init__(self):
         self.db_docs: Optional[List[Document]] = None
 
-    def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None, is_ollama_embedder: bool = None,
+    def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
                        max_total_tokens: int = 1000000, prioritize_files: bool = True) -> List[Document]:
         """
         Main method to prepare the database. It handles cloning, loading from cache,
@@ -689,14 +683,14 @@ class DatabaseManager:
             download_repo(repo_url_or_path, repo_path, type, access_token)
 
         documents = read_all_documents(
-            repo_path, is_ollama_embedder, max_total_tokens, prioritize_files
+            repo_path, max_total_tokens, prioritize_files
         )
         
         if not documents:
             logger.warning("No documents were read from the repository.")
             return []
 
-        self.db_docs = transform_documents_and_save_to_db(documents, db_path, is_ollama_embedder)
+        self.db_docs = transform_documents_and_save_to_db(documents, db_path)
         
         return self.db_docs
     
