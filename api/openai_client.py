@@ -96,18 +96,29 @@ class OpenAIClient:
             model_type: Type of model (used for determining endpoint)
         
         Returns:
-            OpenAI API response
+            OpenAI API response (Stream object if stream=True, otherwise response object)
         """
         if api_kwargs is None:
             api_kwargs = {}
         
+        # Check if this is a streaming request
+        is_streaming = api_kwargs.get("stream", False)
+        
         # Determine which endpoint to call based on the presence of messages or input
         if "messages" in api_kwargs:
             # Chat completions
-            return await self.client.chat.completions.create(**api_kwargs)
+            if is_streaming:
+                # For streaming, return the stream object directly (don't await it)
+                return self.client.chat.completions.create(**api_kwargs)
+            else:
+                # For non-streaming, await the response
+                return await self.client.chat.completions.create(**api_kwargs)
         elif "input" in api_kwargs:
-            # Embeddings
+            # Embeddings (embeddings don't support streaming)
             return await self.client.embeddings.create(**api_kwargs)
         else:
             # Default to chat completions
-            return await self.client.chat.completions.create(**api_kwargs)
+            if is_streaming:
+                return self.client.chat.completions.create(**api_kwargs)
+            else:
+                return await self.client.chat.completions.create(**api_kwargs)
