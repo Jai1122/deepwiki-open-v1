@@ -7,7 +7,11 @@ from typing import List, Union, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-from .openai_client import OpenAIClient
+try:
+    from .openai_client import OpenAIClient
+except ImportError:
+    # Fallback for standalone execution
+    from openai_client import OpenAIClient
 
 # Get API keys from environment variables
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
