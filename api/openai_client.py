@@ -132,18 +132,42 @@ class AsyncStreamWrapper:
     def __init__(self, stream):
         self.stream = stream
         self._is_async = hasattr(stream, '__aiter__')
+        self._exhausted = False
     
     def __aiter__(self):
         return self
     
     async def __anext__(self):
+        if self._exhausted:
+            raise StopAsyncIteration
+            
         try:
             if self._is_async:
                 # Stream is already async
                 return await self.stream.__anext__()
             else:
-                # Stream is sync, wrap with asyncio to avoid blocking
+                # Stream is sync, need to handle StopIteration properly
                 import asyncio
-                return await asyncio.get_event_loop().run_in_executor(None, next, self.stream)
-        except (StopIteration, StopAsyncIteration):
-            raise StopAsyncIteration
+                
+                def _safe_next():
+                    """Safely get next item or return sentinel"""
+                    try:
+                        return next(self.stream)
+                    except StopIteration:
+                        return StopIteration  # Return as sentinel, not raise
+                
+                result = await asyncio.get_event_loop().run_in_executor(None, _safe_next)
+                
+                if result is StopIteration:
+                    self._exhausted = True
+                    raise StopAsyncIteration
+                    
+                return result
+                
+        except StopAsyncIteration:
+            self._exhausted = True
+            raise
+        except Exception as e:
+            # Handle any other exceptions
+            self._exhausted = True
+            raise StopAsyncIteration from e
