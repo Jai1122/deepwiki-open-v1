@@ -8,7 +8,6 @@ from adalflow.core.types import Document
 
 from .config import configs
 from .data_pipeline import DatabaseManager
-from .tools.embedder import get_embedder
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +61,18 @@ class RAG(adal.Component):
         self.provider = provider
         self.model = model
         self.memory = Memory()
-        self.embedder = get_embedder()
+        self._embedder = None  # Lazy loading to avoid circular imports
         self.db_manager = DatabaseManager()
         self.transformed_docs: List[Document] = []
         self.retriever: Optional[FAISSRetriever] = None
+
+    @property
+    def embedder(self):
+        """Lazy loading of embedder to avoid circular import issues"""
+        if self._embedder is None:
+            from .tools.embedder import get_embedder
+            self._embedder = get_embedder()
+        return self._embedder
 
     def _validate_and_filter_embeddings(self, documents: List[Document]) -> List[Document]:
         """
@@ -134,10 +141,16 @@ class RAG(adal.Component):
             document_map_func=lambda doc: doc.vector,
         )
 
-    def call(self, query: str) -> Tuple[List, List]:
+    def call(self, query: str, language: str = None) -> Tuple[List, List]:
         """
         Performs a retrieval call.
-        Returns a tuple containing the list of retrieved documents and an empty list.
+        
+        Args:
+            query (str): The search query
+            language (str, optional): Language parameter (currently not used but accepted for compatibility)
+        
+        Returns:
+            tuple: A tuple containing the list of retrieved documents and an empty list.
         """
         if not self.retriever:
             logger.warning("Retriever is not prepared. Returning empty result.")
