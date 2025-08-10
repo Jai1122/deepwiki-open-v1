@@ -39,7 +39,6 @@ class ChatCompletionRequest(BaseModel):
 
     language: Optional[str] = Field("en", description="Language for content generation (English only)")
 
-@app.post("/chat/completions/stream")
 async def chat_completions_stream(request: ChatCompletionRequest):
     """Stream a chat completion response."""
     try:
@@ -130,7 +129,4 @@ async def chat_completions_stream(request: ChatCompletionRequest):
         logger.error(f"Error in chat completion stream: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/")
-async def root():
-    """Root endpoint to check if the API is running"""
-    return {"status": "API is running", "message": "Navigate to /docs for API documentation"}
+# Root endpoint is handled by main api.py

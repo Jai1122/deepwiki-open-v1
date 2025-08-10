@@ -275,6 +275,7 @@ def resolve_embedding_config(embedding_model):
     Returns:
         dict: Configuration with api_url, dimensions, model name
     """
+    embedder_config = get_embedder_config()
     embedding_models = embedder_config.get("embedding_models", {})
     model_config = embedding_models.get(embedding_model, {})
     

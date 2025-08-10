@@ -141,7 +141,7 @@ class ModelConfig(BaseModel):
 class AuthorizationConfig(BaseModel):
     code: str = Field(..., description="Authorization code")
 
-from .config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE, embedder_config
+from .config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE, get_embedder_config, get_model_config, set_embedding_model
 
 @app.get("/lang/config")
 async def get_lang_config():
@@ -184,13 +184,11 @@ async def update_model_selection(request: dict):
         
         # Update provider model selection
         if provider and model:
-            from .config import get_model_config
             # This will sync VLLM_MODEL_NAME if provider is vllm
             get_model_config(provider, model)
         
         # Update embedding model selection  
         if embedding_model:
-            from .config import set_embedding_model
             set_embedding_model(embedding_model)
         
         return {
@@ -220,6 +218,7 @@ async def get_embedding_models():
         logger.info("Fetching embedding models configuration")
         
         # Get embedding models from embedder config
+        embedder_config = get_embedder_config()
         embedding_models = embedder_config.get("embedding_models", {})
         default_model = embedder_config.get("default_embedding_model", "/app/models/jina-embeddings-v3")
         
