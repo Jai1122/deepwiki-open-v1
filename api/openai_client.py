@@ -55,3 +55,59 @@ class OpenAIClient:
             input=input,
             **kwargs
         )
+    
+    def convert_inputs_to_api_kwargs(self, input=None, model_kwargs=None, model_type=None):
+        """
+        Convert input and model kwargs to OpenAI API format.
+        
+        Args:
+            input: Input text or messages
+            model_kwargs: Model parameters (model, temperature, max_tokens, etc.)
+            model_type: Type of model (used for compatibility, ignored for OpenAI)
+        
+        Returns:
+            dict: API kwargs formatted for OpenAI API
+        """
+        if model_kwargs is None:
+            model_kwargs = {}
+            
+        api_kwargs = model_kwargs.copy()
+        
+        # Handle different input types
+        if input is not None:
+            if isinstance(input, str):
+                # For chat completions, wrap string in messages format
+                api_kwargs["messages"] = [{"role": "user", "content": input}]
+            elif isinstance(input, list):
+                # Already in messages format
+                api_kwargs["messages"] = input
+            else:
+                # For other input types (embeddings, etc.)
+                api_kwargs["input"] = input
+        
+        return api_kwargs
+    
+    async def acall(self, api_kwargs=None, model_type=None):
+        """
+        Make an async call to the OpenAI API.
+        
+        Args:
+            api_kwargs: API arguments dictionary
+            model_type: Type of model (used for determining endpoint)
+        
+        Returns:
+            OpenAI API response
+        """
+        if api_kwargs is None:
+            api_kwargs = {}
+        
+        # Determine which endpoint to call based on the presence of messages or input
+        if "messages" in api_kwargs:
+            # Chat completions
+            return await self.client.chat.completions.create(**api_kwargs)
+        elif "input" in api_kwargs:
+            # Embeddings
+            return await self.client.embeddings.create(**api_kwargs)
+        else:
+            # Default to chat completions
+            return await self.client.chat.completions.create(**api_kwargs)

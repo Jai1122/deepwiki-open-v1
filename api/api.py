@@ -253,7 +253,7 @@ async def get_embedding_models():
         }
 
 @app.get("/models/config", response_model=ModelConfig)
-async def get_model_config():
+async def get_models_config():
     """
     Get available model providers and their models.
 
