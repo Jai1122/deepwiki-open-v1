@@ -184,13 +184,13 @@ async def update_model_selection(request: dict):
         
         # Update provider model selection
         if provider and model:
-            from api.config import get_model_config
+            from .config import get_model_config
             # This will sync VLLM_MODEL_NAME if provider is vllm
             get_model_config(provider, model)
         
         # Update embedding model selection  
         if embedding_model:
-            from api.config import set_embedding_model
+            from .config import set_embedding_model
             set_embedding_model(embedding_model)
         
         return {

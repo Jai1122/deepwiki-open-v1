@@ -1,7 +1,7 @@
 import adalflow as adal
 import logging
 import os
-from api.config import configs, resolve_embedding_config
+from ..config import configs, resolve_embedding_config
 
 logger = logging.getLogger(__name__)
 
