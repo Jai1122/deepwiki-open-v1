@@ -142,6 +142,7 @@ def get_embedder_config():
     Returns:
         dict: The embedder configuration with model_client resolved
     """
+    _ensure_configs_loaded()
     return configs.get("embedder", {})
 
 def is_ollama_embedder():
@@ -203,28 +204,38 @@ DEFAULT_EXCLUDED_FILES: List[str] = [
 
 # Initialize empty configuration
 configs = {}
+_configs_loaded = False
 
-# Load all configuration files
-generator_config = load_generator_config()
-embedder_config = load_embedder_config()
-repo_config = load_repo_config()
+def _ensure_configs_loaded():
+    """Lazy load configurations to avoid circular import issues"""
+    global configs, _configs_loaded
+    
+    if _configs_loaded:
+        return
+    
+    # Load all configuration files
+    generator_config = load_generator_config()
+    embedder_config = load_embedder_config()
+    repo_config = load_repo_config()
 
-# Update configuration
-if generator_config:
-    configs["default_provider"] = generator_config.get("default_provider", "vllm")
-    configs["providers"] = generator_config.get("providers", {})
+    # Update configuration
+    if generator_config:
+        configs["default_provider"] = generator_config.get("default_provider", "vllm")
+        configs["providers"] = generator_config.get("providers", {})
 
-# Update embedder configuration
-if embedder_config:
-    for key in ["embedder", "retriever", "text_splitter"]:
-        if key in embedder_config:
-            configs[key] = embedder_config[key]
+    # Update embedder configuration
+    if embedder_config:
+        for key in ["embedder", "retriever", "text_splitter"]:
+            if key in embedder_config:
+                configs[key] = embedder_config[key]
 
-# Update repository configuration
-if repo_config:
-    for key in ["file_filters", "repository"]:
-        if key in repo_config:
-            configs[key] = repo_config[key]
+    # Update repository configuration
+    if repo_config:
+        for key in ["file_filters", "repository"]:
+            if key in repo_config:
+                configs[key] = repo_config[key]
+    
+    _configs_loaded = True
 
 # Language configuration removed - English only support
 
@@ -240,6 +251,7 @@ def resolve_dynamic_url(provider, model, config_key):
     Returns:
         str: Resolved value or original value if not dynamic
     """
+    _ensure_configs_loaded()
     if provider != "vllm":
         return None
         
@@ -303,6 +315,8 @@ def get_model_config(provider="vllm", model=None):
     Returns:
         dict: Configuration containing model_client, model and other parameters
     """
+    _ensure_configs_loaded()
+    
     # Sync environment variable for VLLM
     if provider == "vllm" and model:
         os.environ["VLLM_MODEL_NAME"] = model
@@ -369,6 +383,7 @@ def get_context_window_for_model(provider: str, model: str) -> int:
     """
     Get the maximum context window size for a given model from the configuration.
     """
+    _ensure_configs_loaded()
     try:
         provider_config = configs.get("providers", {}).get(provider, {})
         model_config = provider_config.get("models", {}).get(model)
@@ -394,6 +409,7 @@ def validate_provider_config(provider: str) -> bool:
     """
     Validate that a provider has the necessary configuration and credentials.
     """
+    _ensure_configs_loaded()
     if provider not in configs.get("providers", {}):
         logger.error(f"Provider '{provider}' not found in configuration")
         return False
@@ -438,6 +454,7 @@ def get_max_tokens_for_model(provider: str, model: str) -> int:
     """
     Get the maximum completion tokens for a given model from the configuration.
     """
+    _ensure_configs_loaded()
     try:
         provider_config = configs.get("providers", {}).get(provider, {})
         model_config = provider_config.get("models", {}).get(model)
