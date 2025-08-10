@@ -144,10 +144,10 @@ def get_embedder_config():
     Get the current embedder configuration.
 
     Returns:
-        dict: The embedder configuration with model_client resolved
+        dict: The full embedder configuration including embedding_models, embedder, retriever, text_splitter
     """
     _ensure_configs_loaded()
-    return configs.get("embedder", {})
+    return configs.get("embedder_config", {})
 
 def is_ollama_embedder():
     """
@@ -210,16 +210,19 @@ DEFAULT_EXCLUDED_FILES: List[str] = [
 configs = {}
 _configs_loaded = False
 
+# Module-level configuration variables (populated by _ensure_configs_loaded)
+embedder_config = {}
+
 def _ensure_configs_loaded():
     """Lazy load configurations to avoid circular import issues"""
-    global configs, _configs_loaded
+    global configs, _configs_loaded, embedder_config
     
     if _configs_loaded:
         return
     
     # Load all configuration files
     generator_config = load_generator_config()
-    embedder_config = load_embedder_config()
+    loaded_embedder_config = load_embedder_config()
     repo_config = load_repo_config()
 
     # Update configuration
@@ -228,10 +231,17 @@ def _ensure_configs_loaded():
         configs["providers"] = generator_config.get("providers", {})
 
     # Update embedder configuration
-    if embedder_config:
+    if loaded_embedder_config:
+        # Update global module-level variable for direct imports
+        global embedder_config
+        embedder_config = loaded_embedder_config
+        
+        # Store the full embedder config for functions that need access to embedding_models
+        configs["embedder_config"] = loaded_embedder_config
+        # Also store individual sections for backward compatibility
         for key in ["embedder", "retriever", "text_splitter"]:
-            if key in embedder_config:
-                configs[key] = embedder_config[key]
+            if key in loaded_embedder_config:
+                configs[key] = loaded_embedder_config[key]
 
     # Update repository configuration
     if repo_config:
