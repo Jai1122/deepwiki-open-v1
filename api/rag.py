@@ -7,7 +7,6 @@ from adalflow.components.retriever.faiss_retriever import FAISSRetriever
 from adalflow.core.types import Document
 
 from .config import configs
-from .data_pipeline import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class RAG(adal.Component):
         self.model = model
         self.memory = Memory()
         self._embedder = None  # Lazy loading to avoid circular imports
-        self.db_manager = DatabaseManager()
+        self._db_manager = None  # Lazy loading to avoid circular imports
         self.transformed_docs: List[Document] = []
         self.retriever: Optional[FAISSRetriever] = None
 
@@ -73,6 +72,14 @@ class RAG(adal.Component):
             from .tools.embedder import get_embedder
             self._embedder = get_embedder()
         return self._embedder
+
+    @property
+    def db_manager(self):
+        """Lazy loading of database manager to avoid circular import issues"""
+        if self._db_manager is None:
+            from .data_pipeline import DatabaseManager
+            self._db_manager = DatabaseManager()
+        return self._db_manager
 
     def _validate_and_filter_embeddings(self, documents: List[Document]) -> List[Document]:
         """
