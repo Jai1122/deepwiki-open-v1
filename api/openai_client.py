@@ -96,7 +96,7 @@ class OpenAIClient:
             model_type: Type of model (used for determining endpoint)
         
         Returns:
-            OpenAI API response (Stream object if stream=True, otherwise response object)
+            OpenAI API response (AsyncStreamWrapper if stream=True, otherwise response object)
         """
         if api_kwargs is None:
             api_kwargs = {}
@@ -108,8 +108,9 @@ class OpenAIClient:
         if "messages" in api_kwargs:
             # Chat completions
             if is_streaming:
-                # For streaming, return the stream object directly (don't await it)
-                return self.client.chat.completions.create(**api_kwargs)
+                # For streaming, create and return a stream wrapper
+                stream = self.client.chat.completions.create(**api_kwargs)
+                return AsyncStreamWrapper(stream)
             else:
                 # For non-streaming, await the response
                 return await self.client.chat.completions.create(**api_kwargs)
@@ -119,6 +120,30 @@ class OpenAIClient:
         else:
             # Default to chat completions
             if is_streaming:
-                return self.client.chat.completions.create(**api_kwargs)
+                stream = self.client.chat.completions.create(**api_kwargs)
+                return AsyncStreamWrapper(stream)
             else:
                 return await self.client.chat.completions.create(**api_kwargs)
+
+
+class AsyncStreamWrapper:
+    """Wrapper to ensure OpenAI Stream objects work properly with async iteration"""
+    
+    def __init__(self, stream):
+        self.stream = stream
+        self._is_async = hasattr(stream, '__aiter__')
+    
+    def __aiter__(self):
+        return self
+    
+    async def __anext__(self):
+        try:
+            if self._is_async:
+                # Stream is already async
+                return await self.stream.__anext__()
+            else:
+                # Stream is sync, wrap with asyncio to avoid blocking
+                import asyncio
+                return await asyncio.get_event_loop().run_in_executor(None, next, self.stream)
+        except (StopIteration, StopAsyncIteration):
+            raise StopAsyncIteration
