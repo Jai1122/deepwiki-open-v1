@@ -678,21 +678,38 @@ class DatabaseManager:
                 logger.warning(f"Could not unpickle cache file {db_path} due to '{e}'. Regenerating database.")
                 self._clear_cache(db_path)
 
+        # If we reach here, we need to process the repository from scratch
+        logger.info(f"Processing repository: {repo_url_or_path}")
+
         repo_path = repo_url_or_path if type == "local" else os.path.join(get_adalflow_default_root_path(), "repos", repo_name)
-        if type != "local":
-            download_repo(repo_url_or_path, repo_path, type, access_token)
-
-        documents = read_all_documents(
-            repo_path, max_total_tokens, prioritize_files
-        )
         
-        if not documents:
-            logger.warning("No documents were read from the repository.")
-            return []
+        try:
+            if type != "local":
+                download_repo(repo_url_or_path, repo_path, type, access_token)
 
-        self.db_docs = transform_documents_and_save_to_db(documents, db_path)
-        
-        return self.db_docs
+            documents = read_all_documents(
+                repo_path, max_total_tokens, prioritize_files
+            )
+            
+            if not documents:
+                logger.warning("No documents were read from the repository.")
+                self.db_docs = []
+                return self.db_docs
+
+            self.db_docs = transform_documents_and_save_to_db(documents, db_path)
+            
+            if not self.db_docs:
+                logger.error("Failed to transform and save documents.")
+                self.db_docs = []
+                return self.db_docs
+            
+            logger.info(f"Successfully processed repository with {len(self.db_docs)} documents.")
+            return self.db_docs
+            
+        except Exception as e:
+            logger.error(f"Error processing repository {repo_url_or_path}: {str(e)}")
+            self.db_docs = []
+            return self.db_docs
     
     def _validate_cache_dimensions(self, docs: List[Document]) -> bool:
         """
@@ -778,3 +795,19 @@ class DatabaseManager:
         
         # Reset internal state
         self.db_docs = None
+    
+    def get_documents(self) -> Optional[List[Document]]:
+        """
+        Get the current loaded documents.
+        
+        Returns:
+            The list of loaded documents, or None if no documents are loaded.
+        """
+        return self.db_docs
+    
+    def clear_documents(self):
+        """
+        Clear the currently loaded documents from memory.
+        """
+        self.db_docs = None
+        logger.info("Cleared documents from memory.")
