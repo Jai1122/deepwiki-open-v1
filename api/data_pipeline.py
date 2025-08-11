@@ -424,8 +424,8 @@ def read_all_documents(
     files_processed = 0
     
     for file_info in file_candidates:
-        if total_tokens_processed >= max_total_tokens and files_processed >= 100:
-            logger.warning(f"Reached token limit ({max_total_tokens}) or file limit. Stopping processing.")
+        if total_tokens_processed >= max_total_tokens and files_processed >= 200:
+            logger.warning(f"Reached token limit ({max_total_tokens}) or file limit (200). Stopping processing.")
             break
             
         try:
@@ -690,13 +690,15 @@ class DatabaseManager:
         self.db_docs: Optional[List[Document]] = None
 
     def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
-                       max_total_tokens: int = 1000000, prioritize_files: bool = True) -> List[Document]:
+                       max_total_tokens: int = 2000000, prioritize_files: bool = True) -> List[Document]:
         """
         Main method to prepare the database. It handles cloning, loading from cache,
         or processing and saving documents.
         """
         repo_name = os.path.basename(repo_url_or_path.rstrip('/'))
-        db_path = os.path.join(get_adalflow_default_root_path(), "databases", f"{repo_name}.pkl")
+        # Include repository type in cache key to avoid conflicts between different repo types
+        cache_key = f"{repo_name}_{type}"
+        db_path = os.path.join(get_adalflow_default_root_path(), "databases", f"{cache_key}.pkl")
 
         if os.path.exists(db_path):
             logger.info(f"Loading database from existing path: {db_path}")
@@ -720,7 +722,10 @@ class DatabaseManager:
                         if not cache_valid:
                             logger.warning(f"Cache contains inconsistent embedding dimensions. Regenerating database.")
                         if not content_valid:
-                            logger.warning(f"Cache appears to contain insufficient source code content. Regenerating database.")
+                            logger.warning(f"Cache appears to contain insufficient source code content for comprehensive wiki generation. Regenerating database.")
+                            # For remote repos, log additional context to help debugging
+                            if type in ["bitbucket", "github", "gitlab"]:
+                                logger.warning(f"🔍 {type} repository cache regeneration - ensuring comprehensive processing")
                         self._clear_cache(db_path)
                 else:
                     logger.warning(f"Cache file {db_path} contains an outdated format. Regenerating database.")
@@ -737,6 +742,14 @@ class DatabaseManager:
         try:
             if type != "local":
                 download_repo(repo_url_or_path, repo_path, type, access_token)
+                logger.info(f"📥 Successfully downloaded {type} repository to {repo_path}")
+                
+                # For remote repositories, ensure comprehensive processing  
+                # Bitbucket and other remote repos should get the same detailed treatment as local repos
+                if type in ["bitbucket", "github", "gitlab"]:
+                    # Increase processing capacity for remote repositories to ensure comprehensive wikis
+                    max_total_tokens = min(max_total_tokens * 1.5, 3000000)  # Up to 3M tokens for remote repos
+                    logger.info(f"🚀 Enhanced processing for {type} repository: {max_total_tokens} token limit")
 
             documents = read_all_documents(
                 repo_path, max_total_tokens, prioritize_files
@@ -824,8 +837,9 @@ class DatabaseManager:
         logger.info(f"📊 Cache content analysis: {len(source_code_files)} source files, {len(doc_files)} doc files, {len(source_files)} total")
         
         # Cache is valid if we have a reasonable number of source code files
-        # Minimum requirement: at least 3 source code files OR more source files than doc files
-        has_sufficient_source = len(source_code_files) >= 3 or (len(source_code_files) > len(doc_files) and len(source_code_files) > 0)
+        # For comprehensive wiki generation, we need substantial source code content
+        # Minimum requirement: at least 5 source code files OR significantly more source files than doc files
+        has_sufficient_source = len(source_code_files) >= 5 or (len(source_code_files) > len(doc_files) * 2 and len(source_code_files) >= 3)
         
         if has_sufficient_source:
             logger.info(f"✅ Cache content validation passed: {len(source_code_files)} source code files found")

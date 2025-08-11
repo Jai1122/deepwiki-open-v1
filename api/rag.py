@@ -115,9 +115,17 @@ class RAG(adal.Component):
         Prepares the FAISS retriever by processing the repository and building the index.
         """
         try:
-            self.transformed_docs = self.db_manager.prepare_database(
-                repo_url_or_path, type, access_token
-            )
+            # Enhanced processing for remote repositories to ensure comprehensive wiki generation
+            if type in ["bitbucket", "github", "gitlab"]:
+                # Use higher token limits and enhanced processing for remote repos
+                logger.info(f"🚀 Enhanced RAG processing for {type} repository")
+                self.transformed_docs = self.db_manager.prepare_database(
+                    repo_url_or_path, type, access_token, max_total_tokens=3000000, prioritize_files=True
+                )
+            else:
+                self.transformed_docs = self.db_manager.prepare_database(
+                    repo_url_or_path, type, access_token
+                )
         except Exception as e:
             logger.error(f"Failed to prepare database: {e}", exc_info=True)
             self.transformed_docs = [] # Ensure it's a list on failure
