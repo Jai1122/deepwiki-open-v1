@@ -12,17 +12,28 @@ def get_embedder() -> adal.Embedder:
     Returns:
         adal.Embedder: The configured embedder instance.
     """
+    from ..config import _ensure_configs_loaded
+    
+    # Ensure configs are loaded first
+    _ensure_configs_loaded()
+    
     embedder_key = "embedder"
     logger.info("Using vLLM embedder configuration.")
+    
+    # Debug: log what configs we have
+    logger.debug(f"Available config keys: {list(configs.keys())}")
 
     embedder_config = configs.get(embedder_key)
     if not embedder_config:
-        raise ValueError(f"Missing embedder configuration for '{embedder_key}' in config files.")
+        raise ValueError(f"Missing embedder configuration for '{embedder_key}' in config files. Available keys: {list(configs.keys())}")
 
     # --- Initialize Embedder ---
     model_client_class = embedder_config.get("model_client")
+    logger.debug(f"Raw embedder_config: {embedder_config}")
+    logger.debug(f"model_client_class type: {type(model_client_class)}, value: {model_client_class}")
+    
     if not model_client_class:
-        raise ValueError(f"model_client not specified for embedder '{embedder_key}'.")
+        raise ValueError(f"model_client not specified for embedder '{embedder_key}'. Config: {embedder_config}")
 
     initialize_kwargs = embedder_config.get("initialize_kwargs", {}).copy()
     model_kwargs = embedder_config.get("model_kwargs", {}).copy()
@@ -44,6 +55,10 @@ def get_embedder() -> adal.Embedder:
     # Ensure API key is resolved from environment variable
     if initialize_kwargs.get("api_key") and "${VLLM_API_KEY}" in str(initialize_kwargs.get("api_key")):
         initialize_kwargs["api_key"] = os.environ.get("VLLM_API_KEY", "")
+        
+    # Additional environment variable resolution for base_url
+    if initialize_kwargs.get("base_url") and "${OPENAI_API_BASE_URL}" in str(initialize_kwargs.get("base_url")):
+        initialize_kwargs["base_url"] = os.environ.get("OPENAI_API_BASE_URL", "")
     
     # Log resolved configuration for debugging
     logger.info(f"Embedder configuration (resolved):")
@@ -53,7 +68,13 @@ def get_embedder() -> adal.Embedder:
     logger.info(f"  Dimensions: {model_kwargs.get('dimensions', 'NOT_SET')}")
     
     try:
-        model_client = model_client_class(**initialize_kwargs)
+        # Create an instance of the model client if it's a class
+        if isinstance(model_client_class, type):
+            # It's a class, instantiate it
+            model_client = model_client_class(**initialize_kwargs)
+        else:
+            # It's already an instance, use it directly
+            model_client = model_client_class
         
         embedder = adal.Embedder(
             model_client=model_client,
