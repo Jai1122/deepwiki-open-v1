@@ -113,9 +113,34 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
     """
     if os.path.exists(local_path):
         logger.info(f"Repository already exists at {local_path}, skipping download.")
-        return local_path
+        # Verify the existing repository has content
+        try:
+            contents = os.listdir(local_path)
+            if len(contents) == 0:
+                logger.warning(f"⚠️  Existing repository at {local_path} is empty, removing and re-cloning")
+                import shutil
+                shutil.rmtree(local_path)
+            else:
+                logger.info(f"✅ Existing repository has {len(contents)} items, using cache")
+                return local_path
+        except Exception as check_error:
+            logger.warning(f"Cannot verify existing repository, removing and re-cloning: {check_error}")
+            import shutil
+            try:
+                shutil.rmtree(local_path)
+            except:
+                pass
 
-    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    # Ensure parent directory exists
+    parent_dir = os.path.dirname(local_path)
+    logger.info(f"📁 Creating parent directory: {parent_dir}")
+    os.makedirs(parent_dir, exist_ok=True)
+    
+    # Verify parent directory was created successfully
+    if not os.path.exists(parent_dir):
+        raise RuntimeError(f"Failed to create parent directory: {parent_dir}")
+    
+    logger.info(f"✅ Parent directory ready: {parent_dir}")
     
     # Normalize repository URL for git clone
     normalized_repo_url = repo_url
@@ -160,33 +185,68 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
                     workspace = path_parts[0]
                     clone_urls.append(f"https://{workspace}:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
 
-    logger.info(f"Cloning repository from {repo_url} to {local_path}...")
+    logger.info(f"🚀 Cloning repository from {repo_url} to {local_path}...")
+    logger.info(f"📋 Attempting {len(clone_urls)} clone method(s)")
     
     last_error = None
     for i, clone_url in enumerate(clone_urls):
         try:
-            logger.debug(f"Attempting clone method {i+1}/{len(clone_urls)}")
-            subprocess.run(
+            logger.info(f"🔄 Attempting clone method {i+1}/{len(clone_urls)}")
+            # Show the git command (but mask credentials)
+            safe_clone_url = clone_url
+            if '@' in clone_url and '://' in clone_url:
+                # Mask credentials in logs
+                parts = clone_url.split('://', 1)
+                if len(parts) == 2 and '@' in parts[1]:
+                    auth_and_url = parts[1].split('@', 1)
+                    safe_clone_url = f"{parts[0]}://***@{auth_and_url[1]}"
+            
+            logger.info(f"   Command: git clone --depth 1 {safe_clone_url} {local_path}")
+            
+            result = subprocess.run(
                 ["git", "clone", "--depth", "1", clone_url, local_path],
                 check=True,
                 capture_output=True,
                 text=True
             )
-            logger.info("Repository cloned successfully.")
+            
+            logger.info("✅ Repository cloned successfully!")
+            logger.info(f"   Clone output: {result.stdout[:200] if result.stdout else '(no output)'}...")
+            
+            # Verify the clone was successful
+            if os.path.exists(local_path) and os.path.isdir(local_path):
+                try:
+                    contents = os.listdir(local_path)
+                    logger.info(f"📂 Cloned repository verification: {len(contents)} items")
+                    if len(contents) > 0:
+                        logger.info(f"   Sample contents: {contents[:3]}{'...' if len(contents) > 3 else ''}")
+                        return local_path
+                    else:
+                        logger.warning("⚠️  Cloned repository is empty")
+                except Exception as verify_error:
+                    logger.warning(f"⚠️  Cannot verify cloned repository: {verify_error}")
+            else:
+                logger.warning("⚠️  Cloned path does not exist or is not a directory")
+            
             return local_path
         except subprocess.CalledProcessError as e:
             last_error = e
             error_output = e.stderr or e.stdout or ""
-            logger.debug(f"Clone attempt {i+1} failed: {error_output}")
+            logger.warning(f"❌ Clone attempt {i+1}/{len(clone_urls)} failed:")
+            logger.warning(f"   Error: {error_output}")
+            logger.warning(f"   Return code: {e.returncode}")
             
             # If it's not an auth failure, don't try other methods
             if not ("Authentication failed" in error_output or 
                    "invalid username or password" in error_output.lower() or
-                   "could not read Username" in error_output):
+                   "could not read Username" in error_output or
+                   "fatal: Authentication failed" in error_output):
+                logger.error(f"💥 Non-authentication error encountered, stopping clone attempts")
                 break
                 
             # If this was the last attempt, we'll handle the error below
             if i == len(clone_urls) - 1:
+                logger.error(f"💥 All {len(clone_urls)} clone attempts failed")
                 break
     
     # If we reach here, all attempts failed. Handle the error from the last attempt
@@ -270,7 +330,59 @@ def read_all_documents(
         if normalized and normalized not in normalized_excluded_dirs:
             normalized_excluded_dirs.append(normalized)
 
-    logger.info(f"Starting to walk directory: {path}")
+    # CRITICAL DEBUGGING: Check if the path exists and contains files
+    logger.info(f"🔍 DEBUGGING: Starting to walk directory: {path}")
+    
+    if not os.path.exists(path):
+        logger.error(f"❌ CRITICAL: Directory does not exist: {path}")
+        return []
+    
+    if not os.path.isdir(path):
+        logger.error(f"❌ CRITICAL: Path is not a directory: {path}")
+        return []
+    
+    # Count total files and directories in the repository
+    total_files = 0
+    total_dirs = 0
+    sample_files = []
+    
+    try:
+        for root, dirs, files in os.walk(path):
+            total_dirs += len(dirs) 
+            total_files += len(files)
+            # Collect some sample files for debugging
+            for file in files[:3]:  # First 3 files in each directory
+                rel_path = os.path.relpath(os.path.join(root, file), path)
+                sample_files.append(rel_path.replace('\\', '/'))
+                if len(sample_files) >= 10:  # Limit to 10 sample files
+                    break
+            if len(sample_files) >= 10:
+                break
+                
+        logger.info(f"📊 Repository scan results:")
+        logger.info(f"   - Total directories: {total_dirs}")
+        logger.info(f"   - Total files: {total_files}")
+        logger.info(f"   - Sample files: {sample_files[:5]}{'...' if len(sample_files) > 5 else ''}")
+        
+        if total_files == 0:
+            logger.error(f"❌ CRITICAL: Repository contains no files at all!")
+            logger.error(f"   - Repository path: {path}")
+            logger.error(f"   - Directory exists: {os.path.exists(path)}")
+            logger.error(f"   - Is directory: {os.path.isdir(path)}")
+            
+            # List immediate contents
+            try:
+                immediate_contents = os.listdir(path)
+                logger.error(f"   - Immediate contents: {immediate_contents}")
+            except Exception as list_error:
+                logger.error(f"   - Cannot list directory: {list_error}")
+            
+            return []
+            
+    except Exception as scan_error:
+        logger.error(f"❌ CRITICAL: Error scanning repository: {scan_error}")
+        return []
+    
     logger.info(f"Excluded directories ({len(normalized_excluded_dirs)}): {normalized_excluded_dirs}")
     logger.info(f"Excluded filename patterns: {excluded_filename_patterns}")
     logger.info(f"Total excluded file patterns: {len(final_excluded_files)}")
@@ -741,8 +853,32 @@ class DatabaseManager:
         
         try:
             if type != "local":
+                logger.info(f"🔄 Downloading {type} repository from {repo_url_or_path} to {repo_path}")
                 download_repo(repo_url_or_path, repo_path, type, access_token)
                 logger.info(f"📥 Successfully downloaded {type} repository to {repo_path}")
+                
+                # CRITICAL DEBUGGING: Verify the download was successful
+                if not os.path.exists(repo_path):
+                    logger.error(f"❌ CRITICAL: Repository path does not exist after download: {repo_path}")
+                    raise RuntimeError(f"Repository download failed - path does not exist: {repo_path}")
+                
+                if not os.path.isdir(repo_path):
+                    logger.error(f"❌ CRITICAL: Repository path is not a directory after download: {repo_path}")
+                    raise RuntimeError(f"Repository download failed - not a directory: {repo_path}")
+                
+                # Check if directory contains files
+                try:
+                    contents = os.listdir(repo_path)
+                    logger.info(f"📂 Downloaded repository contents: {len(contents)} items")
+                    logger.info(f"   Sample contents: {contents[:5]}{'...' if len(contents) > 5 else ''}")
+                    
+                    if len(contents) == 0:
+                        logger.error(f"❌ CRITICAL: Downloaded repository is empty!")
+                        raise RuntimeError(f"Repository download failed - empty directory: {repo_path}")
+                        
+                except Exception as list_error:
+                    logger.error(f"❌ CRITICAL: Cannot list downloaded repository contents: {list_error}")
+                    raise RuntimeError(f"Repository download failed - cannot access: {repo_path}")
                 
                 # For remote repositories, ensure comprehensive processing  
                 # Bitbucket and other remote repos should get the same detailed treatment as local repos
