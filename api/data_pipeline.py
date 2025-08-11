@@ -109,7 +109,7 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
         access_token: Authentication token
             - GitHub: Personal Access Token
             - GitLab: Personal Access Token
-            - Bitbucket: HTTP Access Token
+            - Bitbucket: HTTP Access Token or username:app_password
     """
     if os.path.exists(local_path):
         logger.info(f"Repository already exists at {local_path}, skipping download.")
@@ -117,41 +117,92 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
 
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     
-    clone_url = repo_url
+    # Normalize repository URL for git clone
+    normalized_repo_url = repo_url
+    if type == "bitbucket":
+        # Ensure Bitbucket URL ends with .git for git clone operations
+        if not repo_url.endswith('.git'):
+            normalized_repo_url = repo_url.rstrip('/') + '.git'
+    
+    # Prepare list of clone URLs to try
+    clone_urls = [normalized_repo_url]  # Start with normalized URL for public repos
+    
     if type in ["github", "gitlab", "bitbucket"] and access_token:
-        parsed_url = urlparse(repo_url)
+        parsed_url = urlparse(normalized_repo_url)
         if type == "github":
             # URL encode the token to handle special characters
             encoded_token = quote(access_token, safe='')
-            clone_url = f"https://{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
+            clone_urls = [f"https://{encoded_token}@{parsed_url.netloc}{parsed_url.path}"]
         elif type == "gitlab":
             # URL encode the token to handle special characters
             encoded_token = quote(access_token, safe='')
-            clone_url = f"https://oauth2:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
+            clone_urls = [f"https://oauth2:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"]
         elif type == "bitbucket":
-            # Bitbucket HTTP access tokens only - use x-token-auth as username
-            # Format: https://x-token-auth:access_token@bitbucket.org/user/repo.git
+            # For Bitbucket, try multiple auth methods
             encoded_token = quote(access_token, safe='')
-            clone_url = f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"
+            clone_urls = []
+            
+            if ':' in access_token:
+                # Assume it's username:app_password format
+                username, password = access_token.split(':', 1)
+                encoded_username = quote(username, safe='')
+                encoded_password = quote(password, safe='')
+                clone_urls.append(f"https://{encoded_username}:{encoded_password}@{parsed_url.netloc}{parsed_url.path}")
+                
+                # Also try with x-token-auth in case it's actually an HTTP token with colon
+                clone_urls.append(f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
+            else:
+                # HTTP access token - try multiple username formats
+                clone_urls.append(f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
+                # Some repos may work with the workspace name as username
+                path_parts = parsed_url.path.strip('/').split('/')
+                if len(path_parts) >= 1:
+                    workspace = path_parts[0]
+                    clone_urls.append(f"https://{workspace}:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
 
     logger.info(f"Cloning repository from {repo_url} to {local_path}...")
     
-    try:
-        subprocess.run(
-            ["git", "clone", "--depth", "1", clone_url, local_path],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        logger.info("Repository cloned successfully.")
-        return local_path
-    except subprocess.CalledProcessError as e:
-        error_output = e.stderr or e.stdout or ""
+    last_error = None
+    for i, clone_url in enumerate(clone_urls):
+        try:
+            logger.debug(f"Attempting clone method {i+1}/{len(clone_urls)}")
+            subprocess.run(
+                ["git", "clone", "--depth", "1", clone_url, local_path],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            logger.info("Repository cloned successfully.")
+            return local_path
+        except subprocess.CalledProcessError as e:
+            last_error = e
+            error_output = e.stderr or e.stdout or ""
+            logger.debug(f"Clone attempt {i+1} failed: {error_output}")
+            
+            # If it's not an auth failure, don't try other methods
+            if not ("Authentication failed" in error_output or 
+                   "invalid username or password" in error_output.lower() or
+                   "could not read Username" in error_output):
+                break
+                
+            # If this was the last attempt, we'll handle the error below
+            if i == len(clone_urls) - 1:
+                break
+    
+    # If we reach here, all attempts failed. Handle the error from the last attempt
+    if last_error:
+        error_output = last_error.stderr or last_error.stdout or ""
         
         # Provide specific error messages for common issues
         if "Authentication failed" in error_output or "invalid username or password" in error_output.lower():
             if type == "bitbucket":
-                error_message = f"Authentication failed for Bitbucket repository. Please check your HTTP access token. Make sure you're using a valid HTTP access token (not App Password) with Repository read permissions. Error details: {error_output}"
+                error_message = f"""Authentication failed for Bitbucket repository. Please check your credentials:
+
+1. For HTTP Access Token: Use the token directly as provided
+2. For App Password: Use format 'username:app_password'
+
+Make sure your token/password has Repository read permissions.
+Error details: {error_output}"""
             else:
                 error_message = f"Authentication failed for {type} repository. Please check your access token. Error details: {error_output}"
         elif "could not resolve host" in error_output.lower() or "name resolution" in error_output.lower():

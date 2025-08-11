@@ -452,62 +452,85 @@ def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str 
     """
     Fetches file content from a Bitbucket repository.
     Tries multiple branches (main, master) and handles proper authentication.
+    Supports both HTTP Access Tokens (Bearer) and App Passwords (Basic Auth).
     Handles special characters in credentials and HTTP redirections.
     """
     parsed_url = urlparse(repo_url)
     path_parts = parsed_url.path.strip('/').split('/')
     workspace, repo_slug = path_parts[0], path_parts[1]
     
-    headers = {}
-    if access_token:
-        # Bitbucket HTTP access tokens should be used as Bearer tokens only
-        headers['Authorization'] = f'Bearer {access_token}'
-    
     # Try multiple branches - modern repos often use 'main' instead of 'master'
     branches_to_try = ['main', 'master', 'develop']
+    
+    # Try different authentication methods
+    auth_methods = []
+    if access_token:
+        # Method 1: Bearer token (HTTP Access Token)
+        auth_methods.append({'Authorization': f'Bearer {access_token}'})
+        
+        # Method 2: Basic Auth with username:app_password format
+        # If token contains ':', assume it's username:app_password
+        if ':' in access_token:
+            username, app_password = access_token.split(':', 1)
+            auth_string = base64.b64encode(f"{username}:{app_password}".encode()).decode()
+            auth_methods.append({'Authorization': f'Basic {auth_string}'})
+        else:
+            # Try with common username patterns for app passwords
+            for username_pattern in ['x-token-auth', workspace]:
+                auth_string = base64.b64encode(f"{username_pattern}:{access_token}".encode()).decode()
+                auth_methods.append({'Authorization': f'Basic {auth_string}'})
+    else:
+        auth_methods.append({})  # No auth for public repos
     
     for branch in branches_to_try:
         api_url = f"https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}/src/{branch}/{file_path}"
         
-        try:
-            # Enable automatic redirection handling and set a timeout
-            response = requests.get(
-                api_url, 
-                headers=headers,
-                allow_redirects=True,  # Handle redirections automatically
-                timeout=30,  # 30 second timeout
-                verify=True  # Verify SSL certificates
-            )
-            
-            if response.status_code == 200:
-                return response.text
-            elif response.status_code == 404:
-                # Try next branch
+        # Try different auth methods for each branch
+        for headers in auth_methods:
+            try:
+                # Enable automatic redirection handling and set a timeout
+                response = requests.get(
+                    api_url, 
+                    headers=headers,
+                    allow_redirects=True,  # Handle redirections automatically
+                    timeout=30,  # 30 second timeout
+                    verify=True  # Verify SSL certificates
+                )
+                
+                if response.status_code == 200:
+                    logger.debug(f"Successfully fetched Bitbucket file using auth method: {list(headers.keys())}")
+                    return response.text
+                elif response.status_code == 404:
+                    # File not found with this auth method, try next auth method
+                    continue
+                elif response.status_code == 401:
+                    # Authentication failed, try next auth method
+                    logger.debug(f"Auth method failed: {list(headers.keys())}")
+                    continue
+                elif response.status_code in [301, 302, 303, 307, 308]:
+                    # Handle redirections manually if needed
+                    redirect_url = response.headers.get('Location')
+                    if redirect_url:
+                        logger.info(f"Bitbucket API redirected to: {redirect_url}")
+                        redirect_response = requests.get(
+                            redirect_url,
+                            headers=headers,
+                            allow_redirects=True,
+                            timeout=30
+                        )
+                        if redirect_response.status_code == 200:
+                            return redirect_response.text
+                else:
+                    response.raise_for_status()
+            except requests.exceptions.Timeout:
+                logger.error(f"Timeout fetching file from Bitbucket branch '{branch}' {api_url}")
                 continue
-            elif response.status_code in [301, 302, 303, 307, 308]:
-                # Handle redirections manually if needed
-                redirect_url = response.headers.get('Location')
-                if redirect_url:
-                    logger.info(f"Bitbucket API redirected to: {redirect_url}")
-                    redirect_response = requests.get(
-                        redirect_url,
-                        headers=headers,
-                        allow_redirects=True,
-                        timeout=30
-                    )
-                    if redirect_response.status_code == 200:
-                        return redirect_response.text
-            else:
-                response.raise_for_status()
-        except requests.exceptions.Timeout:
-            logger.error(f"Timeout fetching file from Bitbucket branch '{branch}' {api_url}")
-            continue
-        except requests.exceptions.SSLError as e:
-            logger.error(f"SSL error fetching file from Bitbucket branch '{branch}' {api_url}: {e}")
-            continue
-        except RequestException as e:
-            logger.debug(f"Error fetching file from Bitbucket branch '{branch}' {api_url}: {e}")
-            continue
+            except requests.exceptions.SSLError as e:
+                logger.error(f"SSL error fetching file from Bitbucket branch '{branch}' {api_url}: {e}")
+                continue
+            except RequestException as e:
+                logger.debug(f"Error fetching file from Bitbucket branch '{branch}' {api_url} with auth {list(headers.keys())}: {e}")
+                continue
     
     logger.error(f"Error fetching file from Bitbucket {repo_url}/{file_path}: file not found in any branch")
     return ""

@@ -30,7 +30,7 @@ class ChatCompletionRequest(BaseModel):
     repo_url: str = Field(..., description="URL of the repository to query")
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
     filePath: Optional[str] = Field(None, description="Optional path to a file in the repository to include in the prompt")
-    token: Optional[str] = Field(None, description="Personal access token for private repositories")
+    token: Optional[str] = Field(None, description="Authentication token for private repositories. For Bitbucket: use HTTP Access Token OR username:app_password format")
     type: Optional[str] = Field("github", description="Type of repository (e.g., 'github', 'gitlab', 'bitbucket')")
 
     # model parameters
