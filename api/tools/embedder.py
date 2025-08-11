@@ -97,17 +97,80 @@ def get_embedder():
             # It's a class, instantiate it
             logger.debug(f"Instantiating {model_client_class.__name__} with kwargs: {initialize_kwargs}")
             model_client = model_client_class(**initialize_kwargs)
+            logger.debug(f"Created model_client instance: {type(model_client)} - {model_client}")
         else:
             # It's already an instance, use it directly
+            logger.debug(f"Using existing model_client instance: {type(model_client_class)}")
             model_client = model_client_class
+        
+        # Final validation - ensure we have an instance, not a class
+        if isinstance(model_client, type):
+            raise ValueError(f"model_client is still a class after instantiation: {model_client}. Expected an instance.")
+        
+        # Additional validation - test that the instance works
+        try:
+            # Test that the client can be used
+            test_methods = ['embeddings', 'acall', 'convert_inputs_to_api_kwargs']
+            available_methods = [method for method in test_methods if hasattr(model_client, method)]
+            logger.debug(f"model_client available methods: {available_methods}")
+            
+            # Test instantiation worked correctly
+            if hasattr(model_client, 'client'):
+                logger.debug(f"model_client.client type: {type(model_client.client)}")
+            else:
+                logger.warning("model_client has no 'client' attribute")
+                
+        except Exception as validation_error:
+            logger.error(f"model_client validation failed: {validation_error}")
+        
+        logger.info(f"Final model_client validation passed: {type(model_client)}")
         
         # Try importing adalflow for full functionality
         try:
             import adalflow as adal
-            embedder = adal.Embedder(
-                model_client=model_client,
-                model_kwargs=model_kwargs,
-            )
+            logger.debug(f"About to create adalflow Embedder with model_client type: {type(model_client)}")
+            # Double-check that model_client has the expected interface
+            if not hasattr(model_client, 'embeddings') and not hasattr(model_client, 'acall'):
+                logger.warning(f"model_client {type(model_client)} doesn't have expected methods (embeddings or acall)")
+            
+            # Extra debugging for the specific error
+            logger.debug(f"Creating adalflow Embedder with:")
+            logger.debug(f"  - model_client: {model_client} (type: {type(model_client)})")
+            logger.debug(f"  - model_kwargs: {model_kwargs}")
+            logger.debug(f"  - model_client is instance?: {not isinstance(model_client, type)}")
+            
+            try:
+                embedder = adal.Embedder(
+                    model_client=model_client,
+                    model_kwargs=model_kwargs,
+                )
+            except Exception as adalflow_error:
+                logger.error(f"adalflow Embedder creation failed with: {adalflow_error}")
+                logger.error(f"adalflow error type: {type(adalflow_error)}")
+                
+                # If the error is specifically about ModelClient, try using adalflow's OpenAI client
+                if "ModelClient instance" in str(adalflow_error):
+                    logger.warning("Trying to use adalflow's built-in OpenAI client instead")
+                    try:
+                        # Try to use adalflow's OpenAI client
+                        from adalflow.components.model_client import OpenAIClient as AdalflowOpenAI
+                        
+                        adalflow_client = AdalflowOpenAI(**initialize_kwargs)
+                        logger.debug(f"Created adalflow OpenAI client: {type(adalflow_client)}")
+                        
+                        embedder = adal.Embedder(
+                            model_client=adalflow_client,
+                            model_kwargs=model_kwargs,
+                        )
+                        logger.info("✅ Embedder initialized successfully with adalflow's OpenAI client")
+                        return embedder
+                        
+                    except Exception as fallback_error:
+                        logger.error(f"Adalflow OpenAI client fallback also failed: {fallback_error}")
+                
+                import traceback
+                logger.error(f"Full adalflow traceback:\n{traceback.format_exc()}")
+                raise
             logger.info("✅ Embedder initialized successfully with adalflow")
             return embedder
         except ImportError as adal_error:
