@@ -136,6 +136,9 @@ def load_embedder_config():
         class_name = embedder_config["embedder"]["client_class"]
         if class_name in CLIENT_CLASSES:
             embedder_config["embedder"]["model_client"] = CLIENT_CLASSES[class_name]
+            logger.debug(f"Successfully mapped client_class '{class_name}' to {CLIENT_CLASSES[class_name]} in embedder config")
+        else:
+            logger.warning(f"Unknown client_class '{class_name}' in embedder config. Available: {list(CLIENT_CLASSES.keys())}")
 
     return embedder_config
 

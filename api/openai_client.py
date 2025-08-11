@@ -18,11 +18,19 @@ class OpenAIClient:
             base_url: Base URL for the API
             **kwargs: Additional arguments
         """
-        self.client = OpenAI(
-            api_key=api_key or "dummy",  # vLLM may not require a real API key
-            base_url=base_url,
-            **kwargs
-        )
+        # Store parameters for debugging
+        self.api_key = api_key or "dummy"
+        self.base_url = base_url
+        self.kwargs = kwargs
+        
+        try:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                **kwargs
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to initialize OpenAI client with base_url='{base_url}', api_key={'SET' if api_key else 'NOT_SET'}: {e}")
     
     def chat(self, messages, **kwargs):
         """

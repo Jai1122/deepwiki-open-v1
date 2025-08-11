@@ -1,18 +1,17 @@
-import adalflow as adal
 import logging
 import os
 from ..config import configs, resolve_embedding_config
 
 logger = logging.getLogger(__name__)
 
-def get_embedder() -> adal.Embedder:
+def get_embedder():
     """
     Initializes and returns the vLLM embedder based on the configuration.
 
     Returns:
-        adal.Embedder: The configured embedder instance.
+        Embedder instance: The configured embedder instance.
     """
-    from ..config import _ensure_configs_loaded
+    from ..config import _ensure_configs_loaded, CLIENT_CLASSES
     
     # Ensure configs are loaded first
     _ensure_configs_loaded()
@@ -28,12 +27,21 @@ def get_embedder() -> adal.Embedder:
         raise ValueError(f"Missing embedder configuration for '{embedder_key}' in config files. Available keys: {list(configs.keys())}")
 
     # --- Initialize Embedder ---
+    # First check if model_client class is already resolved
     model_client_class = embedder_config.get("model_client")
+    
+    # If not found, try to resolve it from client_class
+    if not model_client_class and "client_class" in embedder_config:
+        class_name = embedder_config["client_class"]
+        if class_name in CLIENT_CLASSES:
+            model_client_class = CLIENT_CLASSES[class_name]
+            logger.info(f"Resolved client_class '{class_name}' to {model_client_class}")
+    
     logger.debug(f"Raw embedder_config: {embedder_config}")
     logger.debug(f"model_client_class type: {type(model_client_class)}, value: {model_client_class}")
     
     if not model_client_class:
-        raise ValueError(f"model_client not specified for embedder '{embedder_key}'. Config: {embedder_config}")
+        raise ValueError(f"model_client not specified for embedder '{embedder_key}'. Config: {embedder_config}. Available CLIENT_CLASSES: {list(CLIENT_CLASSES.keys())}")
 
     initialize_kwargs = embedder_config.get("initialize_kwargs", {}).copy()
     model_kwargs = embedder_config.get("model_kwargs", {}).copy()
@@ -45,20 +53,35 @@ def get_embedder() -> adal.Embedder:
     # Replace dynamic placeholders with actual values
     if initialize_kwargs.get("base_url") == "DYNAMIC_FROM_MODEL_CONFIG":
         initialize_kwargs["base_url"] = embedding_config["api_url"]
+        logger.debug(f"Resolved dynamic base_url to: {embedding_config['api_url']}")
         
     if model_kwargs.get("model") == "DYNAMIC_FROM_MODEL_CONFIG":
         model_kwargs["model"] = embedding_config["model"]
+        logger.debug(f"Resolved dynamic model to: {embedding_config['model']}")
         
     if model_kwargs.get("dimensions") == "DYNAMIC_FROM_MODEL_CONFIG":
         model_kwargs["dimensions"] = embedding_config["dimensions"]
+        logger.debug(f"Resolved dynamic dimensions to: {embedding_config['dimensions']}")
         
     # Ensure API key is resolved from environment variable
     if initialize_kwargs.get("api_key") and "${VLLM_API_KEY}" in str(initialize_kwargs.get("api_key")):
-        initialize_kwargs["api_key"] = os.environ.get("VLLM_API_KEY", "")
+        vllm_api_key = os.environ.get("VLLM_API_KEY", "dummy")
+        initialize_kwargs["api_key"] = vllm_api_key
+        logger.debug(f"Resolved VLLM_API_KEY (first 10 chars): {vllm_api_key[:10] if vllm_api_key != 'dummy' else 'dummy'}...")
         
     # Additional environment variable resolution for base_url
     if initialize_kwargs.get("base_url") and "${OPENAI_API_BASE_URL}" in str(initialize_kwargs.get("base_url")):
-        initialize_kwargs["base_url"] = os.environ.get("OPENAI_API_BASE_URL", "")
+        openai_base_url = os.environ.get("OPENAI_API_BASE_URL", "")
+        initialize_kwargs["base_url"] = openai_base_url
+        logger.debug(f"Resolved OPENAI_API_BASE_URL to: {openai_base_url}")
+    
+    # Validation: ensure required parameters are set
+    if not initialize_kwargs.get("base_url"):
+        raise ValueError(f"base_url not resolved for embedder. Check OPENAI_API_BASE_URL environment variable or embedding model config.")
+    
+    if not initialize_kwargs.get("api_key"):
+        logger.warning("API key not set, using 'dummy' - this may work for some vLLM setups")
+        initialize_kwargs["api_key"] = "dummy"
     
     # Log resolved configuration for debugging
     logger.info(f"Embedder configuration (resolved):")
@@ -66,24 +89,57 @@ def get_embedder() -> adal.Embedder:
     logger.info(f"  Model: {model_kwargs.get('model', 'NOT_SET')}")
     logger.info(f"  Base URL: {initialize_kwargs.get('base_url', 'NOT_SET')}")
     logger.info(f"  Dimensions: {model_kwargs.get('dimensions', 'NOT_SET')}")
+    logger.info(f"  API Key: {'SET' if initialize_kwargs.get('api_key') else 'NOT_SET'}")
     
     try:
         # Create an instance of the model client if it's a class
         if isinstance(model_client_class, type):
             # It's a class, instantiate it
+            logger.debug(f"Instantiating {model_client_class.__name__} with kwargs: {initialize_kwargs}")
             model_client = model_client_class(**initialize_kwargs)
         else:
             # It's already an instance, use it directly
             model_client = model_client_class
         
-        embedder = adal.Embedder(
-            model_client=model_client,
-            model_kwargs=model_kwargs,
-        )
-        
-        logger.info("✅ Embedder initialized successfully")
-        return embedder
+        # Try importing adalflow for full functionality
+        try:
+            import adalflow as adal
+            embedder = adal.Embedder(
+                model_client=model_client,
+                model_kwargs=model_kwargs,
+            )
+            logger.info("✅ Embedder initialized successfully with adalflow")
+            return embedder
+        except ImportError as adal_error:
+            # Fallback to a simple wrapper if adalflow is not available
+            logger.warning(f"adalflow not available ({adal_error}), creating simple embedder wrapper")
+            
+            class SimpleEmbedder:
+                def __init__(self, model_client, model_kwargs):
+                    self.model_client = model_client
+                    self.model_kwargs = model_kwargs
+                
+                def embed(self, text):
+                    """Generate embeddings for the given text"""
+                    if hasattr(self.model_client, 'embeddings'):
+                        return self.model_client.embeddings(input=text, **self.model_kwargs)
+                    elif hasattr(self.model_client, 'client') and hasattr(self.model_client.client, 'embeddings'):
+                        return self.model_client.client.embeddings.create(input=text, **self.model_kwargs)
+                    else:
+                        raise ValueError("Model client does not support embeddings")
+            
+            embedder = SimpleEmbedder(
+                model_client=model_client,
+                model_kwargs=model_kwargs,
+            )
+            logger.info("✅ Simple embedder wrapper initialized successfully")
+            return embedder
         
     except Exception as e:
         logger.error(f"Failed to initialize embedder: {e}")
+        logger.error(f"  model_client_class: {model_client_class}")
+        logger.error(f"  initialize_kwargs: {initialize_kwargs}")
+        logger.error(f"  model_kwargs: {model_kwargs}")
+        import traceback
+        logger.error(f"  traceback: {traceback.format_exc()}")
         raise ValueError(f"Embedder initialization failed: {e}")
