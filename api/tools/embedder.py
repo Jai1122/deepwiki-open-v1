@@ -129,50 +129,91 @@ def get_embedder():
         try:
             import adalflow as adal
             logger.debug(f"About to create adalflow Embedder with model_client type: {type(model_client)}")
-            # Double-check that model_client has the expected interface
-            if not hasattr(model_client, 'embeddings') and not hasattr(model_client, 'acall'):
-                logger.warning(f"model_client {type(model_client)} doesn't have expected methods (embeddings or acall)")
             
-            # Extra debugging for the specific error
-            logger.debug(f"Creating adalflow Embedder with:")
-            logger.debug(f"  - model_client: {model_client} (type: {type(model_client)})")
-            logger.debug(f"  - model_kwargs: {model_kwargs}")
-            logger.debug(f"  - model_client is instance?: {not isinstance(model_client, type)}")
+            # The key insight: adalflow expects its own ModelClient instances
+            # Let's use adalflow's OpenAI client directly instead of our custom one
+            logger.info("Using adalflow's native OpenAI client for better compatibility")
             
             try:
+                # Try multiple import paths for adalflow's OpenAI client
+                AdalflowOpenAI = None
+                import_paths = [
+                    "adalflow.components.model_client.OpenAIClient",
+                    "adalflow.components.model_client.openai_client.OpenAIClient",
+                    "adalflow.model_client.OpenAIClient"
+                ]
+                
+                for import_path in import_paths:
+                    try:
+                        parts = import_path.split('.')
+                        module_path = '.'.join(parts[:-1])
+                        class_name = parts[-1]
+                        module = __import__(module_path, fromlist=[class_name])
+                        AdalflowOpenAI = getattr(module, class_name)
+                        logger.debug(f"Successfully imported adalflow's OpenAI client from {import_path}")
+                        break
+                    except (ImportError, AttributeError):
+                        continue
+                
+                if AdalflowOpenAI is None:
+                    raise ImportError("Could not find adalflow's OpenAI client in any expected location")
+                
+                # Create adalflow's client with our config
+                logger.debug(f"Creating adalflow OpenAI client with: {initialize_kwargs}")
+                adalflow_client = AdalflowOpenAI(**initialize_kwargs)
+                logger.debug(f"Created adalflow client: {type(adalflow_client)}")
+                
+                # Ensure it's an instance, not a class
+                if isinstance(adalflow_client, type):
+                    raise ValueError(f"adalflow_client is a class, not an instance: {adalflow_client}")
+                
+                # Create the embedder
+                logger.debug(f"Creating adalflow Embedder with model_kwargs: {model_kwargs}")
                 embedder = adal.Embedder(
-                    model_client=model_client,
+                    model_client=adalflow_client,
                     model_kwargs=model_kwargs,
                 )
-            except Exception as adalflow_error:
-                logger.error(f"adalflow Embedder creation failed with: {adalflow_error}")
-                logger.error(f"adalflow error type: {type(adalflow_error)}")
+                logger.info("✅ Embedder created successfully with adalflow's OpenAI client")
+                return embedder
                 
-                # If the error is specifically about ModelClient, try using adalflow's OpenAI client
-                if "ModelClient instance" in str(adalflow_error):
-                    logger.warning("Trying to use adalflow's built-in OpenAI client instead")
-                    try:
-                        # Try to use adalflow's OpenAI client
-                        from adalflow.components.model_client import OpenAIClient as AdalflowOpenAI
-                        
-                        adalflow_client = AdalflowOpenAI(**initialize_kwargs)
-                        logger.debug(f"Created adalflow OpenAI client: {type(adalflow_client)}")
-                        
-                        embedder = adal.Embedder(
-                            model_client=adalflow_client,
-                            model_kwargs=model_kwargs,
-                        )
-                        logger.info("✅ Embedder initialized successfully with adalflow's OpenAI client")
-                        return embedder
-                        
-                    except Exception as fallback_error:
-                        logger.error(f"Adalflow OpenAI client fallback also failed: {fallback_error}")
+            except ImportError as e:
+                logger.warning(f"Could not import adalflow's OpenAI client: {e}")
+                logger.warning("This might be due to adalflow version differences")
                 
+                # Fallback: try with our custom client and better error handling
+                logger.info("Attempting fallback with custom OpenAI client")
+                try:
+                    # Debug: check what adalflow is expecting
+                    logger.debug(f"Our model_client type: {type(model_client)}")
+                    logger.debug(f"Our model_client has embeddings method: {hasattr(model_client, 'embeddings')}")
+                    logger.debug(f"Our model_client has acall method: {hasattr(model_client, 'acall')}")
+                    
+                    embedder = adal.Embedder(
+                        model_client=model_client,
+                        model_kwargs=model_kwargs,
+                    )
+                    logger.info("✅ Embedder created successfully with custom OpenAI client")
+                    return embedder
+                    
+                except Exception as fallback_error:
+                    logger.error(f"Fallback with custom client failed: {fallback_error}")
+                    logger.error(f"Error type: {type(fallback_error)}")
+                    
+                    # If it's the ModelClient error, provide more specific guidance
+                    if "ModelClient instance" in str(fallback_error):
+                        logger.error("adalflow is rejecting our custom ModelClient")
+                        logger.error("This suggests adalflow requires specific ModelClient subclasses")
+                        
+                    import traceback
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
+                    raise
+                    
+            except Exception as e:
+                logger.error(f"Failed to create adalflow embedder: {e}")
+                logger.error(f"Error type: {type(e)}")
                 import traceback
-                logger.error(f"Full adalflow traceback:\n{traceback.format_exc()}")
+                logger.error(f"Full traceback: {traceback.format_exc()}")
                 raise
-            logger.info("✅ Embedder initialized successfully with adalflow")
-            return embedder
         except ImportError as adal_error:
             # Fallback to a simple wrapper if adalflow is not available
             logger.warning(f"adalflow not available ({adal_error}), creating simple embedder wrapper")
