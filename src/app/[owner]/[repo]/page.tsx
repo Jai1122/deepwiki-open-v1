@@ -460,54 +460,39 @@ export default function RepoWikiPage() {
   }, [pageState, repoInfo, token, owner, repo, messages.loading]);
 
 
-  // 2. Determining Wiki Structure
+  // 2. Generate Architecture Overview - Use backend's sophisticated system
   useEffect(() => {
     if (pageState !== 'determining_wiki_structure') return;
 
-    setLoadingMessage(messages.loading?.determiningStructure || 'Determining wiki structure...');
+    setLoadingMessage('Generating comprehensive wiki documentation...');
 
-    const prompt = `
-      Analyze the file tree and README of the repository below to create a logical wiki structure.
-      
-      File Tree:
-      <file_tree>
-      ${fileTree}
-      </file_tree>
+    // Send a request that triggers the backend's ARCHITECTURE_OVERVIEW_PROMPT
+    // This will generate a comprehensive system overview with mermaid diagrams
+    const prompt = `Create a comprehensive System Architecture Overview for this repository based on actual source code analysis.
 
-      README:
-      <readme>
-      ${readme}
-      </readme>
+I need you to analyze the actual implementation files and create detailed documentation that includes:
 
-      CRITICAL INSTRUCTIONS:
-      1. Your response MUST be ONLY the XML structure. Do not include any other text, explanations, or markdown formatting before or after the XML.
-      2. The XML must be well-formed and valid.
-      3. The root element MUST be <wiki_structure>.
-      4. Follow the specified XML schema precisely.
+1. **System Architecture Overview** with mermaid diagrams showing actual code relationships
+2. **Technology Stack Analysis** based on real dependencies and configurations  
+3. **Component Breakdown** documenting actual classes, functions, and modules found
+4. **API Documentation** based on real endpoints and interfaces
+5. **Data Flow Analysis** showing how data moves through the actual system
+6. **Deployment Architecture** based on actual configuration files
+7. **Security Implementation** documenting actual security patterns used
+8. **Performance Considerations** based on actual implementation choices
 
-      <wiki_structure>
-        <title>[Overall title for the wiki]</title>
-        <description>[Brief description of the repository]</description>
-        <sections>
-          <section id="section-1">
-            <title>[Section title]</title>
-            <pages>
-              <page_ref>page-1</page_ref>
-            </pages>
-          </section>
-        </sections>
-        <pages>
-          <page id="page-1">
-            <title>[Page title]</title>
-            <description>[Brief description of what this page will cover]</description>
-            <importance>high|medium|low</importance>
-            <relevant_files>
-              <file_path>[Path to a relevant file]</file_path>
-            </relevant_files>
-          </page>
-        </pages>
-      </wiki_structure>
-    `;
+This should be a comprehensive multi-section document that serves as the main wiki page for understanding this system.
+
+Repository: ${owner}/${repo}
+Type: ${repoInfo.type}
+
+File Tree Overview:
+${fileTree.split('\n').slice(0, 50).join('\n')}${fileTree.split('\n').length > 50 ? '\n... and more files' : ''}
+
+README Context:
+${readme.substring(0, 2000)}${readme.length > 2000 ? '...' : ''}
+
+Please provide comprehensive documentation with actual source code analysis, mermaid diagrams, and detailed explanations of how this system works.`;
     const requestBody: ChatCompletionRequest = {
       repo_url: getRepoUrl(repoInfo),
       type: repoInfo.type,
@@ -549,125 +534,178 @@ export default function RepoWikiPage() {
       (err) => handleError(`WebSocket error while determining structure: ${err}`),
       () => { // onComplete
         try {
-          console.log(`Wiki structure response completed. Chunks: ${chunkCount}, Length: ${responseBuffer.length} characters`);
-          console.log(`Response buffer preview:`, responseBuffer.substring(0, 500));
-          console.log(`Response buffer end:`, responseBuffer.substring(Math.max(0, responseBuffer.length - 500)));
+          console.log(`Comprehensive wiki generation completed. Length: ${responseBuffer.length} characters`);
           
           // Validate response completeness
           if (!responseBuffer.trim()) {
             throw new Error("Empty response received from server.");
           }
-          
-          // Try multiple patterns to find XML structure
-          let xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
-          
-          // If not found, try without multiline flag
-          if (!xmlMatch) {
-            xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*<\/wiki_structure>/);
-          }
-          
-          // Try greedy matching in case there are nested structures
-          if (!xmlMatch) {
-            xmlMatch = responseBuffer.match(/<wiki_structure>[\s\S]*<\/wiki_structure>/g);
-            if (xmlMatch && xmlMatch.length > 0) {
-              // Take the last complete match (most likely to be complete)
-              xmlMatch = [xmlMatch[xmlMatch.length - 1]];
-            }
-          }
-          
-          // If still not found, try to find just the opening tag to see if it exists
-          if (!xmlMatch) {
-            const hasOpeningTag = responseBuffer.includes('<wiki_structure>');
-            const hasClosingTag = responseBuffer.includes('</wiki_structure>');
-            
-            console.error("XML structure parsing failed", {
-              responseLength: responseBuffer.length,
-              hasOpeningTag,
-              hasClosingTag,
-              openingTagIndex: hasOpeningTag ? responseBuffer.indexOf('<wiki_structure>') : -1,
-              closingTagIndex: hasClosingTag ? responseBuffer.lastIndexOf('</wiki_structure>') : -1,
-              responseStart: responseBuffer.substring(0, 200),
-              responseEnd: responseBuffer.substring(Math.max(0, responseBuffer.length - 200))
-            });
-            
-            if (hasOpeningTag && hasClosingTag) {
-              // Try manual extraction
-              const startIndex = responseBuffer.indexOf('<wiki_structure>');
-              const endIndex = responseBuffer.lastIndexOf('</wiki_structure>') + '</wiki_structure>'.length;
-              if (startIndex !== -1 && endIndex > startIndex) {
-                const manualXml = responseBuffer.substring(startIndex, endIndex);
-                console.log(`Manual XML extraction successful: ${manualXml.length} characters`);
-                xmlMatch = [manualXml];
-              }
-            }
-          }
-          
-          if (!xmlMatch) {
-            console.error("Backend response did not contain valid XML structure.", {
-              responseLength: responseBuffer.length,
-              containsWikiStructure: responseBuffer.includes('wiki_structure'),
-              firstFewLines: responseBuffer.split('\n').slice(0, 10),
-              lastFewLines: responseBuffer.split('\n').slice(-10)
-            });
-            throw new Error(
-              "The AI failed to generate a valid wiki structure. This can happen with complex repositories. Please try refreshing."
-            );
-          }
-          
-          console.log(`Found XML structure: ${xmlMatch[0].length} characters`);
-          
-          // Additional validation for wiki_structure completeness
-          const xmlContent = xmlMatch[0];
-          if (!xmlContent.includes('</wiki_structure>')) {
-            console.error("Wiki structure XML appears to be incomplete");
-            throw new Error("Incomplete wiki structure received. Please try refreshing.");
-          }
-          
-          const parser = new DOMParser();
-          const xmlDoc = parser.parseFromString(xmlMatch[0], "text/xml");
-          const parseError = xmlDoc.querySelector('parsererror');
-          if (parseError) {
-            console.error("Failed to parse wiki structure XML.", {
-              xml: xmlMatch[0],
-              error: parseError.textContent,
-            });
-            throw new Error(
-              "The AI returned a malformed XML structure. Please try refreshing."
-            );
-          }
 
-          const pages: WikiPage[] = Array.from(xmlDoc.querySelectorAll('page')).map(p => ({
-            id: p.getAttribute('id') || '',
-            title: p.querySelector('title')?.textContent || '',
-            filePaths: Array.from(p.querySelectorAll('file_path')).map(f => f.textContent || ''),
-            importance: (p.querySelector('importance')?.textContent as 'high' | 'medium' | 'low') || 'medium',
-            relatedPages: Array.from(p.querySelectorAll('related')).map(r => r.textContent || ''),
-            content: '',
-          }));
-
-          const sections: WikiSection[] = Array.from(xmlDoc.querySelectorAll('section')).map(s => ({
-            id: s.getAttribute('id') || '',
-            title: s.querySelector('title')?.textContent || '',
-            pages: Array.from(s.querySelectorAll('page_ref')).map(p => p.textContent || ''),
-            subsections: Array.from(s.querySelectorAll('section_ref')).map(sub => sub.textContent || ''),
-          }));
+          // Parse the comprehensive response into logical wiki sections
+          console.log(`Processing comprehensive wiki response: ${responseBuffer.length} characters`);
           
+          // Split the response into logical sections based on ## headers (second level)
+          const sectionRegex = /^##\s+(.+)$/gm;
+          const sectionMatches = [...responseBuffer.matchAll(sectionRegex)];
+          
+          console.log(`Found ${sectionMatches.length} major sections`);
+          
+          const pages: WikiPage[] = [];
+          const sections: WikiSection[] = [];
+          
+          if (sectionMatches.length > 0) {
+            // Multi-section comprehensive wiki
+            console.log("Creating multi-section wiki from comprehensive response");
+            
+            // Add the main overview page with everything before the first section
+            const firstSectionIndex = sectionMatches[0].index!;
+            const overviewContent = responseBuffer.substring(0, firstSectionIndex).trim();
+            
+            if (overviewContent) {
+              pages.push({
+                id: 'overview',
+                title: 'System Overview',
+                content: overviewContent,
+                filePaths: [],
+                importance: 'high' as const,
+                relatedPages: []
+              });
+            }
+            
+            // Process each major section as a separate page
+            for (let i = 0; i < sectionMatches.length; i++) {
+              const match = sectionMatches[i];
+              const title = match[1];
+              const id = title.toLowerCase()
+                .replace(/[^a-z0-9\s]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/^-|-$/g, '');
+              
+              // Extract content for this section
+              const startIndex = match.index!;
+              const endIndex = i < sectionMatches.length - 1 ? sectionMatches[i + 1].index! : responseBuffer.length;
+              const content = responseBuffer.substring(startIndex, endIndex).trim();
+              
+              // Determine importance based on section content
+              const hasArchitecture = content.toLowerCase().includes('architecture') || content.includes('mermaid');
+              const hasImplementation = content.toLowerCase().includes('implementation') || content.toLowerCase().includes('code');
+              const importance = hasArchitecture || hasImplementation ? 'high' as const : 'medium' as const;
+              
+              pages.push({
+                id,
+                title,
+                content,
+                filePaths: [],
+                importance,
+                relatedPages: []
+              });
+            }
+            
+            // Group pages into logical sections
+            const architecturePages = pages.filter(p => 
+              p.title.toLowerCase().includes('architecture') || 
+              p.title.toLowerCase().includes('overview') ||
+              p.title.toLowerCase().includes('system')
+            );
+            
+            const implementationPages = pages.filter(p => 
+              p.title.toLowerCase().includes('component') || 
+              p.title.toLowerCase().includes('implementation') ||
+              p.title.toLowerCase().includes('api') ||
+              p.title.toLowerCase().includes('data')
+            );
+            
+            const operationsPages = pages.filter(p => 
+              p.title.toLowerCase().includes('deployment') || 
+              p.title.toLowerCase().includes('security') ||
+              p.title.toLowerCase().includes('performance')
+            );
+            
+            // Create sections
+            if (architecturePages.length > 0) {
+              sections.push({
+                id: 'architecture',
+                title: 'System Architecture',
+                pages: architecturePages.map(p => p.id),
+                subsections: []
+              });
+            }
+            
+            if (implementationPages.length > 0) {
+              sections.push({
+                id: 'implementation',
+                title: 'Implementation Details',
+                pages: implementationPages.map(p => p.id),
+                subsections: []
+              });
+            }
+            
+            if (operationsPages.length > 0) {
+              sections.push({
+                id: 'operations',
+                title: 'Operations & Deployment',
+                pages: operationsPages.map(p => p.id),
+                subsections: []
+              });
+            }
+            
+            // Catch any remaining pages
+            const allSectionPageIds = sections.flatMap(s => s.pages);
+            const remainingPages = pages.filter(p => !allSectionPageIds.includes(p.id));
+            if (remainingPages.length > 0) {
+              sections.push({
+                id: 'additional',
+                title: 'Additional Information',
+                pages: remainingPages.map(p => p.id),
+                subsections: []
+              });
+            }
+            
+          } else {
+            // Single comprehensive page
+            console.log("Creating single comprehensive wiki page");
+            pages.push({
+              id: 'comprehensive-overview',
+              title: `${repo} Comprehensive Documentation`,
+              content: responseBuffer,
+              filePaths: [],
+              importance: 'high' as const,
+              relatedPages: []
+            });
+            
+            sections.push({
+              id: 'main',
+              title: 'Documentation',
+              pages: ['comprehensive-overview'],
+              subsections: []
+            });
+          }
+          
+          // Create the final wiki structure
           const structure: WikiStructure = {
             id: 'wiki',
-            title: xmlDoc.querySelector('title')?.textContent || 'Wiki',
-            description: xmlDoc.querySelector('description')?.textContent || '',
+            title: `${repo} Wiki`,
+            description: `Comprehensive documentation for ${owner}/${repo}`,
             pages,
             sections,
-            rootSections: sections.filter(s => !sections.some(parent => parent.subsections?.includes(s.id))).map(s => s.id),
+            rootSections: sections.map(s => s.id)
           };
 
+          // Create the generated pages map
+          const generatedPagesMap: Record<string, WikiPage> = {};
+          pages.forEach(page => {
+            generatedPagesMap[page.id] = page;
+          });
+
+          console.log(`Created wiki with ${pages.length} pages and ${sections.length} sections`);
+          
           setWikiStructure(structure);
-          setGeneratedPages({});
-          setPagesInProgress(new Set(pages.map(p => p.id)));
-          pageQueueRef.current = [...structure.pages];
-          setPageState('generating_page_content');
+          setGeneratedPages(generatedPagesMap);
+          setPagesInProgress(new Set());
+          setPageState('ready');
+          
         } catch (err) {
-          handleError(err instanceof Error ? err.message : 'Failed to process wiki structure.');
+          handleError(err instanceof Error ? err.message : 'Failed to process comprehensive wiki response.');
         }
       }
     );
@@ -681,103 +719,8 @@ export default function RepoWikiPage() {
   }, [wikiStructure, currentPageId]);
 
 
-  // 3. Generating Page Content
-  useEffect(() => {
-    if (pageState !== 'generating_page_content') return;
-
-    const MAX_CONCURRENT = 3;
-
-    const processQueue = () => {
-      if (pageQueueRef.current.length === 0 && activeRequestsRef.current === 0) {
-        setPageState('ready');
-        setLoadingMessage(undefined);
-        return;
-      }
-
-      while (pageQueueRef.current.length > 0 && activeRequestsRef.current < MAX_CONCURRENT) {
-        const page = pageQueueRef.current.shift();
-        if (!page) continue;
-
-        activeRequestsRef.current++;
-        setLoadingMessage(`Generating: ${page.title}...`);
-
-        const prompt = `Generate a markdown wiki page for "${page.title}" using these files: ${page.filePaths.join(', ')}.`;
-        const requestBody: ChatCompletionRequest = {
-          repo_url: getRepoUrl(repoInfo),
-          type: repoInfo.type,
-          messages: [{ role: 'user', content: prompt }],
-          provider: selectedProvider,
-          model: isCustomModel ? customModel : selectedModel,
-          language: language,
-          token: token,
-        };
-
-        let responseBuffer = '';
-        // Use a new variable for the socket to avoid closure issues
-        const pageSocket = createChatWebSocket(
-          requestBody,
-          (chunk) => { responseBuffer += chunk; },
-          (status, msg) => {
-            console.log(`Page gen status for ${page.id}: ${status} - ${msg}`);
-            if (status === 'error') {
-              console.error(`Error generating page ${page.id}: ${msg}`);
-              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: ${msg}` } }));
-              activeRequestsRef.current--;
-              setPagesInProgress(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(page.id);
-                return newSet;
-              });
-              processQueue(); // Continue with next
-            } else if (status === 'timeout') {
-              console.error(`Timeout generating page ${page.id}: ${msg}`);
-              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Timeout: ${msg}. Please check server connection.` } }));
-              activeRequestsRef.current--;
-              setPagesInProgress(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(page.id);
-                return newSet;
-              });
-              processQueue(); // Continue with next
-            }
-          },
-          (err) => {
-            console.error(`Error generating page ${page.id}: ${err}`);
-            setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: ${err}` } }));
-            activeRequestsRef.current--;
-            setPagesInProgress(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(page.id);
-              return newSet;
-            });
-            processQueue(); // Continue with next
-          },
-          () => { // onComplete
-            console.log(`Page generation completed for ${page.id}. Length: ${responseBuffer.length} characters`);
-            
-            // Validate response completeness
-            if (!responseBuffer.trim()) {
-              console.error(`Empty response received for page ${page.id}`);
-              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: `Error: Empty response received for page ${page.title}` } }));
-            } else {
-              setGeneratedPages(prev => ({ ...prev, [page.id]: { ...page, content: responseBuffer } }));
-            }
-            
-            activeRequestsRef.current--;
-            setPagesInProgress(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(page.id);
-              return newSet;
-            });
-            processQueue(); // Continue with next
-          }
-        );
-      }
-    };
-
-    processQueue();
-
-  }, [pageState, repoInfo, language, selectedProvider, selectedModel, isCustomModel, customModel, token]);
+  // Page generation is now handled in the single wiki generation request above
+  // No separate page generation step needed
 
   // --- UI Event Handlers ---
   const handleRefresh = () => {
