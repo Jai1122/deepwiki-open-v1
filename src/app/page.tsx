@@ -360,7 +360,7 @@ export default function Home() {
                 value={repositoryInput}
                 onChange={handleRepositoryInputChange}
                 placeholder="Enter Bitbucket repository URL or owner/repo..."
-                className="input-confluence block w-full pl-14 pr-16 py-4 text-lg rounded-full shadow-lg hover:shadow-xl focus:shadow-xl transition-all duration-200"
+                className="input-confluence block w-full pl-16 pr-16 py-4 text-lg rounded-full shadow-lg hover:shadow-xl focus:shadow-xl transition-all duration-200"
               />
               <div className="absolute inset-y-0 right-0 flex items-center">
                 <button

@@ -4,8 +4,8 @@ import React from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface TokenInputProps {
-  selectedPlatform: 'github' | 'gitlab' | 'bitbucket';
-  setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket') => void;
+  selectedPlatform: 'bitbucket';
+  setSelectedPlatform: (value: 'bitbucket') => void;
   accessToken: string;
   setAccessToken: (value: string) => void;
   showTokenSection?: boolean;
@@ -43,36 +43,13 @@ export default function TokenInput({
           {allowPlatformChange && (
             <div className="mb-3">
               <label className="block text-xs font-medium text-[var(--foreground)] mb-2">
-                {t.form?.selectPlatform || 'Select Platform'}
+                Platform: Bitbucket
               </label>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedPlatform('github')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${selectedPlatform === 'github'
-                    ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                    : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
-                    }`}
-                >
-                  <span className="text-sm">GitHub</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPlatform('gitlab')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${selectedPlatform === 'gitlab'
-                    ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                    : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
-                    }`}
-                >
-                  <span className="text-sm">GitLab</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPlatform('bitbucket')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 transition-all ${selectedPlatform === 'bitbucket'
-                    ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                    : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--hover-bg)]'
-                    }`}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded border-2 bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)]"
+                  disabled
                 >
                   <span className="text-sm">Bitbucket</span>
                 </button>
@@ -82,20 +59,14 @@ export default function TokenInput({
 
           <div>
             <label htmlFor="access-token" className="block text-xs font-medium text-[var(--foreground)] mb-2">
-              {selectedPlatform === 'bitbucket' 
-                ? 'App Password'
-                : (t.form?.personalAccessToken || 'Personal Access Token').replace('{platform}', platformName)
-              }
+              App Password
             </label>
             <input
               id="access-token"
               type="password"
               value={accessToken}
               onChange={(e) => setAccessToken(e.target.value)}
-              placeholder={selectedPlatform === 'bitbucket' 
-                ? 'Enter your Bitbucket App Password'
-                : (t.form?.tokenPlaceholder || 'Enter your access token').replace('{platform}', platformName)
-              }
+              placeholder="Enter your Bitbucket App Password"
               className="input-confluence block w-full"
             />
             <div className="flex items-center mt-2 text-xs text-[var(--muted)]">
