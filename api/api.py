@@ -674,7 +674,7 @@ async def save_wiki_cache(data: WikiCacheRequest) -> bool:
 async def get_cached_wiki(
     owner: str = Query(..., description="Repository owner"),
     repo: str = Query(..., description="Repository name"),
-    repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)")
+    repo_type: str = Query(..., description="Repository type (bitbucket)")
 ):
     """
     Retrieves cached wiki data (structure and generated pages) for a repository.
@@ -704,7 +704,7 @@ async def store_wiki_cache(request_data: WikiCacheRequest):
 async def delete_wiki_cache(
     owner: str = Query(..., description="Repository owner"),
     repo: str = Query(..., description="Repository name"),
-    repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)"),
+    repo_type: str = Query(..., description="Repository type (bitbucket)"),
     authorization_code: Optional[str] = Query(None, description="Authorization code")
 ):
     """
@@ -792,8 +792,8 @@ async def get_processed_projects():
                     parts = filename.replace("deepwiki_cache_", "").replace(".json", "").split('_')
 
                     # Expecting repo_type_owner_repo
-                    # Example: deepwiki_cache_github_AsyncFuncAI_deepwiki-open.json
-                    # parts = [github, AsyncFuncAI, deepwiki-open]
+                    # Example: deepwiki_cache_bitbucket_AsyncFuncAI_deepwiki-open.json
+                    # parts = [bitbucket, AsyncFuncAI, deepwiki-open]
                     if len(parts) >= 3:
                         repo_type = parts[0]
                         owner = parts[1]

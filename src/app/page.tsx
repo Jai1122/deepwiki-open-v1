@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { FaGithub } from 'react-icons/fa';
+import { FaBitbucket } from 'react-icons/fa';
 import ThemeToggle from '@/components/theme-toggle';
 import ConfigurationModal from '@/components/ConfigurationModal';
 import { extractUrlPath, extractUrlDomain } from '@/utils/urlDecoder';
@@ -42,7 +42,7 @@ export default function Home() {
     return key;
   };
 
-  const [repositoryInput, setRepositoryInput] = useState('https://github.com/AsyncFuncAI/deepwiki-open');
+  const [repositoryInput, setRepositoryInput] = useState('https://bitbucket.org/username/repository');
 
   const REPO_CONFIG_CACHE_KEY = 'deepwikiRepoConfigCache';
 
@@ -91,7 +91,7 @@ export default function Home() {
 
   // Wiki type is now fixed to concise mode (comprehensive mode removed)
 
-  const [selectedPlatform, setSelectedPlatform] = useState<'github' | 'gitlab' | 'bitbucket'>('github');
+  const [selectedPlatform, setSelectedPlatform] = useState<'bitbucket'>('bitbucket');
   const [accessToken, setAccessToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -156,16 +156,13 @@ export default function Home() {
       owner = 'local';
     }
     else if (customGitRegex.test(input)) {
-      // Detect repository type based on domain
+      // Only support Bitbucket repositories
       const domain = extractUrlDomain(input);
-      if (domain?.includes('github.com')) {
-        type = 'github';
-      } else if (domain?.includes('gitlab.com') || domain?.includes('gitlab.')) {
-        type = 'gitlab';
-      } else if (domain?.includes('bitbucket.org') || domain?.includes('bitbucket.')) {
+      if (domain?.includes('bitbucket.org') || domain?.includes('bitbucket.')) {
         type = 'bitbucket';
       } else {
-        type = 'web'; // fallback for other git hosting services
+        console.error('Only Bitbucket repositories are supported:', input);
+        return null;
       }
 
       fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
@@ -207,7 +204,7 @@ export default function Home() {
     const parsedRepo = parseRepositoryInput(repositoryInput);
 
     if (!parsedRepo) {
-      setError('Invalid repository format. Use "owner/repo", GitHub/GitLab/BitBucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
+      setError('Invalid repository format. Use "owner/repo", Bitbucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
       return;
     }
 
@@ -282,7 +279,7 @@ export default function Home() {
     const parsedRepo = parseRepositoryInput(repositoryInput);
 
     if (!parsedRepo) {
-      setError('Invalid repository format. Use "owner/repo", GitHub/GitLab/BitBucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
+      setError('Invalid repository format. Use "owner/repo", Bitbucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
       setIsSubmitting(false);
       return;
     }
@@ -295,7 +292,7 @@ export default function Home() {
       params.append('token', accessToken);
     }
     // Always include the type parameter
-    params.append('type', (type == 'local' ? type : selectedPlatform) || 'github');
+    params.append('type', (type == 'local' ? type : selectedPlatform) || 'bitbucket');
     // Add local path if it exists
     if (localPath) {
       params.append('local_path', encodeURIComponent(localPath));
@@ -356,13 +353,13 @@ export default function Home() {
           <form onSubmit={handleFormSubmit}>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <FaGithub className="h-5 w-5 text-[var(--muted)]" />
+                <FaBitbucket className="h-5 w-5 text-[var(--muted)]" />
               </div>
               <input
                 type="text"
                 value={repositoryInput}
                 onChange={handleRepositoryInputChange}
-                placeholder="Enter repository URL or owner/repo..."
+                placeholder="Enter Bitbucket repository URL or owner/repo..."
                 className="input-confluence block w-full pl-14 pr-16 py-4 text-lg rounded-full shadow-lg hover:shadow-xl focus:shadow-xl transition-all duration-200"
               />
               <div className="absolute inset-y-0 right-0 flex items-center">

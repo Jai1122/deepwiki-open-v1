@@ -110,13 +110,13 @@ class RAG(adal.Component):
 
         return valid_documents
 
-    def prepare_retriever(self, repo_url_or_path: str, type: str = "github", access_token: str = None):
+    def prepare_retriever(self, repo_url_or_path: str, type: str = "bitbucket", access_token: str = None):
         """
         Prepares the FAISS retriever by processing the repository and building the index.
         """
         try:
             # Enhanced processing for remote repositories to ensure comprehensive wiki generation
-            if type in ["bitbucket", "github", "gitlab"]:
+            if type == "bitbucket":
                 # Use higher token limits and enhanced processing for remote repos
                 logger.info(f"🚀 Enhanced RAG processing for {type} repository")
                 self.transformed_docs = self.db_manager.prepare_database(

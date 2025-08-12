@@ -9,7 +9,12 @@ export default function getRepoUrl(repoInfo: RepoInfo): string {
       return repoInfo.repoUrl;
     } else {
       if(repoInfo.owner && repoInfo.repo) {
-        return "http://example/" + repoInfo.owner + "/" + repoInfo.repo;
+        // For Bitbucket repositories, construct the proper URL
+        if (repoInfo.type === 'bitbucket') {
+          return `https://bitbucket.org/${repoInfo.owner}/${repoInfo.repo}`;
+        } else {
+          return "http://example/" + repoInfo.owner + "/" + repoInfo.repo;
+        }
       }
       return '';
     }

@@ -1,6 +1,6 @@
 # DeepWiki-Open
 
-**DeepWiki** is an AI-powered documentation generator that automatically creates beautiful, interactive wikis for any GitHub, GitLab, or Bitbucket repository! Just enter a repo name, and DeepWiki will:
+**DeepWiki** is an AI-powered documentation generator that automatically creates beautiful, interactive wikis for any Bitbucket repository! Just enter a repo name, and DeepWiki will:
 
 1. Analyze the code structure
 2. Generate comprehensive documentation
@@ -9,7 +9,7 @@
 
 ## ✨ Features
 
-- **Instant Documentation**: Turn any GitHub, GitLab or Bitbucket repo into a wiki in seconds
+- **Instant Documentation**: Turn any Bitbucket repo into a wiki in seconds
 - **Private Repository Support**: Securely access private repositories with personal access tokens
 - **Smart Analysis**: AI-powered understanding of code structure and relationships
 - **Beautiful Diagrams**: Automatic Mermaid diagrams to visualize architecture and data flow
@@ -28,7 +28,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/AsyncFuncAI/deepwiki-open.git
+git clone https://bitbucket.org/your-workspace/deepwiki-open.git
 cd deepwiki-open
 
 # Create a .env file with your vLLM API keys
@@ -87,10 +87,8 @@ yarn dev
 #### Step 4: Use DeepWiki!
 
 1. Open [http://localhost:3000](http://localhost:3000) in your browser
-2. Enter a GitHub, GitLab, or Bitbucket repository (like `https://github.com/openai/codex`, `https://github.com/microsoft/autogen`, `https://gitlab.com/gitlab-org/gitlab`, or `https://bitbucket.org/redradish/atlassian_app_versions`)
+2. Enter a Bitbucket repository (like `https://bitbucket.org/redradish/atlassian_app_versions`)
 3. For private repositories, click "+ Add access tokens" and enter your access token:
-   - **GitHub**: Personal Access Token
-   - **GitLab**: Personal Access Token  
    - **Bitbucket**: App Password (create one in Bitbucket Settings → App passwords)
 4. Click "Generate Wiki" and watch the magic happen!
 
@@ -211,7 +209,7 @@ If you see errors like `assert d == self.d` or `AssertionError` in FAISS retriev
 
 DeepWiki uses AI to:
 
-1. Clone and analyze the GitHub, GitLab, or Bitbucket repository (including private repos with token authentication)
+1. Clone and analyze the Bitbucket repository (including private repos with token authentication)
 2. Create embeddings of the code for smart retrieval
 3. Generate documentation with context-aware AI (using Google Gemini, OpenAI, OpenRouter, Azure OpenAI, vLLM, or local Ollama models)
 4. Create visual diagrams to explain code relationships
@@ -243,7 +241,7 @@ DeepWiki includes comprehensive stability improvements for production use:
 
 ```mermaid
 graph TD
-    A[User inputs GitHub/GitLab/Bitbucket repo] --> AA{Private repo?}
+    A[User inputs Bitbucket repo] --> AA{Private repo?}
     AA -->|Yes| AB[Add access token]
     AA -->|No| B[Clone Repository]
     AB --> B
@@ -490,8 +488,8 @@ You can use Docker to run DeepWiki:
 #### Running the Container
 
 ```bash
-# Pull the image from GitHub Container Registry
-docker pull ghcr.io/asyncfuncai/deepwiki-open:latest
+# Pull the image from Docker Hub or build locally
+docker pull deepwiki-open:latest
 
 # Run the container with environment variables
 docker run -p 8001:8001 -p 3000:3000 \
@@ -556,7 +554,7 @@ If you want to build the Docker image locally:
 
 ```bash
 # Clone the repository
-git clone https://github.com/AsyncFuncAI/deepwiki-open.git
+git clone https://bitbucket.org/your-workspace/deepwiki-open.git
 cd deepwiki-open
 
 # Build the Docker image
@@ -673,7 +671,7 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 - **"Repository analysis failed"**: Check if the repository URL is accessible and you have proper permissions for private repos
 - **"Stream response generator failed to start"**: Usually indicates a provider configuration issue. Check server logs for specific errors
 - **"Repository processing failed"**: The repository may be too large or contain unsupported file types
-- **"Invalid repository format"**: Make sure you're using a valid GitHub, GitLab or Bitbucket URL format
+- **"Invalid repository format"**: Make sure you're using a valid Bitbucket URL format
 - **"Could not fetch repository structure"**: For private repositories, ensure you've entered a valid personal access token with appropriate permissions
 - **"Diagram rendering error"**: The app will automatically try to fix broken diagrams
 

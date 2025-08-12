@@ -97,18 +97,16 @@ def safe_chunk_for_embedding(text: str, max_tokens: int = 4000) -> List[str]:
     logger.debug(f"Split {token_count} tokens into {len(validated_chunks)} safe chunks")
     return validated_chunks
 
-def download_repo(repo_url: str, local_path: str, type: str = "github", access_token: str = None) -> str:
+def download_repo(repo_url: str, local_path: str, type: str = "bitbucket", access_token: str = None) -> str:
     """
-    Clones a repository from GitHub, GitLab, or Bitbucket.
+    Clones a repository from Bitbucket.
     Handles authentication for private repositories.
     
     Args:
         repo_url: The repository URL to clone
         local_path: Local path where repository will be cloned
-        type: Repository type ("github", "gitlab", "bitbucket")
+        type: Repository type ("bitbucket")
         access_token: Authentication token
-            - GitHub: Personal Access Token
-            - GitLab: Personal Access Token
             - Bitbucket: HTTP Access Token or username:app_password
     """
     if os.path.exists(local_path):
@@ -152,38 +150,29 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
     # Prepare list of clone URLs to try
     clone_urls = [normalized_repo_url]  # Start with normalized URL for public repos
     
-    if type in ["github", "gitlab", "bitbucket"] and access_token:
+    if type == "bitbucket" and access_token:
         parsed_url = urlparse(normalized_repo_url)
-        if type == "github":
-            # URL encode the token to handle special characters
-            encoded_token = quote(access_token, safe='')
-            clone_urls = [f"https://{encoded_token}@{parsed_url.netloc}{parsed_url.path}"]
-        elif type == "gitlab":
-            # URL encode the token to handle special characters
-            encoded_token = quote(access_token, safe='')
-            clone_urls = [f"https://oauth2:{encoded_token}@{parsed_url.netloc}{parsed_url.path}"]
-        elif type == "bitbucket":
-            # For Bitbucket, try multiple auth methods
-            encoded_token = quote(access_token, safe='')
-            clone_urls = []
+        # For Bitbucket, try multiple auth methods
+        encoded_token = quote(access_token, safe='')
+        clone_urls = []
+        
+        if ':' in access_token:
+            # Assume it's username:app_password format
+            username, password = access_token.split(':', 1)
+            encoded_username = quote(username, safe='')
+            encoded_password = quote(password, safe='')
+            clone_urls.append(f"https://{encoded_username}:{encoded_password}@{parsed_url.netloc}{parsed_url.path}")
             
-            if ':' in access_token:
-                # Assume it's username:app_password format
-                username, password = access_token.split(':', 1)
-                encoded_username = quote(username, safe='')
-                encoded_password = quote(password, safe='')
-                clone_urls.append(f"https://{encoded_username}:{encoded_password}@{parsed_url.netloc}{parsed_url.path}")
-                
-                # Also try with x-token-auth in case it's actually an HTTP token with colon
-                clone_urls.append(f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
-            else:
-                # HTTP access token - try multiple username formats
-                clone_urls.append(f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
-                # Some repos may work with the workspace name as username
-                path_parts = parsed_url.path.strip('/').split('/')
-                if len(path_parts) >= 1:
-                    workspace = path_parts[0]
-                    clone_urls.append(f"https://{workspace}:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
+            # Also try with x-token-auth in case it's actually an HTTP token with colon
+            clone_urls.append(f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
+        else:
+            # HTTP access token - try multiple username formats
+            clone_urls.append(f"https://x-token-auth:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
+            # Some repos may work with the workspace name as username
+            path_parts = parsed_url.path.strip('/').split('/')
+            if len(path_parts) >= 1:
+                workspace = path_parts[0]
+                clone_urls.append(f"https://{workspace}:{encoded_token}@{parsed_url.netloc}{parsed_url.path}")
 
     logger.info(f"🚀 Cloning repository from {repo_url} to {local_path}...")
     logger.info(f"📋 Attempting {len(clone_urls)} clone method(s)")
@@ -801,7 +790,7 @@ class DatabaseManager:
     def __init__(self):
         self.db_docs: Optional[List[Document]] = None
 
-    def prepare_database(self, repo_url_or_path: str, type: str = "github", access_token: str = None,
+    def prepare_database(self, repo_url_or_path: str, type: str = "bitbucket", access_token: str = None,
                        max_total_tokens: int = 2000000, prioritize_files: bool = True) -> List[Document]:
         """
         Main method to prepare the database. It handles cloning, loading from cache,
@@ -836,7 +825,7 @@ class DatabaseManager:
                         if not content_valid:
                             logger.warning(f"Cache appears to contain insufficient source code content for comprehensive wiki generation. Regenerating database.")
                             # For remote repos, log additional context to help debugging
-                            if type in ["bitbucket", "github", "gitlab"]:
+                            if type == "bitbucket":
                                 logger.warning(f"🔍 {type} repository cache regeneration - ensuring comprehensive processing")
                         self._clear_cache(db_path)
                 else:
@@ -881,8 +870,8 @@ class DatabaseManager:
                     raise RuntimeError(f"Repository download failed - cannot access: {repo_path}")
                 
                 # For remote repositories, ensure comprehensive processing  
-                # Bitbucket and other remote repos should get the same detailed treatment as local repos
-                if type in ["bitbucket", "github", "gitlab"]:
+                # Bitbucket remote repos should get the same detailed treatment as local repos
+                if type == "bitbucket":
                     # Increase processing capacity for remote repositories to ensure comprehensive wikis
                     max_total_tokens = min(max_total_tokens * 1.5, 3000000)  # Up to 3M tokens for remote repos
                     logger.info(f"🚀 Enhanced processing for {type} repository: {max_total_tokens} token limit")

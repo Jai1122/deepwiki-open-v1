@@ -48,8 +48,6 @@
       ".gitignore",
       ".gitattributes",
       ".gitmodules",
-      ".github",
-      ".gitlab-ci.yml",
       ".prettierrc",
       ".eslintrc",
       ".eslintignore",

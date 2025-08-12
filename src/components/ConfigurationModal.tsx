@@ -30,8 +30,8 @@ interface ConfigurationModalProps {
   setEmbeddingModel?: (value: string) => void;
 
   // Platform selection
-  selectedPlatform: 'github' | 'gitlab' | 'bitbucket';
-  setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket') => void;
+  selectedPlatform: 'bitbucket';
+  setSelectedPlatform: (value: 'bitbucket') => void;
 
   // Access token
   accessToken: string;

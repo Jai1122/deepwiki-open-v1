@@ -13,7 +13,7 @@ import { extractUrlDomain, extractUrlPath } from '@/utils/urlDecoder';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FaBitbucket, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaGithub, FaGitlab, FaHome, FaSync, FaTimes } from 'react-icons/fa';
+import { FaBitbucket, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaHome, FaSync, FaTimes } from 'react-icons/fa';
 import { createChatWebSocket, closeWebSocket, ChatCompletionRequest } from '@/utils/websocketClient';
 
 // Type definitions
@@ -100,18 +100,6 @@ const wikiStyles = `
 `;
 
 // --- Helper functions for API calls ---
-const createGithubHeaders = (githubToken: string): HeadersInit => {
-  const headers: HeadersInit = { 'Accept': 'application/vnd.github.v3+json' };
-  if (githubToken) headers['Authorization'] = `Bearer ${githubToken}`;
-  return headers;
-};
-
-const createGitlabHeaders = (gitlabToken: string): HeadersInit => {
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (gitlabToken) headers['PRIVATE-TOKEN'] = gitlabToken;
-  return headers;
-};
-
 const createBitbucketHeaders = (bitbucketToken: string): HeadersInit => {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   if (bitbucketToken) {
@@ -134,7 +122,7 @@ export default function RepoWikiPage() {
   const repo = params.repo as string;
   const token = searchParams.get('token') || '';
   const repoUrl = searchParams.get('repo_url') ? decodeURIComponent(searchParams.get('repo_url') || '') : undefined;
-  const repoType = repoUrl?.includes('bitbucket.org') ? 'bitbucket' : repoUrl?.includes('gitlab.com') ? 'gitlab' : repoUrl?.includes('github.com') ? 'github' : searchParams.get('type') || 'github';
+  const repoType = repoUrl?.includes('bitbucket.org') ? 'bitbucket' : searchParams.get('type') || 'bitbucket';
 
   const repoInfo = useMemo<RepoInfo>(() => ({
     owner,
@@ -167,8 +155,8 @@ export default function RepoWikiPage() {
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
   // --- Model Config State ---
-  const [selectedProvider, setSelectedProvider] = useState(searchParams.get('provider') || '');
-  const [selectedModel, setSelectedModel] = useState(searchParams.get('model') || '');
+  const [selectedProvider, setSelectedProvider] = useState(searchParams.get('provider') || 'vllm');
+  const [selectedModel, setSelectedModel] = useState(searchParams.get('model') || '/app/models/Qwen2.5-VL-7B-Instruct');
   const [isCustomModel, setIsCustomModel] = useState(searchParams.get('is_custom_model') === 'true');
   const [customModel, setCustomModel] = useState(searchParams.get('custom_model') || '');
 
@@ -189,8 +177,6 @@ export default function RepoWikiPage() {
     const baseUrl = repoInfo.repoUrl;
     try {
       const url = new URL(baseUrl);
-      if (url.hostname.includes('github')) return `${baseUrl}/blob/${defaultBranch}/${filePath}`;
-      if (url.hostname.includes('gitlab')) return `${baseUrl}/-/blob/${defaultBranch}/${filePath}`;
       if (url.hostname.includes('bitbucket')) return `${baseUrl}/src/${defaultBranch}/${filePath}`;
     } catch { /* fallback */ }
     return filePath;
@@ -278,8 +264,8 @@ export default function RepoWikiPage() {
         language: language,
         wiki_structure: wikiStructure,
         generated_pages: generatedPages,
-        provider: selectedProvider || 'google',
-        model: selectedModel || 'gemini-2.0-flash'
+        provider: selectedProvider || 'vllm',
+        model: selectedModel || '/app/models/Qwen2.5-VL-7B-Instruct'
       };
 
       console.log('Saving wiki to cache:', saveData);
@@ -376,66 +362,7 @@ export default function RepoWikiPage() {
       let readmeContent = '';
 
       try {
-        if (repoInfo.type === 'github') {
-            const getGithubApiUrl = (repoUrl: string | null): string => {
-                if (!repoUrl) return 'https://api.github.com';
-                try {
-                    const url = new URL(repoUrl);
-                    return url.hostname === 'github.com' ? 'https://api.github.com' : `${url.protocol}//${url.hostname}/api/v3`;
-                } catch { return 'https://api.github.com'; }
-            };
-            const githubApiBaseUrl = getGithubApiUrl(repoInfo.repoUrl);
-            const repoInfoResponse = await fetch(`${githubApiBaseUrl}/repos/${owner}/${repo}`, { headers: createGithubHeaders(token) });
-            const repoData = await repoInfoResponse.json();
-            const branch = repoData.default_branch || 'main';
-            setDefaultBranch(branch);
-
-            // GitHub's get tree API is limited for large repos, but recursive fetch should get most things.
-            // Note: For truly massive repos, this can still be truncated. A more robust solution would use the Git Database API.
-            const treeResponse = await fetch(`${githubApiBaseUrl}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, { headers: createGithubHeaders(token) });
-            if (!treeResponse.ok) throw new Error(`GitHub API error: ${treeResponse.statusText}`);
-            const treeData = await treeResponse.json();
-            if (treeData.truncated) {
-              console.warn("GitHub API response was truncated. The file list may be incomplete.");
-            }
-            fileTreeData = treeData.tree.filter((item: any) => item.type === 'blob').map((item: any) => item.path).join('\n');
-
-            const readmeResponse = await fetch(`${githubApiBaseUrl}/repos/${owner}/${repo}/readme`, { headers: createGithubHeaders(token) });
-            if (readmeResponse.ok) {
-                const readmeData = await readmeResponse.json();
-                readmeContent = atob(readmeData.content);
-            }
-        } else if (repoInfo.type === 'gitlab') {
-            const projectDomain = extractUrlDomain(repoInfo.repoUrl ?? "https://gitlab.com");
-            const projectPath = encodeURIComponent(extractUrlPath(repoInfo.repoUrl ?? '') ?? `${owner}/${repo}`);
-            const projectInfoUrl = `${projectDomain}/api/v4/projects/${projectPath}`;
-            const headers = createGitlabHeaders(token);
-
-            const projectInfoRes = await fetch(projectInfoUrl, { headers });
-            if (!projectInfoRes.ok) throw new Error(`GitLab project info error: ${projectInfoRes.statusText}`);
-            const projectInfo = await projectInfoRes.json();
-            const branch = projectInfo.default_branch || 'main';
-            setDefaultBranch(branch);
-
-            // Implement pagination for GitLab tree
-            let allFiles: any[] = [];
-            let page = 1;
-            while (true) {
-              const treeUrl = `${projectInfoUrl}/repository/tree?recursive=true&per_page=100&page=${page}`;
-              const treeResponse = await fetch(treeUrl, { headers });
-              if (!treeResponse.ok) throw new Error(`GitLab tree error: ${treeResponse.statusText}`);
-              const pageData = await treeResponse.json();
-              if (pageData.length === 0) break;
-              allFiles = allFiles.concat(pageData);
-              page++;
-            }
-            
-            fileTreeData = allFiles.filter((item: any) => item.type === 'blob').map((item: any) => item.path).join('\n');
-
-            const readmeUrl = `${projectInfoUrl}/repository/files/README.md/raw?ref=${branch}`;
-            const readmeResponse = await fetch(readmeUrl, { headers });
-            if (readmeResponse.ok) readmeContent = await readmeResponse.text();
-        } else if (repoInfo.type === 'local' && repoInfo.localPath) {
+        if (repoInfo.type === 'local' && repoInfo.localPath) {
             const response = await fetch(`/local_repo/structure?path=${encodeURIComponent(repoInfo.localPath)}`);
             if (!response.ok) {
                 const errorData = await response.text();
@@ -445,8 +372,14 @@ export default function RepoWikiPage() {
             fileTreeData = data.file_tree;
             readmeContent = data.readme;
             setDefaultBranch('main'); // Local repos don't have a concept of a remote branch
+        } else if (repoInfo.type === 'bitbucket') {
+            // For Bitbucket repositories, we skip the structure fetching step
+            // The backend will handle repository cloning and analysis during wiki generation
+            // Set minimal data to proceed to wiki generation
+            fileTreeData = 'Repository structure will be analyzed by backend during processing';
+            readmeContent = 'README content will be retrieved during backend processing';
+            setDefaultBranch('main'); // Default branch
         }
-        // Add Bitbucket logic here if needed...
 
         setFileTree(fileTreeData);
         setReadme(readmeContent);
@@ -497,8 +430,8 @@ Please provide comprehensive documentation with actual source code analysis, mer
       repo_url: getRepoUrl(repoInfo),
       type: repoInfo.type,
       messages: [{ role: 'user', content: prompt }],
-      provider: selectedProvider,
-      model: isCustomModel ? customModel : selectedModel,
+      provider: selectedProvider || 'vllm',
+      model: isCustomModel ? customModel : (selectedModel || '/app/models/Qwen2.5-VL-7B-Instruct'),
       language: language,
       token: token,
     };
@@ -601,65 +534,16 @@ Please provide comprehensive documentation with actual source code analysis, mer
               });
             }
             
-            // Group pages into logical sections
-            const architecturePages = pages.filter(p => 
-              p.title.toLowerCase().includes('architecture') || 
-              p.title.toLowerCase().includes('overview') ||
-              p.title.toLowerCase().includes('system')
-            );
+            // Create a single section with pages in their original order
+            // This preserves the logical flow from the AI-generated comprehensive response
+            const allPageIds = pages.map(p => p.id);
             
-            const implementationPages = pages.filter(p => 
-              p.title.toLowerCase().includes('component') || 
-              p.title.toLowerCase().includes('implementation') ||
-              p.title.toLowerCase().includes('api') ||
-              p.title.toLowerCase().includes('data')
-            );
-            
-            const operationsPages = pages.filter(p => 
-              p.title.toLowerCase().includes('deployment') || 
-              p.title.toLowerCase().includes('security') ||
-              p.title.toLowerCase().includes('performance')
-            );
-            
-            // Create sections
-            if (architecturePages.length > 0) {
-              sections.push({
-                id: 'architecture',
-                title: 'System Architecture',
-                pages: architecturePages.map(p => p.id),
-                subsections: []
-              });
-            }
-            
-            if (implementationPages.length > 0) {
-              sections.push({
-                id: 'implementation',
-                title: 'Implementation Details',
-                pages: implementationPages.map(p => p.id),
-                subsections: []
-              });
-            }
-            
-            if (operationsPages.length > 0) {
-              sections.push({
-                id: 'operations',
-                title: 'Operations & Deployment',
-                pages: operationsPages.map(p => p.id),
-                subsections: []
-              });
-            }
-            
-            // Catch any remaining pages
-            const allSectionPageIds = sections.flatMap(s => s.pages);
-            const remainingPages = pages.filter(p => !allSectionPageIds.includes(p.id));
-            if (remainingPages.length > 0) {
-              sections.push({
-                id: 'additional',
-                title: 'Additional Information',
-                pages: remainingPages.map(p => p.id),
-                subsections: []
-              });
-            }
+            sections.push({
+              id: 'main-documentation',
+              title: 'Documentation',
+              pages: allPageIds,
+              subsections: []
+            });
             
           } else {
             // Single comprehensive page
