@@ -352,15 +352,12 @@ export default function Home() {
         <div className="w-full max-w-xl mb-8">
           <form onSubmit={handleFormSubmit}>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <FaBitbucket className="h-5 w-5 text-[var(--muted)]" />
-              </div>
               <input
                 type="text"
                 value={repositoryInput}
                 onChange={handleRepositoryInputChange}
                 placeholder="Enter Bitbucket repository URL or owner/repo..."
-                className="input-confluence block w-full pl-16 pr-16 py-4 text-lg rounded-full shadow-lg hover:shadow-xl focus:shadow-xl transition-all duration-200"
+                className="input-confluence block w-full pl-6 pr-16 py-4 text-lg rounded-full shadow-lg hover:shadow-xl focus:shadow-xl transition-all duration-200"
               />
               <div className="absolute inset-y-0 right-0 flex items-center">
                 <button
