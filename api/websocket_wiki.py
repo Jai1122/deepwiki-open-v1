@@ -1321,6 +1321,15 @@ async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGeneration
         rag_instance = await initialize_rag_system(request)
         
         await safe_websocket_send(websocket, {
+            "status": "rag_initializing", 
+            "message": "Processing repository content..."
+        })
+        
+        # Step 2b: Prepare the RAG retriever for the repository  
+        logger.info("📚 Step 2b: Preparing RAG retriever for repository")
+        prepare_rag_for_repository(rag_instance, request)
+        
+        await safe_websocket_send(websocket, {
             "status": "rag_initialized", 
             "message": "Content retrieval system ready"
         })
@@ -1503,14 +1512,37 @@ async def initialize_rag_system(request: CleanWikiGenerationRequest) -> RAG:
     """Initialize RAG system for the repository."""
     logger.info(f"🔍 Initializing RAG system for {request.repo_url}")
     
-    # Create RAG instance using existing logic
-    rag_instance = RAG(configs=configs)
+    # Create RAG instance with correct parameters
+    rag_instance = RAG(
+        provider=request.provider,
+        model=request.model,
+        use_s3=False  # We're not using S3 for this implementation
+    )
     
     # The RAG system will handle repository processing internally
     # This includes cloning, file analysis, embedding generation, etc.
     logger.info("✅ RAG system initialized successfully")
     
     return rag_instance
+
+
+def prepare_rag_for_repository(rag_instance: RAG, request: CleanWikiGenerationRequest):
+    """Prepare the RAG system for the specific repository."""
+    logger.info(f"📚 Preparing RAG retriever for repository: {request.repo_url}")
+    
+    try:
+        # Use the existing prepare_retriever method to process the repository
+        rag_instance.prepare_retriever(
+            repo_url_or_path=request.local_path if request.repo_type == "local" else request.repo_url,
+            type=request.repo_type,
+            access_token=request.token
+        )
+        logger.info("✅ RAG retriever prepared successfully")
+        
+    except Exception as e:
+        logger.error(f"Failed to prepare RAG retriever: {e}")
+        # Don't raise the exception - we can still generate a basic wiki without RAG
+        logger.warning("⚠️ Continuing without RAG retrieval - wiki may be less comprehensive")
 
 
 async def get_repository_context(rag_instance: RAG) -> str:
