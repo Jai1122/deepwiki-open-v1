@@ -6,6 +6,21 @@ class IgnoreLogChangeDetectedFilter(logging.Filter):
     def filter(self, record: logging.LogRecord):
         return "Detected file change in" not in record.getMessage()
 
+class IgnoreVerboseTextSplittingFilter(logging.Filter):
+    """Filter out verbose text splitting messages from adalflow components."""
+    def filter(self, record: logging.LogRecord):
+        message = record.getMessage()
+        # Filter out common verbose text splitting messages
+        verbose_patterns = [
+            "Text split by",
+            "Splitting text with",
+            "split by '' into",
+            "Splitting text with ''",
+            "Created chunk",
+            "Split into chunks"
+        ]
+        return not any(pattern in message for pattern in verbose_patterns)
+
 def setup_logging(format: str = None):
     """
     Configure logging for the application.
@@ -46,10 +61,12 @@ def setup_logging(format: str = None):
     file_handler = logging.FileHandler(resolved_path)
     file_handler.setFormatter(file_formatter)
     file_handler.addFilter(IgnoreLogChangeDetectedFilter())
+    file_handler.addFilter(IgnoreVerboseTextSplittingFilter())
     
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(console_formatter)
     console_handler.addFilter(IgnoreLogChangeDetectedFilter())
+    console_handler.addFilter(IgnoreVerboseTextSplittingFilter())
     
     # Configure root logger
     root_logger = logging.getLogger()
@@ -62,7 +79,22 @@ def setup_logging(format: str = None):
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
+    # Configure specific loggers to reduce verbosity
+    # Reduce adalflow TextSplitter verbosity (moves "Text split by..." and "Splitting text with" logs to WARNING)
+    adalflow_data_process_logger = logging.getLogger("adalflow.components.data_process")
+    adalflow_data_process_logger.setLevel(logging.WARNING)
+    
+    # Reduce adalflow TextSplitter specifically (more targeted)
+    adalflow_text_splitter_logger = logging.getLogger("adalflow.components.data_process.text_splitter")
+    adalflow_text_splitter_logger.setLevel(logging.WARNING)
+    
+    # Reduce other adalflow component verbosity
+    adalflow_logger = logging.getLogger("adalflow")
+    if log_level > logging.DEBUG:  # Only if we're not in DEBUG mode
+        adalflow_logger.setLevel(logging.WARNING)
+
     # Initial debug message to confirm configuration
     logger = logging.getLogger(__name__)
     logger.info(f"📝 Logging configured - Level: {log_level_str}, File: {resolved_path.name}")
     logger.debug(f"Detailed logging path: {resolved_path}")
+    logger.debug("🔇 Adalflow verbose logging reduced to WARNING level")
