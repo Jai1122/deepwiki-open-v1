@@ -1532,15 +1532,24 @@ def prepare_rag_for_repository(rag_instance: RAG, request: CleanWikiGenerationRe
     
     try:
         # Use the existing prepare_retriever method to process the repository
+        repo_path = request.local_path if request.repo_type == "local" else request.repo_url
+        logger.info(f"🔧 Calling prepare_retriever with: path={repo_path}, type={request.repo_type}")
+        
         rag_instance.prepare_retriever(
-            repo_url_or_path=request.local_path if request.repo_type == "local" else request.repo_url,
+            repo_url_or_path=repo_path,
             type=request.repo_type,
             access_token=request.token
         )
-        logger.info("✅ RAG retriever prepared successfully")
+        
+        # Verify that retriever was actually created
+        if rag_instance.retriever:
+            logger.info("✅ RAG retriever prepared successfully")
+            logger.info(f"📊 RAG has {len(rag_instance.transformed_docs)} transformed documents")
+        else:
+            logger.error("❌ RAG retriever preparation appeared to succeed but retriever is None")
         
     except Exception as e:
-        logger.error(f"Failed to prepare RAG retriever: {e}")
+        logger.error(f"❌ Failed to prepare RAG retriever: {e}", exc_info=True)
         # Don't raise the exception - we can still generate a basic wiki without RAG
         logger.warning("⚠️ Continuing without RAG retrieval - wiki may be less comprehensive")
 
@@ -1548,6 +1557,13 @@ def prepare_rag_for_repository(rag_instance: RAG, request: CleanWikiGenerationRe
 async def get_repository_context(rag_instance: RAG) -> str:
     """Get comprehensive repository context from RAG system."""
     logger.info("📝 Retrieving comprehensive repository context")
+    
+    # Check if RAG retriever is properly initialized
+    if not rag_instance.retriever:
+        logger.error("❌ RAG retriever is not initialized - cannot retrieve context")
+        return "Repository context not available: RAG retriever not prepared"
+    
+    logger.info(f"✅ RAG retriever found: {type(rag_instance.retriever)}")
     
     try:
         # Use broad queries to get comprehensive coverage
@@ -1566,18 +1582,33 @@ async def get_repository_context(rag_instance: RAG) -> str:
         
         for query in broad_queries:
             try:
-                docs = rag_instance.retrieve(query=query, top_k=10)
-                for doc in docs:
-                    source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
-                    if source not in seen_sources:
-                        all_docs.append(doc)
-                        seen_sources.add(source)
+                # Use the correct RAG.call() method instead of retrieve()
+                result = rag_instance.call(query)
+                
+                if result is not None and isinstance(result, tuple) and len(result) >= 2:
+                    retrieved_docs, _ = result
+                    
+                    if retrieved_docs:
+                        for doc in retrieved_docs:
+                            # Check if doc has source information
+                            source = getattr(doc, 'source', 'unknown')
+                            if hasattr(doc, 'metadata') and doc.metadata:
+                                source = doc.metadata.get('source', source)
+                            
+                            if source not in seen_sources:
+                                all_docs.append(doc)
+                                seen_sources.add(source)
+                    else:
+                        logger.debug(f"Query '{query}' returned no documents")
+                else:
+                    logger.debug(f"Query '{query}' returned invalid result format")
+                    
             except Exception as e:
                 logger.warning(f"Query '{query}' failed: {e}")
                 continue
         
         # Combine all retrieved context
-        context_text = "\n\n".join([doc.text for doc in all_docs]) if all_docs else ""
+        context_text = "\n\n".join([getattr(doc, 'text', getattr(doc, 'content', '')) for doc in all_docs]) if all_docs else ""
         
         logger.info(f"📊 Retrieved context: {len(context_text)} chars from {len(seen_sources)} sources")
         return context_text[:50000]  # Limit to 50K chars
