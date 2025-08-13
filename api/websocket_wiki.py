@@ -954,6 +954,11 @@ async def stream_response(
         # For structure determination, use the query as-is (it already contains file tree + README)
         logger.info("🏗️  Processing wiki structure determination query")
         system_prompt = query  # The query already contains the proper structure prompt
+    elif query.startswith("[CLEAN_WIKI_PREFORMATTED_PROMPT]"):
+        # For clean wiki generation, use the pre-formatted prompt directly
+        logger.info("🎯 Processing clean wiki with pre-formatted ARCHITECTURE_OVERVIEW_PROMPT")
+        system_prompt = query.replace("[CLEAN_WIKI_PREFORMATTED_PROMPT]\n", "")
+        logger.info(f"✅ Using pre-formatted prompt: {len(system_prompt)} characters")
     else:
         # For content generation, use intelligently chosen prompts based on query type
         query_lower = query.lower()
@@ -1338,13 +1343,22 @@ async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGeneration
         logger.info("🏗️ Step 3: Generating comprehensive wiki documentation")
         
         # Use the sophisticated architecture overview prompt internally
+        repo_context = await get_repository_context(rag_instance)
+        
         system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
             file_tree=file_tree[:15000],
             readme=readme_content[:5000],
-            context=await get_repository_context(rag_instance)
+            context=repo_context
         )
         
-        logger.info(f"✅ Using ARCHITECTURE_OVERVIEW_PROMPT: {len(system_prompt)} characters")
+        logger.info(f"✅ Using ARCHITECTURE_OVERVIEW_PROMPT:")
+        logger.info(f"   - File tree length: {len(file_tree)} chars (using {len(file_tree[:15000])})")
+        logger.info(f"   - README length: {len(readme_content)} chars (using {len(readme_content[:5000])})")
+        logger.info(f"   - Context length: {len(repo_context)} chars")
+        logger.info(f"   - Final prompt length: {len(system_prompt)} characters")
+        
+        # Log first 500 chars of the formatted prompt to verify it's the detailed one
+        logger.info(f"📝 Prompt preview: {system_prompt[:500]}...")
         
         await safe_websocket_send(websocket, {
             "status": "generating", 
@@ -1358,9 +1372,12 @@ async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGeneration
         # Create a proper chat request for the existing stream system
         # Use the existing ChatCompletionRequest and ChatMessage classes defined above
         
+        # Add a special marker to indicate this is a pre-formatted prompt from clean wiki generation
+        marked_prompt = f"[CLEAN_WIKI_PREFORMATTED_PROMPT]\n{system_prompt}"
+        
         chat_request = ChatCompletionRequest(
             repo_url=request.repo_url,
-            messages=[ChatMessage(role="user", content=system_prompt)],
+            messages=[ChatMessage(role="user", content=marked_prompt)],
             type=request.repo_type,
             provider=request.provider,
             model=request.model,
