@@ -399,33 +399,9 @@ export default function RepoWikiPage() {
 
     setLoadingMessage('Generating comprehensive wiki documentation...');
 
-    // Send a request that triggers the backend's ARCHITECTURE_OVERVIEW_PROMPT
-    // This will generate a comprehensive system overview with mermaid diagrams
-    const prompt = `Create a comprehensive System Architecture Overview for this repository based on actual source code analysis.
-
-I need you to analyze the actual implementation files and create detailed documentation that includes:
-
-1. **System Architecture Overview** with mermaid diagrams showing actual code relationships
-2. **Technology Stack Analysis** based on real dependencies and configurations  
-3. **Component Breakdown** documenting actual classes, functions, and modules found
-4. **API Documentation** based on real endpoints and interfaces
-5. **Data Flow Analysis** showing how data moves through the actual system
-6. **Deployment Architecture** based on actual configuration files
-7. **Security Implementation** documenting actual security patterns used
-8. **Performance Considerations** based on actual implementation choices
-
-This should be a comprehensive multi-section document that serves as the main wiki page for understanding this system.
-
-Repository: ${owner}/${repo}
-Type: ${repoInfo.type}
-
-File Tree Overview:
-${fileTree.split('\n').slice(0, 50).join('\n')}${fileTree.split('\n').length > 50 ? '\n... and more files' : ''}
-
-README Context:
-${readme.substring(0, 2000)}${readme.length > 2000 ? '...' : ''}
-
-Please provide comprehensive documentation with actual source code analysis, mermaid diagrams, and detailed explanations of how this system works.`;
+    // Use the backend's sophisticated ARCHITECTURE_OVERVIEW_PROMPT by sending the trigger format
+    // This will leverage the detailed prompt engineering in api/wiki_prompts.py
+    const prompt = `Create a comprehensive System Architecture Overview for this repository based on actual source code analysis. Please analyze the entire codebase architecture and generate comprehensive documentation with mermaid diagrams.`;
     const requestBody: ChatCompletionRequest = {
       repo_url: getRepoUrl(repoInfo),
       type: repoInfo.type,
