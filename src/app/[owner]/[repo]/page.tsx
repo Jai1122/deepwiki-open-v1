@@ -14,7 +14,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaBitbucket, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaHome, FaSync, FaTimes } from 'react-icons/fa';
-import { createChatWebSocket, closeWebSocket, ChatCompletionRequest } from '@/utils/websocketClient';
+import { createChatWebSocket, closeWebSocket, ChatCompletionRequest, createCleanWikiWebSocket } from '@/utils/websocketClient';
 
 // Type definitions
 interface WikiSection {
@@ -393,30 +393,30 @@ export default function RepoWikiPage() {
   }, [pageState, repoInfo, token, owner, repo, messages.loading]);
 
 
-  // 2. Generate Architecture Overview - Use backend's sophisticated system
+  // 2. Generate Comprehensive Wiki - Use clean backend API 
   useEffect(() => {
     if (pageState !== 'determining_wiki_structure') return;
 
     setLoadingMessage('Generating comprehensive wiki documentation...');
 
-    // Use the backend's sophisticated ARCHITECTURE_OVERVIEW_PROMPT by sending the trigger format
-    // This will leverage the detailed prompt engineering in api/wiki_prompts.py
-    const prompt = `Create a comprehensive System Architecture Overview for this repository based on actual source code analysis. Please analyze the entire codebase architecture and generate comprehensive documentation with mermaid diagrams.`;
-    const requestBody: ChatCompletionRequest = {
+    // Use clean architecture - only send repository details, backend handles all prompts
+    const cleanRequest = {
       repo_url: getRepoUrl(repoInfo),
-      type: repoInfo.type,
-      messages: [{ role: 'user', content: prompt }],
+      repo_type: repoInfo.type,
       provider: selectedProvider || 'vllm',
       model: isCustomModel ? customModel : (selectedModel || '/app/models/Qwen2.5-VL-7B-Instruct'),
-      language: language,
       token: token,
+      local_path: repoInfo.localPath,
+      language: language
     };
 
     let responseBuffer = '';
     let chunkCount = 0;
     closeWebSocket(webSocketRef.current);
-    webSocketRef.current = createChatWebSocket(
-      requestBody,
+    
+    // Connect to the clean wiki generation WebSocket endpoint
+    webSocketRef.current = createCleanWikiWebSocket(
+      cleanRequest,
       (chunk) => { 
         chunkCount++;
         responseBuffer += chunk;

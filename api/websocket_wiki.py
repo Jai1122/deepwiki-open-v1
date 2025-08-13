@@ -12,7 +12,7 @@ from adalflow.components.data_process import TextSplitter
 from .config import get_model_config, configs, get_context_window_for_model, get_max_tokens_for_model
 from .rag import RAG
 from .utils import count_tokens, truncate_prompt_to_fit, get_file_content
-from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PROMPT
+from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PROMPT, WIKI_STRUCTURE_ANALYSIS_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -961,11 +961,40 @@ async def stream_response(
         if any(keyword in query_lower for keyword in ['architecture', 'overview', 'system', 'structure']):
             # Use architecture overview prompt for system-level queries
             logger.info("🏛️  Using architecture overview prompt for comprehensive analysis")
+            
+            # Extract file tree and README from structured query if present
+            extracted_file_tree = "File tree not available"
+            extracted_readme = "README not available"
+            
+            # Check if query contains structured file tree and README
+            if '<file_tree>' in query and '</file_tree>' in query:
+                try:
+                    start_tag = query.find('<file_tree>') + len('<file_tree>')
+                    end_tag = query.find('</file_tree>')
+                    extracted_file_tree = query[start_tag:end_tag].strip()
+                    logger.info(f"📁 Extracted file tree: {len(extracted_file_tree)} characters")
+                except Exception as e:
+                    logger.warning(f"Failed to extract file tree: {e}")
+            
+            if '<readme>' in query and '</readme>' in query:
+                try:
+                    start_tag = query.find('<readme>') + len('<readme>')
+                    end_tag = query.find('</readme>')
+                    extracted_readme = query[start_tag:end_tag].strip()
+                    logger.info(f"📖 Extracted README: {len(extracted_readme)} characters")
+                except Exception as e:
+                    logger.warning(f"Failed to extract README: {e}")
+            
             system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
-                file_tree=context_text[:15000] if context_text else "File tree not available",
-                readme=file_content[:5000] if file_content else "README not available", 
+                file_tree=extracted_file_tree[:15000] if extracted_file_tree != "File tree not available" else "File tree not available",
+                readme=extracted_readme[:5000] if extracted_readme != "README not available" else "README not available", 
                 context=context_text[:50000] if context_text else "Repository context not available"  # Increased from 10K to 50K
             )
+            logger.info(f"✅ ARCHITECTURE_OVERVIEW_PROMPT formatted successfully:")
+            logger.info(f"   - File tree length: {len(extracted_file_tree)} chars")
+            logger.info(f"   - README length: {len(extracted_readme)} chars") 
+            logger.info(f"   - Context length: {len(context_text)} chars")
+            logger.info(f"   - Final prompt length: {len(system_prompt)} chars")
         else:
             # Use detailed page generation prompt for component-specific queries
             system_prompt = WIKI_PAGE_GENERATION_PROMPT.format(
@@ -1153,3 +1182,374 @@ async def summarize_oversized_query(query: str, model_config: dict, model_kwargs
     
     logger.info(f"Original query summarized to {count_tokens(final_summary)} tokens.")
     return final_summary
+
+
+# --- Clean Wiki Generation WebSocket Handler ---
+
+class CleanWikiGenerationRequest(BaseModel):
+    """Clean request model for WebSocket wiki generation."""
+    repo_url: str
+    repo_type: str = "bitbucket"
+    provider: str = "vllm" 
+    model: str = "/app/models/Qwen2.5-VL-7B-Instruct"
+    token: Optional[str] = None
+    local_path: Optional[str] = None
+    language: str = "en"
+
+
+async def handle_clean_wiki_generation(websocket: WebSocket):
+    """
+    Clean WebSocket handler for wiki generation.
+    
+    Takes only repository details - handles all prompt engineering internally.
+    No prompts are passed from frontend to backend.
+    """
+    logger.info("🎯 Clean wiki generation WebSocket connection request received")
+    await websocket.accept()
+    logger.info("✅ Clean wiki generation WebSocket connection accepted")
+    
+    # Send immediate confirmation
+    try:
+        await websocket.send_text(json.dumps({
+            "status": "connected", 
+            "message": "Ready for clean wiki generation"
+        }))
+        logger.info("📨 Sent connection confirmation to client")
+    except Exception as e:
+        logger.error(f"Failed to send connection confirmation: {e}")
+        return
+    
+    try:
+        while True:
+            # Check if WebSocket is still connected
+            if not is_websocket_connected(websocket):
+                logger.info("WebSocket client disconnected, breaking loop")
+                break
+                
+            # Receive wiki generation request
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=600)
+            except asyncio.TimeoutError:
+                logger.warning("WebSocket receive timeout - sending heartbeat")
+                if not is_websocket_connected(websocket):
+                    break
+                try:
+                    await websocket.send_text(json.dumps({"status": "heartbeat", "message": "Connection alive"}))
+                except WebSocketDisconnect:
+                    break
+                continue
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected")
+                break
+            except Exception as receive_error:
+                logger.error(f"Error receiving WebSocket data: {receive_error}")
+                break
+                
+            logger.info(f"📨 Received wiki generation request")
+            
+            # Parse the request
+            try:
+                request_data = json.loads(data)
+                request = CleanWikiGenerationRequest(**request_data)
+                logger.info(f"✅ Parsed clean wiki request: {request.repo_url}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON received: {e}")
+                await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
+                continue
+            except Exception as validation_error:
+                logger.error(f"Request validation error: {validation_error}")
+                await websocket.send_text(json.dumps({"error": f"Invalid request format: {validation_error}"}))
+                continue
+            
+            # Handle ping/pong
+            if request_data.get("type") == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+            
+            # Generate wiki internally using backend logic
+            try:
+                await generate_clean_wiki(websocket, request)
+                
+            except Exception as generation_error:
+                logger.error(f"Wiki generation error: {generation_error}", exc_info=True)
+                await safe_websocket_send(websocket, {
+                    "error": f"Wiki generation failed: {str(generation_error)}"
+                })
+                
+    except WebSocketDisconnect:
+        logger.info("Clean wiki generation WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Unexpected error in clean wiki generation handler: {e}", exc_info=True)
+    finally:
+        # Clean up any resources
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
+async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGenerationRequest):
+    """
+    Generate comprehensive wiki using internal backend logic.
+    
+    This function handles:
+    1. Repository analysis and file tree extraction
+    2. Prompt selection based on repository characteristics
+    3. Content generation using sophisticated prompts from wiki_prompts.py
+    4. Streaming response back to frontend
+    """
+    logger.info(f"🚀 Starting clean wiki generation for {request.repo_url}")
+    
+    # Send status update
+    await safe_websocket_send(websocket, {
+        "status": "initializing", 
+        "message": "Starting repository analysis..."
+    })
+    
+    try:
+        # Step 1: Get repository structure
+        logger.info("📁 Step 1: Analyzing repository structure")
+        file_tree, readme_content = await get_repository_structure(request)
+        
+        await safe_websocket_send(websocket, {
+            "status": "structure_analyzed", 
+            "message": f"Repository structure analyzed: {len(file_tree.split())} files found"
+        })
+        
+        # Step 2: Initialize RAG for content retrieval
+        logger.info("🔍 Step 2: Initializing content retrieval system")
+        rag_instance = await initialize_rag_system(request)
+        
+        await safe_websocket_send(websocket, {
+            "status": "rag_initialized", 
+            "message": "Content retrieval system ready"
+        })
+        
+        # Step 3: Generate comprehensive wiki using ARCHITECTURE_OVERVIEW_PROMPT
+        logger.info("🏗️ Step 3: Generating comprehensive wiki documentation")
+        
+        # Use the sophisticated architecture overview prompt internally
+        system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
+            file_tree=file_tree[:15000],
+            readme=readme_content[:5000],
+            context=await get_repository_context(rag_instance)
+        )
+        
+        logger.info(f"✅ Using ARCHITECTURE_OVERVIEW_PROMPT: {len(system_prompt)} characters")
+        
+        await safe_websocket_send(websocket, {
+            "status": "generating", 
+            "message": "Generating comprehensive documentation..."
+        })
+        
+        # Step 4: Stream the generated content
+        logger.info("📝 Step 4: Streaming generated content")
+        response_buffer = ""
+        
+        # Create a proper chat request for the existing stream system
+        # Use the existing ChatCompletionRequest and ChatMessage classes defined above
+        
+        chat_request = ChatCompletionRequest(
+            repo_url=request.repo_url,
+            messages=[ChatMessage(role="user", content=system_prompt)],
+            type=request.repo_type,
+            provider=request.provider,
+            model=request.model,
+            token=request.token
+        )
+        
+        # Get model configuration
+        model_config = get_model_config(request.provider, request.model)
+        
+        # Stream the response using existing infrastructure
+        async for chunk in stream_response(chat_request, rag_instance, model_config):
+            if not is_websocket_connected(websocket):
+                break
+                
+            try:
+                chunk_data = json.loads(chunk)
+                if "content" in chunk_data:
+                    response_buffer += chunk_data["content"]
+                
+                # Forward the chunk to the frontend
+                await websocket.send_text(chunk)
+                
+            except json.JSONDecodeError:
+                # Handle plain text chunks
+                response_buffer += chunk
+                await websocket.send_text(json.dumps({"content": chunk}))
+        
+        # Step 5: Finalize and send completion
+        logger.info("✅ Wiki generation completed successfully")
+        await safe_websocket_send(websocket, {
+            "status": "completed", 
+            "message": f"Wiki generation completed: {len(response_buffer)} characters generated"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in clean wiki generation: {e}", exc_info=True)
+        await safe_websocket_send(websocket, {
+            "error": f"Wiki generation failed: {str(e)}"
+        })
+        raise
+
+
+async def get_repository_structure(request: CleanWikiGenerationRequest) -> tuple[str, str]:
+    """Get file tree and README content for the repository."""
+    logger.info(f"📁 Getting repository structure for {request.repo_url}")
+    
+    if request.repo_type == "local":
+        # For local repositories, use the existing local repo API logic
+        if not request.local_path:
+            raise ValueError("local_path is required for local repositories")
+            
+        # Use the same logic as in api.py get_local_repo_structure
+        import os
+        import fnmatch
+        from .config import configs, DEFAULT_EXCLUDED_DIRS, DEFAULT_EXCLUDED_FILES
+        
+        file_tree_lines = []
+        readme_content = ""
+        path = request.local_path
+        
+        # Use same exclusion logic as api.py
+        final_excluded_dirs = DEFAULT_EXCLUDED_DIRS.copy()
+        final_excluded_files = DEFAULT_EXCLUDED_FILES.copy()
+        
+        file_filters_config = configs.get("file_filters", {})
+        excluded_filename_patterns = file_filters_config.get("excluded_filename_patterns", [])
+        repo_excluded_dirs = file_filters_config.get("excluded_dirs", [])
+        final_excluded_dirs.extend(repo_excluded_dirs)
+        
+        # Normalize exclusion patterns
+        normalized_excluded_dirs = []
+        for p in final_excluded_dirs:
+            if not p or not p.strip():
+                continue
+            normalized = p.strip()
+            if normalized.startswith('./'):
+                normalized = normalized[2:]
+            normalized = normalized.rstrip('/')
+            if normalized and normalized not in normalized_excluded_dirs:
+                normalized_excluded_dirs.append(normalized)
+        
+        # Walk the directory
+        for root, dirs, files in os.walk(path, topdown=True):
+            current_dir_relative = os.path.relpath(root, path)
+            normalized_current_dir = current_dir_relative.replace('\\', '/')
+            
+            if normalized_current_dir == '.':
+                normalized_current_dir = ''
+            
+            # Check if current directory should be skipped
+            should_skip_dir = False
+            if normalized_current_dir:
+                path_components = normalized_current_dir.split('/')
+                for component in path_components:
+                    if component in normalized_excluded_dirs:
+                        should_skip_dir = True
+                        break
+            
+            if should_skip_dir:
+                dirs.clear()
+                continue
+            
+            dirs[:] = [d for d in dirs if d not in normalized_excluded_dirs]
+            
+            # Process files
+            for file in files:
+                file_path = os.path.join(root, file)
+                rel_dir = os.path.relpath(root, path)
+                rel_file = os.path.join(rel_dir, file) if rel_dir != '.' else file
+                normalized_rel_file = rel_file.replace('\\', '/')
+                
+                # Check exclusions
+                filename_excluded = False
+                for pattern in excluded_filename_patterns:
+                    if fnmatch.fnmatch(file, pattern) or fnmatch.fnmatch(normalized_rel_file, pattern):
+                        filename_excluded = True
+                        break
+                
+                if filename_excluded:
+                    continue
+                
+                if any(fnmatch.fnmatch(normalized_rel_file, pattern) for pattern in final_excluded_files):
+                    continue
+                
+                file_tree_lines.append(normalized_rel_file)
+                
+                # Find README
+                if file.lower() == 'readme.md' and not readme_content:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            readme_content = f.read()
+                    except Exception as e:
+                        logger.warning(f"Could not read README.md: {str(e)}")
+        
+        file_tree = '\n'.join(sorted(file_tree_lines))
+        
+    else:
+        # For remote repositories (Bitbucket, GitHub, etc.)
+        # The RAG system will handle repository cloning and analysis
+        # For now, return placeholder - this will be enhanced by RAG analysis
+        file_tree = "Repository structure will be analyzed during content processing"
+        readme_content = "README content will be retrieved during repository analysis"
+    
+    logger.info(f"📊 Repository structure: {len(file_tree.split())} files, README: {len(readme_content)} chars")
+    return file_tree, readme_content
+
+
+async def initialize_rag_system(request: CleanWikiGenerationRequest) -> RAG:
+    """Initialize RAG system for the repository."""
+    logger.info(f"🔍 Initializing RAG system for {request.repo_url}")
+    
+    # Create RAG instance using existing logic
+    rag_instance = RAG(configs=configs)
+    
+    # The RAG system will handle repository processing internally
+    # This includes cloning, file analysis, embedding generation, etc.
+    logger.info("✅ RAG system initialized successfully")
+    
+    return rag_instance
+
+
+async def get_repository_context(rag_instance: RAG) -> str:
+    """Get comprehensive repository context from RAG system."""
+    logger.info("📝 Retrieving comprehensive repository context")
+    
+    try:
+        # Use broad queries to get comprehensive coverage
+        broad_queries = [
+            "system architecture components configuration",
+            "main application logic business functions", 
+            "API endpoints routes handlers",
+            "database models data structures",
+            "user interface components views",
+            "authentication security middleware",
+            "testing deployment configuration"
+        ]
+        
+        all_docs = []
+        seen_sources = set()
+        
+        for query in broad_queries:
+            try:
+                docs = rag_instance.retrieve(query=query, top_k=10)
+                for doc in docs:
+                    source = doc.metadata.get('source', 'unknown') if hasattr(doc, 'metadata') else 'unknown'
+                    if source not in seen_sources:
+                        all_docs.append(doc)
+                        seen_sources.add(source)
+            except Exception as e:
+                logger.warning(f"Query '{query}' failed: {e}")
+                continue
+        
+        # Combine all retrieved context
+        context_text = "\n\n".join([doc.text for doc in all_docs]) if all_docs else ""
+        
+        logger.info(f"📊 Retrieved context: {len(context_text)} chars from {len(seen_sources)} sources")
+        return context_text[:50000]  # Limit to 50K chars
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve repository context: {e}")
+        return "Repository context not available due to retrieval error"

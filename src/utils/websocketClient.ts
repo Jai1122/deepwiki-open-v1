@@ -267,3 +267,181 @@ export const closeWebSocket = (ws: WebSocket | null): void => {
     }
   }
 };
+
+// --- Clean Wiki Generation WebSocket ---
+
+export interface CleanWikiRequest {
+  repo_url: string;
+  repo_type: string;
+  provider?: string;
+  model?: string;
+  token?: string;
+  local_path?: string;
+  language?: string;
+}
+
+// Get the clean wiki WebSocket URL
+const getCleanWikiWebSocketUrl = () => {
+  const baseUrl = SERVER_BASE_URL;
+  const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
+  return `${wsBaseUrl}/ws/generate_wiki`;
+};
+
+/**
+ * Creates a WebSocket connection for clean wiki generation.
+ * Backend handles all prompt engineering internally.
+ *
+ * @param request The clean wiki request (no prompts)
+ * @param onContent Callback for content chunks
+ * @param onStatus Callback for status updates
+ * @param onError Callback for errors
+ * @param onComplete Callback for when the connection closes cleanly
+ * @returns The WebSocket connection
+ */
+export const createCleanWikiWebSocket = (
+  request: CleanWikiRequest,
+  onContent: (content: string) => void,
+  onStatus: (status: string, message?: string) => void,
+  onError: (error: Event) => void,
+  onComplete: () => void
+): WebSocket => {
+  console.log('🎯 Creating clean wiki WebSocket connection');
+  console.log('Request:', request);
+
+  const ws = new WebSocket(getCleanWikiWebSocketUrl());
+  let isCompleted = false;
+
+  // Connection timeout (30 seconds)
+  const connectionTimeout = setTimeout(() => {
+    if (ws.readyState === WebSocket.CONNECTING) {
+      console.error('Clean wiki WebSocket connection timeout');
+      onStatus('error', 'Connection timeout - please check if the API server is running on port 8001');
+      ws.close();
+    }
+  }, 30000);
+
+  // Response timeout - longer for wiki generation
+  let responseTimeout: NodeJS.Timeout | null = setTimeout(() => {
+    if (!isCompleted && ws.readyState === WebSocket.OPEN) {
+      console.error('Clean wiki generation response timeout');
+      onStatus('timeout', 'Wiki generation is taking longer than expected. This may be due to a large repository.');
+    }
+  }, 300000); // 5 minutes
+
+  const clearAllTimeouts = () => {
+    if (connectionTimeout) clearTimeout(connectionTimeout);
+    if (responseTimeout) {
+      clearTimeout(responseTimeout);
+      responseTimeout = null;
+    }
+  };
+
+  ws.onopen = () => {
+    console.log('✅ Clean wiki WebSocket connection established');
+    clearTimeout(connectionTimeout);
+    
+    // Send the clean wiki request (no prompts, just repo details)
+    console.log('📤 Sending clean wiki request');
+    ws.send(JSON.stringify(request));
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      
+      if (data.content) {
+        onContent(data.content);
+        // Clear response timeout once we start receiving content
+        if (responseTimeout) {
+          clearTimeout(responseTimeout);
+          responseTimeout = null;
+        }
+      } else if (data.status) {
+        console.log('📋 Clean wiki status:', data.status, data.message);
+        onStatus(data.status, data.message);
+        
+        // Handle heartbeat messages
+        if (data.status === 'heartbeat') {
+          console.log('💓 Received heartbeat from server');
+          return;
+        }
+        
+        if (data.status === 'completed') {
+          // Wiki generation completed
+          isCompleted = true;
+          clearAllTimeouts();
+          ws.close();
+        }
+      } else if (data.error) {
+        console.error('❌ Clean wiki error:', data.error);
+        onStatus('error', data.error);
+        isCompleted = true;
+        clearAllTimeouts();
+      } else {
+        console.warn('⚠️ Unknown clean wiki message format:', data);
+        onStatus('unknown', `Unknown message: ${JSON.stringify(data)}`);
+      }
+    } catch (error) {
+      console.error('❌ Error parsing clean wiki WebSocket message:', event.data, error);
+      onStatus('error', 'Failed to parse server message');
+    }
+  };
+
+  ws.onerror = (error) => {
+    console.error('❌ Clean wiki WebSocket error:', error);
+    if (!isCompleted) {
+      isCompleted = true;
+      clearAllTimeouts();
+      onError(error);
+    }
+  };
+
+  ws.onclose = (event) => {
+    clearAllTimeouts();
+    
+    console.log('🔌 Clean wiki WebSocket connection closed:', {
+      code: event.code,
+      reason: event.reason,
+      wasClean: event.wasClean
+    });
+
+    // Handle different close scenarios
+    const isNormalClosure = event.code === 1000;
+    const isAbnormalClosure = event.code === 1006;
+    const isServerShutdown = event.code === 1001;
+    const isGoingAway = event.code === 1001;
+
+    if (isNormalClosure || isCompleted) {
+      console.log('✅ Clean wiki WebSocket closed normally');
+      if (!isCompleted) {
+        isCompleted = true;
+        onComplete();
+      } else {
+        onComplete();
+      }
+    } else if (isAbnormalClosure) {
+      console.warn('⚠️ Clean wiki WebSocket had abnormal closure');
+      
+      if (!isCompleted) {
+        onStatus('error', 'Connection lost during wiki generation - please check your network and retry');
+      } else {
+        onComplete();
+      }
+    } else {
+      console.warn('⚠️ Clean wiki WebSocket closed unexpectedly', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean
+      });
+      
+      if (!isCompleted) {
+        const errorMsg = event.code ? `Connection error (${event.code}) - please retry` : 'Connection lost - please retry';
+        onStatus('error', errorMsg);
+      } else {
+        onComplete();
+      }
+    }
+  };
+
+  return ws;
+};

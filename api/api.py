@@ -598,8 +598,8 @@ def generate_json_export(repo_url: str, pages: List[WikiPage]) -> str:
     # Convert to JSON string with pretty formatting
     return json.dumps(export_data, indent=2)
 
-# Import WebSocket handler (no circular import issue)
-from .websocket_wiki import handle_websocket_chat
+# Import WebSocket handlers (no circular import issue)
+from .websocket_wiki import handle_websocket_chat, handle_clean_wiki_generation
 
 # Add the chat completions endpoint with lazy import to avoid circular import
 def _register_chat_endpoint():
@@ -609,8 +609,9 @@ def _register_chat_endpoint():
 # Register the chat endpoint
 _register_chat_endpoint()
 
-# Add the WebSocket endpoint
+# Add the WebSocket endpoints
 app.add_websocket_route("/ws/chat", handle_websocket_chat)
+app.add_websocket_route("/ws/generate_wiki", handle_clean_wiki_generation)
 
 # --- Wiki Cache Helper Functions ---
 
@@ -765,6 +766,55 @@ async def root():
         "version": "1.0.0",
         "endpoints": endpoints
     }
+
+# --- Wiki Generation Request Model ---
+class WikiGenerationRequest(BaseModel):
+    """
+    Clean request model for wiki generation - no prompts from frontend.
+    """
+    repo_url: str = Field(..., description="Repository URL (Bitbucket, GitHub, etc.)")
+    repo_type: str = Field(..., description="Repository type: 'bitbucket', 'local', etc.")
+    provider: str = Field(default="vllm", description="LLM provider")
+    model: str = Field(default="/app/models/Qwen2.5-VL-7B-Instruct", description="Model identifier")
+    token: Optional[str] = Field(None, description="Repository access token if needed")
+    local_path: Optional[str] = Field(None, description="Local path for local repositories")
+    language: Optional[str] = Field(default="en", description="Output language (default: en)")
+
+@app.post("/api/generate_wiki")
+async def generate_wiki(request: WikiGenerationRequest):
+    """
+    Generate comprehensive wiki for a repository.
+    
+    The backend handles all prompt engineering and content generation internally.
+    Frontend only needs to provide repo details and model configuration.
+    """
+    logger.info(f"🎯 Wiki generation request: {request.repo_url} using {request.provider}/{request.model}")
+    
+    try:
+        # Validate request parameters
+        if not request.repo_url.strip():
+            raise HTTPException(status_code=400, detail="Repository URL is required")
+        
+        if request.repo_type not in ["bitbucket", "local", "github"]:
+            raise HTTPException(status_code=400, detail="Invalid repo_type. Must be 'bitbucket', 'local', or 'github'")
+        
+        # For local repositories, local_path is required
+        if request.repo_type == "local" and not request.local_path:
+            raise HTTPException(status_code=400, detail="local_path is required for local repositories")
+        
+        # Return a WebSocket endpoint URL that the frontend should connect to
+        websocket_url = f"/ws/generate_wiki"
+        
+        return {
+            "message": "Wiki generation initiated",
+            "websocket_endpoint": websocket_url,
+            "request_id": f"wiki_{request.repo_type}_{hash(request.repo_url) % 10000}",
+            "instructions": "Connect to the WebSocket endpoint to receive real-time generation updates"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in wiki generation request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process wiki generation request: {str(e)}")
 
 # --- Processed Projects Endpoint --- (New Endpoint)
 @app.get("/api/processed_projects", response_model=List[ProcessedProjectEntry])
