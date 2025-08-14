@@ -53,54 +53,54 @@ You are an expert software architect analyzing a codebase to create a comprehens
 
 **OUTPUT FORMAT** (respond with EXACTLY this JSON structure):
 ```json
-{
-  "repository_analysis": {
+{{
+  "repository_analysis": {{
     "type": "web_application|api_service|cli_tool|library|framework|other",
     "primary_technologies": ["technology1", "technology2", "..."],
     "architecture_pattern": "description of main architectural approach"
-  },
-  "wiki_structure": {
-    "Getting Started": {
+  }},
+  "wiki_structure": {{
+    "Getting Started": {{
       "description": "Brief description of this section's focus",
       "subtopics": [
-        {"title": "Subtopic 1", "description": "What this covers", "files_involved": ["file1.py", "file2.js"]},
-        {"title": "Subtopic 2", "description": "What this covers", "files_involved": ["file3.py"]},
+        {{"title": "Subtopic 1", "description": "What this covers", "files_involved": ["file1.py", "file2.js"]}},
+        {{"title": "Subtopic 2", "description": "What this covers", "files_involved": ["file3.py"]}},
         "... 3-6 subtopics total"
       ]
-    },
-    "Core Concepts": {
+    }},
+    "Core Concepts": {{
       "description": "Brief description of this section's focus", 
       "subtopics": [
-        {"title": "Subtopic 1", "description": "What this covers", "files_involved": ["file1.py"]},
+        {{"title": "Subtopic 1", "description": "What this covers", "files_involved": ["file1.py"]}},
         "... 3-6 subtopics total"
       ]
-    },
-    "API Development": {
+    }},
+    "API Development": {{
       "description": "Brief description of this section's focus",
       "subtopics": [
         "... 3-6 repository-specific subtopics"
       ]
-    },
-    "Infrastructure and Configuration": {
+    }},
+    "Infrastructure and Configuration": {{
       "description": "Brief description of this section's focus", 
       "subtopics": [
         "... 3-6 repository-specific subtopics"
       ]
-    },
-    "Testing and Debugging": {
+    }},
+    "Testing and Debugging": {{
       "description": "Brief description of this section's focus",
       "subtopics": [
         "... 3-6 repository-specific subtopics"
       ]
-    },
-    "Utilities and Helpers": {
+    }},
+    "Utilities and Helpers": {{
       "description": "Brief description of this section's focus",
       "subtopics": [
         "... 3-6 repository-specific subtopics"
       ]
-    }
-  }
-}
+    }}
+  }}
+}}
 ```
 
 **ANALYSIS REQUIREMENTS:**
