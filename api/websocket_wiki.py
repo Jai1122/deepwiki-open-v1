@@ -1295,15 +1295,15 @@ async def handle_clean_wiki_generation(websocket: WebSocket):
 
 async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGenerationRequest):
     """
-    Generate comprehensive wiki using internal backend logic.
+    Generate comprehensive structured wiki using proper two-step process.
     
     This function handles:
     1. Repository analysis and file tree extraction
-    2. Prompt selection based on repository characteristics
-    3. Content generation using sophisticated prompts from wiki_prompts.py
+    2. Wiki structure generation using WIKI_STRUCTURE_ANALYSIS_PROMPT
+    3. Content generation for each structured section
     4. Streaming response back to frontend
     """
-    logger.info(f"🚀 Starting clean wiki generation for {request.repo_url}")
+    logger.info(f"🚀 Starting structured wiki generation for {request.repo_url}")
     
     # Send status update
     await safe_websocket_send(websocket, {
@@ -1339,41 +1339,60 @@ async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGeneration
             "message": "Content retrieval system ready"
         })
         
-        # Step 3: Generate comprehensive wiki using ARCHITECTURE_OVERVIEW_PROMPT
-        logger.info("🏗️ Step 3: Generating comprehensive wiki documentation")
+        # Step 3: Generate wiki structure using WIKI_STRUCTURE_ANALYSIS_PROMPT
+        logger.info("🏗️ Step 3: Generating detailed wiki structure")
         
-        # Use the sophisticated architecture overview prompt internally
-        repo_context = await get_repository_context(rag_instance)
+        await safe_websocket_send(websocket, {
+            "status": "analyzing_structure", 
+            "message": "Analyzing codebase to create detailed topic structure..."
+        })
         
-        system_prompt = ARCHITECTURE_OVERVIEW_PROMPT.format(
+        # Use WIKI_STRUCTURE_ANALYSIS_PROMPT to get structured outline
+        structure_prompt = WIKI_STRUCTURE_ANALYSIS_PROMPT.format(
             file_tree=file_tree[:15000],
-            readme=readme_content[:5000],
-            context=repo_context
+            readme=readme_content[:5000]
         )
         
-        logger.info(f"✅ Using ARCHITECTURE_OVERVIEW_PROMPT:")
+        logger.info(f"✅ Using WIKI_STRUCTURE_ANALYSIS_PROMPT for structured topic generation")
         logger.info(f"   - File tree length: {len(file_tree)} chars (using {len(file_tree[:15000])})")
         logger.info(f"   - README length: {len(readme_content)} chars (using {len(readme_content[:5000])})")
-        logger.info(f"   - Context length: {len(repo_context)} chars")
-        logger.info(f"   - Final prompt length: {len(system_prompt)} characters")
+        logger.info(f"   - Structure prompt length: {len(structure_prompt)} characters")
         
-        # Log first 500 chars of the formatted prompt to verify it's the detailed one
-        logger.info(f"📝 Prompt preview: {system_prompt[:500]}...")
+        # Get model configuration
+        model_config = get_model_config(request.provider, request.model)
+        
+        # Generate wiki structure
+        wiki_structure = await generate_wiki_structure(structure_prompt, model_config, request)
+        
+        await safe_websocket_send(websocket, {
+            "status": "structure_generated", 
+            "message": "Topic structure created - generating detailed content for each section..."
+        })
+        
+        # Step 4: Generate comprehensive content using the detailed architecture prompt
+        logger.info("📝 Step 4: Generating comprehensive structured wiki content")
+        
+        # Get comprehensive repository context
+        repo_context = await get_repository_context(rag_instance)
+        
+        # Create enhanced prompt that combines structure awareness with comprehensive content
+        enhanced_prompt = create_enhanced_wiki_prompt(file_tree, readme_content, repo_context, wiki_structure)
+        
+        logger.info(f"✅ Using enhanced structured wiki prompt:")
+        logger.info(f"   - Enhanced prompt length: {len(enhanced_prompt)} characters")
+        logger.info(f"   - Includes topic structure and comprehensive context")
         
         await safe_websocket_send(websocket, {
             "status": "generating", 
-            "message": "Generating comprehensive documentation..."
+            "message": "Generating comprehensive wiki with structured topics..."
         })
         
-        # Step 4: Stream the generated content
-        logger.info("📝 Step 4: Streaming generated content")
+        # Step 5: Stream the generated content
+        logger.info("📝 Step 5: Streaming structured wiki content")
         response_buffer = ""
         
         # Create a proper chat request for the existing stream system
-        # Use the existing ChatCompletionRequest and ChatMessage classes defined above
-        
-        # Add a special marker to indicate this is a pre-formatted prompt from clean wiki generation
-        marked_prompt = f"[CLEAN_WIKI_PREFORMATTED_PROMPT]\n{system_prompt}"
+        marked_prompt = f"[CLEAN_WIKI_PREFORMATTED_PROMPT]\n{enhanced_prompt}"
         
         chat_request = ChatCompletionRequest(
             repo_url=request.repo_url,
@@ -1383,9 +1402,6 @@ async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGeneration
             model=request.model,
             token=request.token
         )
-        
-        # Get model configuration
-        model_config = get_model_config(request.provider, request.model)
         
         # Stream the response using existing infrastructure
         async for chunk in stream_response(chat_request, rag_instance, model_config):
@@ -1405,17 +1421,17 @@ async def generate_clean_wiki(websocket: WebSocket, request: CleanWikiGeneration
                 response_buffer += chunk
                 await websocket.send_text(json.dumps({"content": chunk}))
         
-        # Step 5: Finalize and send completion
-        logger.info("✅ Wiki generation completed successfully")
+        # Step 6: Finalize and send completion
+        logger.info("✅ Structured wiki generation completed successfully")
         await safe_websocket_send(websocket, {
             "status": "completed", 
-            "message": f"Wiki generation completed: {len(response_buffer)} characters generated"
+            "message": f"Structured wiki generation completed: {len(response_buffer)} characters generated with detailed topics"
         })
         
     except Exception as e:
-        logger.error(f"Error in clean wiki generation: {e}", exc_info=True)
+        logger.error(f"Error in structured wiki generation: {e}", exc_info=True)
         await safe_websocket_send(websocket, {
-            "error": f"Wiki generation failed: {str(e)}"
+            "error": f"Structured wiki generation failed: {str(e)}"
         })
         raise
 
@@ -1569,6 +1585,102 @@ def prepare_rag_for_repository(rag_instance: RAG, request: CleanWikiGenerationRe
         logger.error(f"❌ Failed to prepare RAG retriever: {e}", exc_info=True)
         # Don't raise the exception - we can still generate a basic wiki without RAG
         logger.warning("⚠️ Continuing without RAG retrieval - wiki may be less comprehensive")
+
+
+async def generate_wiki_structure(structure_prompt: str, model_config: dict, request: CleanWikiGenerationRequest) -> str:
+    """Generate wiki structure using WIKI_STRUCTURE_ANALYSIS_PROMPT."""
+    logger.info("🏗️ Generating wiki structure with analysis prompt")
+    
+    try:
+        client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
+        model_kwargs = model_config.get("model_kwargs", {}).copy()
+        model_kwargs["stream"] = False  # Non-streaming for structure analysis
+        model_kwargs["max_tokens"] = min(model_kwargs.get("max_tokens", 4000), 8000)  # Reasonable limit
+        
+        # Make API call for structure generation
+        api_kwargs = client.convert_inputs_to_api_kwargs(
+            input=structure_prompt, 
+            model_kwargs=model_kwargs, 
+            model_type=ModelType.LLM
+        )
+        
+        response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+        
+        # Extract structure text from response
+        structure_text = ""
+        if isinstance(response, str):
+            structure_text = response
+        elif hasattr(response, "text"):
+            structure_text = response.text
+        elif hasattr(response, "choices") and response.choices:
+            structure_text = response.choices[0].message.content
+        
+        logger.info(f"✅ Generated wiki structure: {len(structure_text)} characters")
+        logger.debug(f"Structure preview: {structure_text[:200]}...")
+        
+        return structure_text
+        
+    except Exception as e:
+        logger.error(f"Failed to generate wiki structure: {e}", exc_info=True)
+        # Return fallback structure
+        return """
+        {
+            "wiki_structure": {
+                "sections": [
+                    {"title": "Getting Started", "description": "Setup and installation"},
+                    {"title": "Core Concepts", "description": "Fundamental architecture"},
+                    {"title": "API Development", "description": "API endpoints and services"},
+                    {"title": "Infrastructure and Configuration", "description": "Deployment and config"},
+                    {"title": "Testing and Debugging", "description": "Quality assurance"},
+                    {"title": "Utilities and Helpers", "description": "Support functions"}
+                ]
+            }
+        }
+        """
+
+
+def create_enhanced_wiki_prompt(file_tree: str, readme_content: str, repo_context: str, wiki_structure: str) -> str:
+    """Create enhanced prompt that combines structure with comprehensive content generation."""
+    
+    enhanced_prompt = f"""You are creating a comprehensive, structured wiki for this software repository based on detailed source code analysis.
+
+**CRITICAL REQUIREMENTS:**
+1. Generate a complete wiki with the following structured sections (include ALL of these):
+   - **Getting Started**: Installation, setup, quick start guide
+   - **Core Concepts**: Architecture overview, key principles, design patterns
+   - **API Development**: Endpoints, services, integration guides
+   - **Infrastructure and Configuration**: Deployment, environment setup, configuration
+   - **Testing and Debugging**: Testing strategies, debugging guides, troubleshooting
+   - **Utilities and Helpers**: Support functions, common utilities, tools
+
+2. For EACH section, provide:
+   - Comprehensive overview of that area
+   - Code examples from the actual repository
+   - Implementation details based on source analysis
+   - Best practices and usage patterns
+   - Mermaid diagrams where appropriate
+
+3. Base ALL content on the actual source code provided below - not generic information
+
+4. Include specific file references and code snippets from the repository
+
+5. Create detailed, actionable content for developers using this codebase
+
+**REPOSITORY STRUCTURE ANALYSIS:**
+{wiki_structure}
+
+**ACTUAL SOURCE CODE CONTEXT:**
+{repo_context}
+
+**FILE TREE:**
+{file_tree}
+
+**README CONTENT:**
+{readme_content}
+
+Generate a comprehensive, well-structured wiki with detailed sections covering all aspects of this codebase. Each section should be substantial and based on actual code analysis."""
+
+    return enhanced_prompt
 
 
 async def get_repository_context(rag_instance: RAG) -> str:
