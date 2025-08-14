@@ -233,64 +233,49 @@ Create a comprehensive, hierarchical wiki based on the detailed structure analys
 6. **Progressive Technical Narrative**: Build understanding from basic to advanced concepts
 
 **OUTPUT FORMAT (DeepWiki Standard):**
-For each main topic, create a separate page with this structure:
+For each main topic, create a separate numbered chapter with this structure:
 
 ```markdown
-# [Chapter Number] - [Topic Title]
+# 1 - Getting Started
 
 ## Relevant Source Files
 - `[file_path]:[line_range]` - [Brief description of what this file contains]
 - `[file_path]:[line_range]` - [Brief description of what this file contains]
 
-## [Sub-topic 1 Title]
+[Detailed content for Getting Started...]
 
-[Detailed technical explanation based on actual code analysis]
+# 2 - Core Concepts
+
+## Relevant Source Files
+- `[file_path]:[line_range]` - [Brief description of what this file contains]
+
+[Detailed content for Core Concepts...]
+
+## System Architecture
+[Architecture explanation with diagrams]
 
 ### Implementation Details
 ```[language]
 [Relevant code snippet from source files]
 ```
 
-[Explanation of the code and its role in the system]
-
-### System Flow
-```mermaid
-graph TD
-    A[Component A] --> B[Component B]
-    B --> C[Component C]
-    C --> D[Output/Result]
-```
-
-[Explanation of the flow and interactions]
-
-## [Sub-topic 2 Title]
-
-[Continue with same detailed format...]
-
-### Key Components
+## Key Components
 - **[Component Name]**: [Description and file reference]
 - **[Component Name]**: [Description and file reference]
-
-### Configuration
-```[language]
-[Configuration examples from actual files]
-```
 
 ## Sources
 1. `[file_path]:[line_numbers]` - [Description of what these lines contain]
 2. `[file_path]:[line_numbers]` - [Description of what these lines contain]
-
----
 ```
 
-**TECHNICAL DOCUMENTATION STANDARDS:**
+**CRITICAL FORMATTING REQUIREMENTS:**
 
-1. **Chapter Numbering**: Use clear numerical progression (1, 2, 3, etc.)
-2. **Source Attribution**: Always include "Relevant Source Files" section at the top
-3. **Code Integration**: Show actual code snippets with proper syntax highlighting  
-4. **Visual Diagrams**: Use Mermaid for system architecture and process flows
-5. **Cross-References**: Link related sections using markdown links
-6. **Sources Section**: End each page with numbered source references
+1. **Chapter Headers**: MUST use exact format `# 1 - Getting Started`, `# 2 - Core Concepts`, etc.
+2. **Sequential Numbering**: Chapters must be numbered 1, 2, 3, 4, 5, 6 (one for each main topic)
+3. **Source Attribution**: Always include "## Relevant Source Files" section after chapter header
+4. **Code Integration**: Show actual code snippets with proper syntax highlighting  
+5. **Visual Diagrams**: Use Mermaid for system architecture and process flows
+6. **Sources Section**: End each chapter with "## Sources" section
 
 **MERMAID DIAGRAM REQUIREMENTS:**
 - Node labels MUST NOT contain parentheses () - use dashes or "like" instead
@@ -311,5 +296,28 @@ graph TD
 **README CONTENT:**
 {readme}
 
-Generate a comprehensive hierarchical wiki following the DeepWiki format standards. Each topic should be a separate numbered chapter with detailed technical content, proper source attribution, and progressive learning structure. Ensure every topic and sub-topic specified in the wiki structure gets substantial, code-based content with proper formatting.
+Generate a comprehensive hierarchical wiki following the DeepWiki format standards. 
+
+**EXPECTED OUTPUT STRUCTURE:**
+Generate exactly 6 numbered chapters following this pattern:
+
+# 1 - Getting Started
+[Chapter content with ## sections]
+
+# 2 - Core Concepts  
+[Chapter content with ## sections]
+
+# 3 - API Development
+[Chapter content with ## sections]
+
+# 4 - Infrastructure and Configuration
+[Chapter content with ## sections]
+
+# 5 - Testing and Debugging
+[Chapter content with ## sections]
+
+# 6 - Utilities and Helpers
+[Chapter content with ## sections]
+
+Ensure every topic and sub-topic specified in the wiki structure gets substantial, code-based content with proper formatting. Each chapter should be self-contained with relevant source files, implementation details, and technical depth.
 """

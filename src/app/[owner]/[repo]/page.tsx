@@ -453,20 +453,70 @@ export default function RepoWikiPage() {
           // Parse the comprehensive response into logical wiki sections
           console.log(`Processing comprehensive wiki response: ${responseBuffer.length} characters`);
           
-          // Split the response into logical sections based on ## headers (second level)
-          const sectionRegex = /^##\s+(.+)$/gm;
+          // Split the response into logical sections based on # headers (DeepWiki chapter format)
+          const sectionRegex = /^#\s+(\d+\s*-\s*.+)$/gm;
           const sectionMatches = [...responseBuffer.matchAll(sectionRegex)];
           
-          console.log(`Found ${sectionMatches.length} major sections`);
+          console.log(`Found ${sectionMatches.length} major sections with DeepWiki format`);
           
           const pages: WikiPage[] = [];
           const sections: WikiSection[] = [];
           
-          if (sectionMatches.length > 0) {
-            // Multi-section comprehensive wiki
-            console.log("Creating multi-section wiki from comprehensive response");
+          // If no DeepWiki-style chapters found, fallback to old ## header parsing
+          if (sectionMatches.length === 0) {
+            console.log("No DeepWiki chapters found, trying fallback ## header parsing");
+            const fallbackRegex = /^##\s+(.+)$/gm;
+            const fallbackMatches = [...responseBuffer.matchAll(fallbackRegex)];
+            console.log(`Found ${fallbackMatches.length} sections with fallback parsing`);
             
-            // Add the main overview page with everything before the first section
+            if (fallbackMatches.length > 0) {
+              // Use the old parsing logic as fallback
+              const firstSectionIndex = fallbackMatches[0].index!;
+              const overviewContent = responseBuffer.substring(0, firstSectionIndex).trim();
+              
+              if (overviewContent) {
+                pages.push({
+                  id: 'overview',
+                  title: 'System Overview',
+                  content: overviewContent,
+                  filePaths: [],
+                  importance: 'high' as const,
+                  relatedPages: []
+                });
+              }
+              
+              // Process fallback sections
+              for (let i = 0; i < fallbackMatches.length; i++) {
+                const match = fallbackMatches[i];
+                const title = match[1];
+                const id = title.toLowerCase()
+                  .replace(/[^a-z0-9\s]/g, '')
+                  .replace(/\s+/g, '-')
+                  .replace(/^-|-$/g, '');
+                
+                const startIndex = match.index!;
+                const endIndex = i < fallbackMatches.length - 1 ? fallbackMatches[i + 1].index! : responseBuffer.length;
+                const content = responseBuffer.substring(startIndex, endIndex).trim();
+                
+                const hasArchitecture = content.toLowerCase().includes('architecture') || content.includes('mermaid');
+                const hasImplementation = content.toLowerCase().includes('implementation') || content.toLowerCase().includes('code');
+                const importance = hasArchitecture || hasImplementation ? 'high' as const : 'medium' as const;
+                
+                pages.push({
+                  id,
+                  title,
+                  content,
+                  filePaths: [],
+                  importance,
+                  relatedPages: []
+                });
+              }
+            }
+          } else {
+            // DeepWiki format detected - process numbered chapters
+            console.log("Processing DeepWiki-style numbered chapters");
+            
+            // Add the main overview page with everything before the first chapter
             const firstSectionIndex = sectionMatches[0].index!;
             const overviewContent = responseBuffer.substring(0, firstSectionIndex).trim();
             
@@ -484,7 +534,8 @@ export default function RepoWikiPage() {
             // Process each major section as a separate page
             for (let i = 0; i < sectionMatches.length; i++) {
               const match = sectionMatches[i];
-              const title = match[1];
+              const fullTitle = match[1]; // e.g., "1 - Getting Started"
+              const title = fullTitle.replace(/^\d+\s*-\s*/, '').trim(); // Extract "Getting Started"
               const id = title.toLowerCase()
                 .replace(/[^a-z0-9\s]/g, '')
                 .replace(/\s+/g, '-')
@@ -520,10 +571,11 @@ export default function RepoWikiPage() {
               pages: allPageIds,
               subsections: []
             });
-            
-          } else {
-            // Single comprehensive page
-            console.log("Creating single comprehensive wiki page");
+          }
+          
+          // Final validation - if no pages created, create single comprehensive page
+          if (pages.length === 0) {
+            console.log("No sections found with either method, creating single comprehensive wiki page");
             pages.push({
               id: 'comprehensive-overview',
               title: `${repo} Comprehensive Documentation`,
