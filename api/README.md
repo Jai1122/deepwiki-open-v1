@@ -5,7 +5,7 @@ This is the backend API for DeepWiki, providing smart code analysis and AI-power
 ## ✨ Features
 
 - **Streaming AI Responses**: Real-time responses using Google's Generative AI (Gemini)
-- **Smart Code Analysis**: Automatically analyzes GitHub repositories
+- **Smart Code Analysis**: Automatically analyzes Bitbucket repositories
 - **RAG Implementation**: Retrieval Augmented Generation for context-aware responses
 - **Local Storage**: All data stored locally - no cloud dependencies
 - **Conversation History**: Maintains context across multiple questions
@@ -118,7 +118,7 @@ The API will be available at `http://localhost:8001`
 ## 🧠 How It Works
 
 ### 1. Repository Indexing
-When you provide a GitHub repository URL, the API:
+When you provide a Bitbucket repository URL, the API:
 - Clones the repository locally (if not already cloned)
 - Reads all files in the repository
 - Creates embeddings for the files using OpenAI
@@ -141,13 +141,13 @@ When you ask a question:
 Returns basic API information and available endpoints.
 
 ### POST /chat/completions/stream
-Streams an AI-generated response about a GitHub repository.
+Streams an AI-generated response about a Bitbucket repository.
 
 **Request Body:**
 
 ```json
 {
-  "repo_url": "https://github.com/username/repo",
+  "repo_url": "https://bitbucket.org/username/repo",
   "messages": [
     {
       "role": "user",
@@ -171,7 +171,7 @@ url = "http://localhost:8001/chat/completions/stream"
 
 # Request data
 payload = {
-    "repo_url": "https://github.com/AsyncFuncAI/deepwiki-open",
+    "repo_url": "https://bitbucket.org/AsyncFuncAI/deepwiki-open",
     "messages": [
         {
             "role": "user",

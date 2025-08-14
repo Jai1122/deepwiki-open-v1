@@ -5,44 +5,120 @@ with proper architectural visualization using mermaid diagrams.
 """
 
 WIKI_STRUCTURE_ANALYSIS_PROMPT = """
-You are an expert software architect analyzing a codebase to create a comprehensive wiki structure.
+You are an expert software architect analyzing a codebase to create a comprehensive, hierarchical wiki structure.
 
-Given the file tree and README below, your task is to design a logical wiki structure that:
+**CRITICAL TASK**: Analyze the repository and generate a detailed hierarchical wiki structure with SPECIFIC, DYNAMIC sub-topics based on what's actually in this codebase.
 
-1. **PRIORITIZES HOLISTIC UNDERSTANDING**
-   - Create a main "System Architecture" page that shows the big picture
-   - Group related functionality into logical modules (not scattered utility pages)
-   - Show how components interact and depend on each other
+**REQUIRED MAIN TOPICS** (always include these 6 topics):
+1. **Getting Started**
+2. **Core Concepts** 
+3. **API Development**
+4. **Infrastructure and Configuration**
+5. **Testing and Debugging**
+6. **Utilities and Helpers**
 
-2. **INCLUDES ARCHITECTURAL VISUALIZATION**
-   - Design mermaid diagrams for system architecture
-   - Plan sequence diagrams for key workflows
-   - Include component relationship diagrams
+**YOUR ANALYSIS PROCESS:**
+1. **Repository Type Classification**: Determine if this is a web app, API service, CLI tool, library, framework, etc.
+2. **Architecture Analysis**: Identify key components, patterns, and technologies used
+3. **Dynamic Sub-topic Generation**: For each main topic, generate 3-6 specific sub-topics based on what's actually present in this codebase
 
-3. **CREATES MEANINGFUL GROUPINGS**
-   Instead of fragmenting into "utilities", "tests", "config", create functional groupings like:
-   - Core Business Logic & Workflows
-   - Data Management & APIs
-   - User Interface & Experience
-   - Infrastructure & Operations
-   - Development & Quality Assurance
+**SUB-TOPIC EXAMPLES BY REPOSITORY TYPE AND LANGUAGE:**
 
-4. **ESTABLISHES INTERCONNECTIONS**
-   - Plan how pages will reference each other
-   - Identify shared concepts and cross-cutting concerns
-   - Design navigation that shows system relationships
+*For a Go REST API:*
+- **Getting Started** → "Go Module Setup", "Environment Variables", "Building the Binary", "Running Locally"
+- **API Development** → "Handler Functions", "Middleware Setup", "Route Configuration", "JSON Serialization"
+- **Infrastructure and Configuration** → "Docker Configuration", "Database Migrations", "Environment Config", "Health Checks"
 
-Respond with a JSON structure that includes:
-- Main architecture overview page
-- Logical functional groupings
-- Planned mermaid diagrams for each section
-- Cross-references between pages
+*For a Java Spring Boot API:*
+- **Getting Started** → "Maven/Gradle Setup", "Application Properties", "Running with Spring Boot", "IDE Configuration"
+- **Core Concepts** → "Spring Bean Configuration", "Dependency Injection", "JPA Entity Models", "Service Layer Architecture"
+- **API Development** → "REST Controllers", "Request/Response DTOs", "Exception Handling", "Spring Security"
+
+*For a Node.js Express API:*
+- **Getting Started** → "NPM Installation", "Package.json Configuration", "Environment Setup", "Running with Nodemon"
+- **API Development** → "Express Routes", "Middleware Functions", "Request Validation", "Error Handling"
+- **Testing and Debugging** → "Jest Testing", "Supertest Integration", "Debug Configuration", "Logging with Winston"
+
+*For a Python FastAPI:*
+- **Getting Started** → "Poetry/Pip Dependencies", "Virtual Environment", "FastAPI Server", "API Documentation"
+- **API Development** → "Pydantic Models", "Path Operations", "Dependency Injection", "Background Tasks"
+
+*For a React Frontend:*
+- **Getting Started** → "Node.js Setup", "Package Installation", "Development Server", "Build Process"
+- **Core Concepts** → "Component Architecture", "State Management", "Routing", "Props and Context"
+
+*For a CLI Tool (any language):*
+- **Getting Started** → "Binary Installation", "Command Syntax", "Configuration Files", "First Commands"
+- **Utilities and Helpers** → "Command Parser", "Configuration Loader", "Output Formatting", "Error Handling"
+
+**OUTPUT FORMAT** (respond with EXACTLY this JSON structure):
+```json
+{
+  "repository_analysis": {
+    "type": "web_application|api_service|cli_tool|library|framework|other",
+    "primary_technologies": ["technology1", "technology2", "..."],
+    "architecture_pattern": "description of main architectural approach"
+  },
+  "wiki_structure": {
+    "Getting Started": {
+      "description": "Brief description of this section's focus",
+      "subtopics": [
+        {"title": "Subtopic 1", "description": "What this covers", "files_involved": ["file1.py", "file2.js"]},
+        {"title": "Subtopic 2", "description": "What this covers", "files_involved": ["file3.py"]},
+        "... 3-6 subtopics total"
+      ]
+    },
+    "Core Concepts": {
+      "description": "Brief description of this section's focus", 
+      "subtopics": [
+        {"title": "Subtopic 1", "description": "What this covers", "files_involved": ["file1.py"]},
+        "... 3-6 subtopics total"
+      ]
+    },
+    "API Development": {
+      "description": "Brief description of this section's focus",
+      "subtopics": [
+        "... 3-6 repository-specific subtopics"
+      ]
+    },
+    "Infrastructure and Configuration": {
+      "description": "Brief description of this section's focus", 
+      "subtopics": [
+        "... 3-6 repository-specific subtopics"
+      ]
+    },
+    "Testing and Debugging": {
+      "description": "Brief description of this section's focus",
+      "subtopics": [
+        "... 3-6 repository-specific subtopics"
+      ]
+    },
+    "Utilities and Helpers": {
+      "description": "Brief description of this section's focus",
+      "subtopics": [
+        "... 3-6 repository-specific subtopics"
+      ]
+    }
+  }
+}
+```
+
+**ANALYSIS REQUIREMENTS:**
+- **Language Detection**: Identify the primary programming language(s) from file extensions (.go, .java, .js/.ts, .py, etc.)
+- **Framework Recognition**: Detect frameworks from file patterns (package.json, pom.xml, go.mod, requirements.txt, etc.)
+- **Project Structure Analysis**: Understand the actual organization and architecture of THIS specific repository
+- **Technology Stack Identification**: Determine databases, build tools, testing frameworks, deployment methods actually used
+- **File-Specific Sub-topics**: Generate sub-topics based on files that actually exist in the repository
+- **Language-Appropriate Terminology**: Use terminology specific to the detected language/framework ecosystem
+- **No Assumptions**: Don't assume files or patterns that aren't evidenced in the file tree
 
 File Tree:
 {file_tree}
 
 README:
 {readme}
+
+Analyze this repository and generate a comprehensive hierarchical wiki structure with dynamic, repository-specific sub-topics for each main section.
 """
 
 WIKI_PAGE_GENERATION_PROMPT = """
@@ -140,4 +216,63 @@ COMPREHENSIVE SOURCE CODE CONTEXT:
 Repository Context (should contain actual source code): {context}
 File Tree Structure: {file_tree}
 README Documentation: {readme}
+"""
+
+HIERARCHICAL_WIKI_GENERATION_PROMPT = """
+Create a comprehensive, hierarchical wiki based on the detailed structure analysis and actual source code.
+
+🚨 CRITICAL: Generate content for ALL main topics and ALL their sub-topics as specified in the wiki structure below.
+
+**CONTENT GENERATION REQUIREMENTS:**
+
+1. **Follow the Exact Hierarchical Structure**: Use the topic and sub-topic organization provided
+2. **Repository-Specific Content**: Base all content on actual source code analysis
+3. **Comprehensive Coverage**: Each sub-topic should be substantial and detailed
+4. **Code Examples**: Include relevant code snippets from actual files
+5. **Mermaid Diagrams**: Add architecture and flow diagrams where appropriate
+6. **File References**: Reference specific files mentioned in the structure analysis
+
+**OUTPUT FORMAT:**
+For each main topic, create:
+```markdown
+# [Topic Title]
+
+[Topic overview and introduction]
+
+## [Sub-topic 1 Title]
+[Detailed content for this sub-topic based on actual code]
+- Code examples from referenced files
+- Implementation details
+- Best practices
+
+## [Sub-topic 2 Title]
+[Detailed content for this sub-topic based on actual code]
+- Code examples from referenced files
+- Implementation details
+- Best practices
+
+[Continue for all sub-topics...]
+
+---
+```
+
+**MERMAID DIAGRAM REQUIREMENTS:**
+- Node labels MUST NOT contain parentheses () - use dashes or "like" instead
+- Use simple, clean node IDs
+- Keep labels concise and readable
+- Always start with `graph TD` for flowcharts
+
+**REPOSITORY STRUCTURE ANALYSIS (use this to guide content generation):**
+{wiki_structure}
+
+**ACTUAL SOURCE CODE CONTEXT:**
+{context}
+
+**FILE TREE:**
+{file_tree}
+
+**README CONTENT:**
+{readme}
+
+Generate a comprehensive hierarchical wiki with detailed main sections and dynamic sub-sections based on the structure analysis above. Ensure every topic and sub-topic specified in the wiki structure gets substantial, code-based content.
 """

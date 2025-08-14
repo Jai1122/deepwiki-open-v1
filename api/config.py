@@ -192,7 +192,7 @@ DEFAULT_EXCLUDED_FILES: List[str] = [
     "Pipfile.lock", "requirements.txt.lock", "Cargo.lock", "composer.lock",
     ".lock", ".DS_Store", "Thumbs.db", "desktop.ini", "*.lnk", ".env",
     ".env.*", "*.env", "*.cfg", "*.ini", ".flaskenv", ".gitignore",
-    ".gitattributes", ".gitmodules", ".github", ".gitlab-ci.yml",
+    ".gitattributes", ".gitmodules",
     ".prettierrc", ".eslintrc", ".eslintignore", ".stylelintrc",
     ".editorconfig", ".jshintrc", ".pylintrc", ".flake8", "mypy.ini",
     "pyproject.toml", "tsconfig.json", "webpack.config.js", "babel.config.js",

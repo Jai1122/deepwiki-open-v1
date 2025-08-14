@@ -12,7 +12,7 @@ from adalflow.components.data_process import TextSplitter
 from .config import get_model_config, configs, get_context_window_for_model, get_max_tokens_for_model
 from .rag import RAG
 from .utils import count_tokens, truncate_prompt_to_fit, get_file_content
-from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PROMPT, WIKI_STRUCTURE_ANALYSIS_PROMPT
+from .wiki_prompts import WIKI_PAGE_GENERATION_PROMPT, ARCHITECTURE_OVERVIEW_PROMPT, WIKI_STRUCTURE_ANALYSIS_PROMPT, HIERARCHICAL_WIKI_GENERATION_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +257,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     filePath: Optional[str] = None
     token: Optional[str] = None
-    type: Optional[str] = "github"
+    type: Optional[str] = "bitbucket"
     provider: str = "vllm"
     model: Optional[str] = "/app/models/Qwen3-32B"
     # Advanced file filtering options removed
@@ -345,7 +345,7 @@ async def handle_websocket_chat(websocket: WebSocket):
                 continue
             
             # Handle control messages (but NOT repository type messages)
-            # Repository "type" (github, local, gitlab) is part of chat requests, not control messages
+            # Repository "type" (bitbucket, local) is part of chat requests, not control messages
             message_type = message_data.get("type")
             if message_type and message_type in ["ping", "pong", "heartbeat", "control"]:  # Only actual control message types
                 logger.debug(f"Received control message type: {message_type}")
@@ -1531,7 +1531,7 @@ async def get_repository_structure(request: CleanWikiGenerationRequest) -> tuple
         file_tree = '\n'.join(sorted(file_tree_lines))
         
     else:
-        # For remote repositories (Bitbucket, GitHub, etc.)
+        # For remote repositories (Bitbucket)
         # The RAG system will handle repository cloning and analysis
         # For now, return placeholder - this will be enhanced by RAG analysis
         file_tree = "Repository structure will be analyzed during content processing"
@@ -1683,86 +1683,130 @@ async def generate_wiki_structure(structure_prompt: str, model_config: dict, req
         logger.error(f"Failed to generate wiki structure: {e}", exc_info=True)
         logger.error(f"Error type: {type(e).__name__}")
         
-        # Return fallback structure that ensures we get the desired sections
-        fallback_structure = """Based on the repository analysis, here is the recommended wiki structure:
-
-**Getting Started**
-- Installation and setup procedures
-- Quick start guide
-- Basic configuration requirements
-
-**Core Concepts** 
-- System architecture overview
-- Key design patterns and principles
-- Main components and their relationships
-
-**API Development**
-- Available endpoints and services
-- Integration patterns
-- Request/response formats
-
-**Infrastructure and Configuration**
-- Deployment strategies
-- Environment setup
-- Configuration management
-
-**Testing and Debugging**
-- Testing frameworks and strategies
-- Debugging techniques
-- Troubleshooting common issues
-
-**Utilities and Helpers**
-- Support functions and utilities
-- Common tools and helpers
-- Development aids
-
-This structure provides comprehensive coverage of the codebase from development to deployment."""
+        # Return repository-agnostic fallback structure (simplified)
+        fallback_structure = """{
+  "repository_analysis": {
+    "type": "unknown",
+    "primary_technologies": ["to_be_determined"],
+    "architecture_pattern": "Repository analysis required for specific architecture details"
+  },
+  "wiki_structure": {
+    "Getting Started": {
+      "description": "Setup, installation, and initial configuration guide",
+      "subtopics": [
+        {"title": "Prerequisites and Dependencies", "description": "Required tools, runtime versions, and dependencies"},
+        {"title": "Installation Instructions", "description": "Step-by-step installation and setup process"},
+        {"title": "Initial Configuration", "description": "Basic configuration required to run the application"},
+        {"title": "Quick Start Examples", "description": "Simple examples to verify successful installation"}
+      ]
+    },
+    "Core Concepts": {
+      "description": "Fundamental architecture, design patterns, and system principles",
+      "subtopics": [
+        {"title": "System Architecture", "description": "High-level system design and component relationships"},
+        {"title": "Design Patterns", "description": "Key architectural and design patterns used"},
+        {"title": "Data Models and Structures", "description": "Core data models and their relationships"},
+        {"title": "Business Logic Flow", "description": "Main application workflows and processes"}
+      ]
+    },
+    "API Development": {
+      "description": "API endpoints, services, and integration patterns",
+      "subtopics": [
+        {"title": "API Structure and Endpoints", "description": "Available endpoints and their organization"},
+        {"title": "Request and Response Formats", "description": "Data formats, schemas, and validation"},
+        {"title": "Authentication and Authorization", "description": "Security implementation and access control"},
+        {"title": "Integration Patterns", "description": "How to integrate with external services"}
+      ]
+    },
+    "Infrastructure and Configuration": {
+      "description": "Deployment, environment setup, and system configuration",
+      "subtopics": [
+        {"title": "Environment Configuration", "description": "Environment variables and configuration management"},
+        {"title": "Build and Deployment", "description": "Build processes and deployment strategies"},
+        {"title": "Database Setup", "description": "Database configuration and migration processes"},
+        {"title": "Monitoring and Logging", "description": "System monitoring, logging, and observability"}
+      ]
+    },
+    "Testing and Debugging": {
+      "description": "Testing strategies, debugging techniques, and troubleshooting",
+      "subtopics": [
+        {"title": "Testing Strategy", "description": "Testing frameworks, approaches, and best practices"},
+        {"title": "Running Tests", "description": "How to execute different types of tests"},
+        {"title": "Debugging Techniques", "description": "Debugging tools and troubleshooting approaches"},
+        {"title": "Common Issues", "description": "Frequently encountered problems and solutions"}
+      ]
+    },
+    "Utilities and Helpers": {
+      "description": "Support functions, utilities, and development tools",
+      "subtopics": [
+        {"title": "Utility Functions", "description": "Common utility functions and helper methods"},
+        {"title": "Development Tools", "description": "Tools and scripts for development workflow"},
+        {"title": "Code Generation", "description": "Automated code generation and scaffolding tools"},
+        {"title": "Performance Utilities", "description": "Performance monitoring and optimization tools"}
+      ]
+    }
+  }
+}"""
         
         logger.info("✅ Using fallback wiki structure")
         return fallback_structure
 
 
 def create_enhanced_wiki_prompt(file_tree: str, readme_content: str, repo_context: str, wiki_structure: str) -> str:
-    """Create enhanced prompt that combines structure with comprehensive content generation."""
+    """Create enhanced hierarchical prompt that uses dynamic structure with sub-topics."""
     
-    enhanced_prompt = f"""You are creating a comprehensive, structured wiki for this software repository based on detailed source code analysis.
-
-**CRITICAL REQUIREMENTS:**
-1. Generate a complete wiki with the following structured sections (include ALL of these):
-   - **Getting Started**: Installation, setup, quick start guide
-   - **Core Concepts**: Architecture overview, key principles, design patterns
-   - **API Development**: Endpoints, services, integration guides
-   - **Infrastructure and Configuration**: Deployment, environment setup, configuration
-   - **Testing and Debugging**: Testing strategies, debugging guides, troubleshooting
-   - **Utilities and Helpers**: Support functions, common utilities, tools
-
-2. For EACH section, provide:
-   - Comprehensive overview of that area
-   - Code examples from the actual repository
-   - Implementation details based on source analysis
-   - Best practices and usage patterns
-   - Mermaid diagrams where appropriate
-
-3. Base ALL content on the actual source code provided below - not generic information
-
-4. Include specific file references and code snippets from the repository
-
-5. Create detailed, actionable content for developers using this codebase
-
-**REPOSITORY STRUCTURE ANALYSIS:**
-{wiki_structure}
-
-**ACTUAL SOURCE CODE CONTEXT:**
-{repo_context}
-
-**FILE TREE:**
-{file_tree}
-
-**README CONTENT:**
-{readme_content}
-
-Generate a comprehensive, well-structured wiki with detailed sections covering all aspects of this codebase. Each section should be substantial and based on actual code analysis."""
-
+    logger.info("🏗️ Creating enhanced hierarchical wiki prompt with dynamic sub-topics")
+    
+    # Try to parse the wiki structure to validate it's hierarchical
+    parsed_structure = None
+    try:
+        # Handle different possible formats of wiki_structure
+        if wiki_structure.strip().startswith('{'):
+            # It's JSON - try to parse it
+            import json
+            parsed_structure = json.loads(wiki_structure)
+            logger.info("✅ Successfully parsed JSON wiki structure")
+            
+            # Log the structure to verify it has the hierarchical format
+            if 'wiki_structure' in parsed_structure:
+                topics = list(parsed_structure['wiki_structure'].keys())
+                logger.info(f"📋 Found hierarchical structure with topics: {topics}")
+                
+                # Count total sub-topics
+                total_subtopics = 0
+                for topic, topic_data in parsed_structure['wiki_structure'].items():
+                    if isinstance(topic_data, dict) and 'subtopics' in topic_data:
+                        subtopic_count = len(topic_data['subtopics'])
+                        total_subtopics += subtopic_count
+                        logger.info(f"   - {topic}: {subtopic_count} sub-topics")
+                
+                logger.info(f"📊 Total sub-topics found: {total_subtopics}")
+            else:
+                logger.warning("⚠️ Wiki structure doesn't have expected 'wiki_structure' key")
+        else:
+            # It's text format - use as-is
+            logger.info("📝 Wiki structure is in text format, using directly")
+            
+    except json.JSONDecodeError as e:
+        logger.warning(f"⚠️ Could not parse wiki structure as JSON: {e}")
+        logger.info("📝 Using wiki structure as descriptive text")
+    except Exception as e:
+        logger.warning(f"⚠️ Error processing wiki structure: {e}")
+    
+    # Use the new hierarchical prompt that properly handles dynamic sub-topics
+    enhanced_prompt = HIERARCHICAL_WIKI_GENERATION_PROMPT.format(
+        wiki_structure=wiki_structure,
+        context=repo_context,
+        file_tree=file_tree,
+        readme=readme_content
+    )
+    
+    logger.info(f"✅ Created hierarchical wiki prompt:")
+    logger.info(f"   - Uses HIERARCHICAL_WIKI_GENERATION_PROMPT template")
+    logger.info(f"   - Wiki structure length: {len(wiki_structure)} chars")
+    logger.info(f"   - Repo context length: {len(repo_context)} chars")
+    logger.info(f"   - Final prompt length: {len(enhanced_prompt)} chars")
+    
     return enhanced_prompt
 
 

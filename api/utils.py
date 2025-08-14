@@ -407,46 +407,6 @@ def truncate_prompt_to_fit(
 
     return truncated_file, truncated_context
 
-def get_github_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
-    """
-    Fetches file content from a GitHub repository.
-    """
-    parsed_url = urlparse(repo_url)
-    path_parts = parsed_url.path.strip('/').split('/')
-    owner, repo = path_parts[0], path_parts[1]
-    
-    api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
-    headers = {'Accept': 'application/vnd.github.v3.raw'}
-    if access_token:
-        headers['Authorization'] = f'token {access_token}'
-        
-    try:
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        return response.text
-    except RequestException as e:
-        logger.error(f"Error fetching file from GitHub {api_url}: {e}")
-        return ""
-
-def get_gitlab_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
-    """
-    Fetches file content from a GitLab repository.
-    """
-    parsed_url = urlparse(repo_url)
-    project_path = quote(parsed_url.path.strip('/'), safe='')
-    api_url = f"https://gitlab.com/api/v4/projects/{project_path}/repository/files/{quote(file_path, safe='')}/raw"
-    
-    headers = {}
-    if access_token:
-        headers['PRIVATE-TOKEN'] = access_token
-        
-    try:
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        return response.text
-    except RequestException as e:
-        logger.error(f"Error fetching file from GitLab {api_url}: {e}")
-        return ""
 
 def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
     """
@@ -600,21 +560,17 @@ def get_local_file_content(file_path: str) -> str:
         logger.error(f"Error reading local file {file_path}: {e}")
         return ""
 
-def get_file_content(repo_url: str, file_path: str, type: str = "github", access_token: str = None) -> str:
+def get_file_content(repo_url: str, file_path: str, type: str = "bitbucket", access_token: str = None) -> str:
     """
     A wrapper function to get file content based on the repository type.
-    Handles both remote git repositories and local file paths.
+    Handles both remote Bitbucket repositories and local file paths.
     """
     if type == "local":
         # For local type, repo_url is the base path of the cloned repo
         full_path = os.path.join(repo_url, file_path)
         return get_local_file_content(full_path)
-    elif type == "github":
-        return get_github_file_content(repo_url, file_path, access_token)
-    elif type == "gitlab":
-        return get_gitlab_file_content(repo_url, file_path, access_token)
     elif type == "bitbucket":
         return get_bitbucket_file_content(repo_url, file_path, access_token)
     else:
-        logger.error(f"Unsupported repository type: {type}")
-        raise ValueError("Unsupported repository type.")
+        logger.error(f"Unsupported repository type: {type}. Only 'bitbucket' and 'local' are supported.")
+        raise ValueError("Unsupported repository type. Only 'bitbucket' and 'local' are supported.")

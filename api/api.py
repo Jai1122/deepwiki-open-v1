@@ -772,7 +772,7 @@ class WikiGenerationRequest(BaseModel):
     """
     Clean request model for wiki generation - no prompts from frontend.
     """
-    repo_url: str = Field(..., description="Repository URL (Bitbucket, GitHub, etc.)")
+    repo_url: str = Field(..., description="Repository URL (Bitbucket or local path)")
     repo_type: str = Field(..., description="Repository type: 'bitbucket', 'local', etc.")
     provider: str = Field(default="vllm", description="LLM provider")
     model: str = Field(default="/app/models/Qwen2.5-VL-7B-Instruct", description="Model identifier")
@@ -795,8 +795,8 @@ async def generate_wiki(request: WikiGenerationRequest):
         if not request.repo_url.strip():
             raise HTTPException(status_code=400, detail="Repository URL is required")
         
-        if request.repo_type not in ["bitbucket", "local", "github"]:
-            raise HTTPException(status_code=400, detail="Invalid repo_type. Must be 'bitbucket', 'local', or 'github'")
+        if request.repo_type not in ["bitbucket", "local"]:
+            raise HTTPException(status_code=400, detail="Invalid repo_type. Must be 'bitbucket' or 'local'")
         
         # For local repositories, local_path is required
         if request.repo_type == "local" and not request.local_path:
