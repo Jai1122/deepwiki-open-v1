@@ -219,48 +219,85 @@ README Documentation: {readme}
 """
 
 HIERARCHICAL_WIKI_GENERATION_PROMPT = """
-Create a comprehensive, hierarchical wiki based on the detailed structure analysis and actual source code.
+Create a comprehensive, hierarchical wiki based on the detailed structure analysis and actual source code, following the DeepWiki format standards.
 
 🚨 CRITICAL: Generate content for ALL main topics and ALL their sub-topics as specified in the wiki structure below.
 
 **CONTENT GENERATION REQUIREMENTS:**
 
-1. **Follow the Exact Hierarchical Structure**: Use the topic and sub-topic organization provided
+1. **Follow DeepWiki Format Standards**: Use numbered chapters with clear hierarchical organization
 2. **Repository-Specific Content**: Base all content on actual source code analysis
-3. **Comprehensive Coverage**: Each sub-topic should be substantial and detailed
-4. **Code Examples**: Include relevant code snippets from actual files
-5. **Mermaid Diagrams**: Add architecture and flow diagrams where appropriate
-6. **File References**: Reference specific files mentioned in the structure analysis
+3. **Comprehensive Coverage**: Each sub-topic should be substantial and detailed with technical depth
+4. **Source File Attribution**: Reference specific files with line numbers where applicable
+5. **Mermaid Diagrams**: Add architecture and flow diagrams for complex systems
+6. **Progressive Technical Narrative**: Build understanding from basic to advanced concepts
 
-**OUTPUT FORMAT:**
-For each main topic, create:
+**OUTPUT FORMAT (DeepWiki Standard):**
+For each main topic, create a separate page with this structure:
+
 ```markdown
-# [Topic Title]
+# [Chapter Number] - [Topic Title]
 
-[Topic overview and introduction]
+## Relevant Source Files
+- `[file_path]:[line_range]` - [Brief description of what this file contains]
+- `[file_path]:[line_range]` - [Brief description of what this file contains]
 
 ## [Sub-topic 1 Title]
-[Detailed content for this sub-topic based on actual code]
-- Code examples from referenced files
-- Implementation details
-- Best practices
+
+[Detailed technical explanation based on actual code analysis]
+
+### Implementation Details
+```[language]
+[Relevant code snippet from source files]
+```
+
+[Explanation of the code and its role in the system]
+
+### System Flow
+```mermaid
+graph TD
+    A[Component A] --> B[Component B]
+    B --> C[Component C]
+    C --> D[Output/Result]
+```
+
+[Explanation of the flow and interactions]
 
 ## [Sub-topic 2 Title]
-[Detailed content for this sub-topic based on actual code]
-- Code examples from referenced files
-- Implementation details
-- Best practices
 
-[Continue for all sub-topics...]
+[Continue with same detailed format...]
+
+### Key Components
+- **[Component Name]**: [Description and file reference]
+- **[Component Name]**: [Description and file reference]
+
+### Configuration
+```[language]
+[Configuration examples from actual files]
+```
+
+## Sources
+1. `[file_path]:[line_numbers]` - [Description of what these lines contain]
+2. `[file_path]:[line_numbers]` - [Description of what these lines contain]
 
 ---
 ```
 
+**TECHNICAL DOCUMENTATION STANDARDS:**
+
+1. **Chapter Numbering**: Use clear numerical progression (1, 2, 3, etc.)
+2. **Source Attribution**: Always include "Relevant Source Files" section at the top
+3. **Code Integration**: Show actual code snippets with proper syntax highlighting  
+4. **Visual Diagrams**: Use Mermaid for system architecture and process flows
+5. **Cross-References**: Link related sections using markdown links
+6. **Sources Section**: End each page with numbered source references
+
 **MERMAID DIAGRAM REQUIREMENTS:**
 - Node labels MUST NOT contain parentheses () - use dashes or "like" instead
-- Use simple, clean node IDs
-- Keep labels concise and readable
+- Use descriptive but concise node names
+- Show actual system flow based on code analysis
 - Always start with `graph TD` for flowcharts
+- Use consistent styling and clear connections
 
 **REPOSITORY STRUCTURE ANALYSIS (use this to guide content generation):**
 {wiki_structure}
@@ -274,5 +311,5 @@ For each main topic, create:
 **README CONTENT:**
 {readme}
 
-Generate a comprehensive hierarchical wiki with detailed main sections and dynamic sub-sections based on the structure analysis above. Ensure every topic and sub-topic specified in the wiki structure gets substantial, code-based content.
+Generate a comprehensive hierarchical wiki following the DeepWiki format standards. Each topic should be a separate numbered chapter with detailed technical content, proper source attribution, and progressive learning structure. Ensure every topic and sub-topic specified in the wiki structure gets substantial, code-based content with proper formatting.
 """
