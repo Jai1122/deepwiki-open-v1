@@ -143,18 +143,38 @@ class RAG(adal.Component):
             logger.error("No valid documents with embeddings found after validation. Cannot build retriever.")
             raise ValueError("No valid documents with embeddings found after validation.")
             
+        # Additional validation for document vectors
+        vectors_ok = 0
+        for i, doc in enumerate(self.transformed_docs[:5]):  # Check first 5 docs
+            if hasattr(doc, 'vector') and doc.vector is not None:
+                vectors_ok += 1
+                logger.debug(f"Document {i}: vector dim={len(doc.vector)}")
+            else:
+                logger.warning(f"Document {i}: missing or None vector")
+        
+        logger.info(f"✅ Document validation: {vectors_ok}/{min(5, len(self.transformed_docs))} documents have valid vectors")
+            
         retriever_config = configs.get("retriever")
         if not isinstance(retriever_config, dict):
             logger.error("Retriever configuration is missing or invalid in embedder.json.")
             raise ValueError("Retriever configuration is missing or invalid.")
 
         logger.info(f"Initializing FAISS retriever with {len(self.transformed_docs)} documents.")
-        self.retriever = FAISSRetriever(
-            **retriever_config,
-            embedder=self.embedder,
-            documents=self.transformed_docs,
-            document_map_func=lambda doc: doc.vector,
-        )
+        logger.debug(f"Retriever config: {retriever_config}")
+        logger.debug(f"Embedder type: {type(self.embedder)}")
+        logger.debug(f"Sample document vector shape: {len(self.transformed_docs[0].vector) if self.transformed_docs and hasattr(self.transformed_docs[0], 'vector') and self.transformed_docs[0].vector else 'No vector'}")
+        
+        try:
+            self.retriever = FAISSRetriever(
+                **retriever_config,
+                embedder=self.embedder,
+                documents=self.transformed_docs,
+                document_map_func=lambda doc: doc.vector,
+            )
+            logger.info(f"✅ FAISS retriever initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ FAISS retriever initialization failed: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to initialize FAISS retriever: {e}")
 
     def call(self, query: str, language: str = None) -> Tuple[List, List]:
         """
@@ -230,10 +250,14 @@ class RAG(adal.Component):
 
             # 4. Pass the embedding vector directly to the retriever.
             # The retriever expects a list of vectors.
+            logger.info(f"🔍 Calling FAISS retriever with query vector of dimension {len(query_vector)}")
             retrieved_results = self.retriever([query_vector])
             
+            logger.info(f"📥 FAISS retriever returned: {type(retrieved_results)}")
+            logger.info(f"📊 Retrieved results length: {len(retrieved_results) if hasattr(retrieved_results, '__len__') else 'N/A'}")
+            
             if not retrieved_results:
-                logger.info("Retriever returned no results for the query.")
+                logger.warning("Retriever returned no results for the query - this may indicate index issues")
                 return ([], [])
 
             # Enhanced error handling for retrieval results
@@ -242,16 +266,23 @@ class RAG(adal.Component):
                 raise RuntimeError(f"RAG retriever returned invalid results: {type(retrieved_results)}")
                 
             first_result = retrieved_results[0]
+            logger.info(f"🔍 First result type: {type(first_result)}")
+            logger.info(f"🔍 First result attributes: {dir(first_result) if first_result else 'None'}")
+            
             if first_result is None:
                 logger.error("❌ RAG CRITICAL ERROR: First retrieval result is None")
                 raise RuntimeError("RAG retriever returned None as first result")
                 
             if not hasattr(first_result, 'documents'):
-                logger.error(f"❌ RAG CRITICAL ERROR: Retrieval result missing 'documents' attribute: {type(first_result)}")
+                logger.error(f"❌ RAG CRITICAL ERROR: Retrieval result missing 'documents' attribute")
+                logger.error(f"First result type: {type(first_result)}")
+                logger.error(f"Available attributes: {dir(first_result)}")
                 raise RuntimeError(f"RAG retriever result invalid structure: {type(first_result)}")
 
             # The actual documents are in the 'documents' attribute of the first result item
             retrieved_documents = first_result.documents
+            logger.info(f"📄 Retrieved documents type: {type(retrieved_documents)}")
+            logger.info(f"📄 Retrieved documents length: {len(retrieved_documents) if retrieved_documents else 'None'}")
             
             if retrieved_documents is None:
                 logger.error("❌ RAG CRITICAL ERROR: Retrieved documents is None - retriever malfunction")
@@ -261,8 +292,12 @@ class RAG(adal.Component):
                 logger.error(f"❌ RAG CRITICAL ERROR: Retrieved documents is not a list: {type(retrieved_documents)}")
                 raise RuntimeError(f"RAG retriever returned invalid type: {type(retrieved_documents)}")
             
-            logger.debug(f"Successfully retrieved {len(retrieved_documents)} documents")
+            logger.info(f"✅ Successfully retrieved {len(retrieved_documents)} documents")
             return retrieved_documents, []
+        except RuntimeError as e:
+            # Re-raise RuntimeErrors (our critical errors) instead of masking them
+            logger.error(f"❌ RAG CRITICAL ERROR: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error in RAG call: {e}", exc_info=True)
-            return ([], [])
+            logger.error(f"❌ Unexpected error in RAG call: {e}", exc_info=True)
+            raise RuntimeError(f"RAG system failure: {e}")

@@ -740,6 +740,10 @@ async def stream_response(
             logger.error(f"🚨 RAG preparation timed out after {rag_preparation_timeout} seconds")
             yield json.dumps({"error": f"Repository analysis timed out after {rag_preparation_timeout//60} minutes. The repository may be too large or complex. Please try with a smaller repository."})
             return
+        except RuntimeError as runtime_error:
+            logger.error(f"🚨 RAG CRITICAL ERROR during preparation: {runtime_error}", exc_info=True)
+            yield json.dumps({"error": f"RAG system initialization failed: {runtime_error}. This indicates a critical configuration or dependency issue."})
+            return
         except Exception as prep_error:
             logger.error(f"🚨 RAG preparation failed with exception: {prep_error}", exc_info=True)
             yield json.dumps({"error": f"Repository analysis failed: {prep_error}. Please check if the repository URL is accessible and try again."})
