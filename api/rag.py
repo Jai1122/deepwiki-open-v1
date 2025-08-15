@@ -161,7 +161,7 @@ class RAG(adal.Component):
 
         logger.info(f"Initializing FAISS retriever with {len(self.transformed_docs)} documents.")
         logger.debug(f"Retriever config: {retriever_config}")
-        logger.debug(f"Embedder type: {type(self.embedder)}")
+        logger.debug(f"Embedder type: {self.embedder.__class__.__name__}")
         logger.debug(f"Sample document vector shape: {len(self.transformed_docs[0].vector) if self.transformed_docs and hasattr(self.transformed_docs[0], 'vector') and self.transformed_docs[0].vector else 'No vector'}")
         
         try:
@@ -253,7 +253,7 @@ class RAG(adal.Component):
             logger.info(f"🔍 Calling FAISS retriever with query vector of dimension {len(query_vector)}")
             retrieved_results = self.retriever([query_vector])
             
-            logger.info(f"📥 FAISS retriever returned: {type(retrieved_results)}")
+            logger.info(f"📥 FAISS retriever returned: {retrieved_results.__class__.__name__}")
             logger.info(f"📊 Retrieved results length: {len(retrieved_results) if hasattr(retrieved_results, '__len__') else 'N/A'}")
             
             if not retrieved_results:
@@ -262,11 +262,11 @@ class RAG(adal.Component):
 
             # Enhanced error handling for retrieval results
             if not isinstance(retrieved_results, list) or len(retrieved_results) == 0:
-                logger.error(f"❌ RAG CRITICAL ERROR: Invalid retriever results format: {type(retrieved_results)}")
-                raise RuntimeError(f"RAG retriever returned invalid results: {type(retrieved_results)}")
+                logger.error(f"❌ RAG CRITICAL ERROR: Invalid retriever results format: {retrieved_results.__class__.__name__}")
+                raise RuntimeError(f"RAG retriever returned invalid results: {retrieved_results.__class__.__name__}")
                 
             first_result = retrieved_results[0]
-            logger.info(f"🔍 First result type: {type(first_result)}")
+            logger.info(f"🔍 First result type: {first_result.__class__.__name__ if first_result else 'None'}")
             logger.info(f"🔍 First result attributes: {dir(first_result) if first_result else 'None'}")
             
             if first_result is None:
@@ -275,13 +275,13 @@ class RAG(adal.Component):
                 
             if not hasattr(first_result, 'documents'):
                 logger.error(f"❌ RAG CRITICAL ERROR: Retrieval result missing 'documents' attribute")
-                logger.error(f"First result type: {type(first_result)}")
+                logger.error(f"First result type: {first_result.__class__.__name__}")
                 logger.error(f"Available attributes: {dir(first_result)}")
-                raise RuntimeError(f"RAG retriever result invalid structure: {type(first_result)}")
+                raise RuntimeError(f"RAG retriever result invalid structure: {first_result.__class__.__name__}")
 
             # The actual documents are in the 'documents' attribute of the first result item
             retrieved_documents = first_result.documents
-            logger.info(f"📄 Retrieved documents type: {type(retrieved_documents)}")
+            logger.info(f"📄 Retrieved documents type: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
             logger.info(f"📄 Retrieved documents length: {len(retrieved_documents) if retrieved_documents else 'None'}")
             
             if retrieved_documents is None:
@@ -289,8 +289,8 @@ class RAG(adal.Component):
                 raise RuntimeError("RAG retriever returned None documents - system malfunction")
                 
             if not isinstance(retrieved_documents, list):
-                logger.error(f"❌ RAG CRITICAL ERROR: Retrieved documents is not a list: {type(retrieved_documents)}")
-                raise RuntimeError(f"RAG retriever returned invalid type: {type(retrieved_documents)}")
+                logger.error(f"❌ RAG CRITICAL ERROR: Retrieved documents is not a list: {retrieved_documents.__class__.__name__}")
+                raise RuntimeError(f"RAG retriever returned invalid type: {retrieved_documents.__class__.__name__}")
             
             logger.info(f"✅ Successfully retrieved {len(retrieved_documents)} documents")
             return retrieved_documents, []
