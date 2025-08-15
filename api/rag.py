@@ -165,13 +165,28 @@ class RAG(adal.Component):
         logger.debug(f"Sample document vector shape: {len(self.transformed_docs[0].vector) if self.transformed_docs and hasattr(self.transformed_docs[0], 'vector') and self.transformed_docs[0].vector else 'No vector'}")
         
         try:
+            # Test document_map_func before passing to FAISS
+            test_vectors = []
+            for i, doc in enumerate(self.transformed_docs[:3]):  # Test first 3 docs
+                try:
+                    vector = doc.vector
+                    if vector is not None:
+                        test_vectors.append(len(vector))
+                        logger.debug(f"Doc {i}: vector length {len(vector)}")
+                    else:
+                        logger.warning(f"Doc {i}: vector is None")
+                except Exception as e:
+                    logger.warning(f"Doc {i}: error accessing vector: {e}")
+            
+            logger.info(f"🧪 Vector validation: {len(test_vectors)} valid vectors out of {min(3, len(self.transformed_docs))} docs")
+            
             self.retriever = FAISSRetriever(
                 **retriever_config,
                 embedder=self.embedder,
                 documents=self.transformed_docs,
                 document_map_func=lambda doc: doc.vector,
             )
-            logger.info(f"✅ FAISS retriever initialized successfully")
+            logger.info(f"✅ FAISS retriever initialized successfully with {len(self.transformed_docs)} documents")
         except Exception as e:
             logger.error(f"❌ FAISS retriever initialization failed: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize FAISS retriever: {e}")
@@ -251,7 +266,36 @@ class RAG(adal.Component):
             # 4. Pass the embedding vector directly to the retriever.
             # The retriever expects a list of vectors.
             logger.info(f"🔍 Calling FAISS retriever with query vector of dimension {len(query_vector)}")
-            retrieved_results = self.retriever([query_vector])
+            logger.info(f"🔍 Retriever object type: {self.retriever.__class__.__name__}")
+            logger.info(f"🔍 Retriever methods: {[m for m in dir(self.retriever) if not m.startswith('_') and callable(getattr(self.retriever, m))]}")
+            
+            # Try the retriever call with different approaches
+            retrieved_results = None
+            try:
+                # Standard approach: pass list of vectors
+                retrieved_results = self.retriever([query_vector])
+                logger.info(f"🔍 Standard retriever call succeeded")
+            except Exception as e1:
+                logger.warning(f"Standard retriever call failed: {e1}")
+                try:
+                    # Alternative approach: pass single vector
+                    retrieved_results = self.retriever(query_vector)
+                    logger.info(f"🔍 Alternative retriever call (single vector) succeeded")
+                except Exception as e2:
+                    logger.warning(f"Alternative retriever call failed: {e2}")
+                    try:
+                        # Try with call method if it exists
+                        if hasattr(self.retriever, 'call'):
+                            retrieved_results = self.retriever.call([query_vector])
+                            logger.info(f"🔍 .call() method succeeded")
+                        else:
+                            raise Exception("No .call() method available")
+                    except Exception as e3:
+                        logger.error(f"All retriever call methods failed: {e1}, {e2}, {e3}")
+                        raise RuntimeError(f"FAISS retriever call failed with all methods: {e1}")
+            
+            if retrieved_results is not None:
+                logger.info(f"🔍 Raw retriever call completed successfully")
             
             logger.info(f"📥 FAISS retriever returned: {retrieved_results.__class__.__name__}")
             logger.info(f"📊 Retrieved results length: {len(retrieved_results) if hasattr(retrieved_results, '__len__') else 'N/A'}")
@@ -279,13 +323,36 @@ class RAG(adal.Component):
                 logger.error(f"Available attributes: {dir(first_result)}")
                 raise RuntimeError(f"RAG retriever result invalid structure: {first_result.__class__.__name__}")
 
-            # The actual documents are in the 'documents' attribute of the first result item
-            retrieved_documents = first_result.documents
-            logger.info(f"📄 Retrieved documents type: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
-            logger.info(f"📄 Retrieved documents length: {len(retrieved_documents) if retrieved_documents else 'None'}")
+            # Debug the first result structure more thoroughly
+            logger.info(f"🔍 DEEP DEBUG: first_result has attributes: {[attr for attr in dir(first_result) if not attr.startswith('_')]}")
+            
+            # Try different ways to access documents based on FAISS retriever API
+            retrieved_documents = None
+            if hasattr(first_result, 'documents'):
+                retrieved_documents = first_result.documents
+                logger.info(f"📄 Retrieved via .documents: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
+            elif hasattr(first_result, 'data'):
+                retrieved_documents = first_result.data
+                logger.info(f"📄 Retrieved via .data: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
+            elif hasattr(first_result, 'content'):
+                retrieved_documents = first_result.content
+                logger.info(f"📄 Retrieved via .content: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
+            else:
+                # Maybe first_result IS the documents list
+                if isinstance(first_result, list):
+                    retrieved_documents = first_result
+                    logger.info(f"📄 first_result IS the documents list: {len(retrieved_documents)} items")
+                else:
+                    logger.error(f"❌ Unknown retriever result structure: {first_result}")
+                    logger.error(f"❌ Result value: {first_result}")
+            
+            logger.info(f"📄 Final retrieved documents type: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
+            logger.info(f"📄 Final retrieved documents length: {len(retrieved_documents) if retrieved_documents else 'None'}")
             
             if retrieved_documents is None:
-                logger.error("❌ RAG CRITICAL ERROR: Retrieved documents is None - retriever malfunction")
+                logger.error("❌ RAG CRITICAL ERROR: Retrieved documents is None after all access attempts")
+                logger.error(f"❌ Original first_result: {first_result}")
+                logger.error(f"❌ Available attributes: {dir(first_result)}")
                 raise RuntimeError("RAG retriever returned None documents - system malfunction")
                 
             if not isinstance(retrieved_documents, list):
