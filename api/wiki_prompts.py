@@ -7,7 +7,13 @@ with proper architectural visualization using mermaid diagrams.
 WIKI_STRUCTURE_ANALYSIS_PROMPT = """
 You are an expert software architect analyzing a codebase to create a comprehensive, hierarchical wiki structure.
 
-**CRITICAL TASK**: Analyze the repository and generate a detailed hierarchical wiki structure with SPECIFIC, DYNAMIC sub-topics based on what's actually in this codebase.
+**CRITICAL TASK**: Analyze the repository to understand what this software actually DOES, then generate a detailed hierarchical wiki structure with SPECIFIC, DYNAMIC topics and sub-topics based on the actual purpose and functionality of this codebase.
+
+**ANALYSIS APPROACH:**
+1. **Understand the Purpose**: What problem does this software solve? What is its main function?
+2. **Identify Key Workflows**: How do users interact with this system? What are the main use cases?
+3. **Map Technical Components**: How is the code organized to deliver this functionality?
+4. **Determine Documentation Needs**: What would someone need to know to understand, use, extend, or maintain this system?
 
 **REQUIRED MAIN TOPICS** (always include these 6 topics):
 1. **Getting Started**
@@ -223,14 +229,24 @@ Create a comprehensive, hierarchical wiki based on the detailed structure analys
 
 🚨 CRITICAL: Generate content for ALL main topics and ALL their sub-topics as specified in the wiki structure below.
 
-**CONTENT GENERATION REQUIREMENTS:**
+**CRITICAL CONTENT GENERATION REQUIREMENTS:**
 
-1. **Follow DeepWiki Format Standards**: Use numbered chapters with clear hierarchical organization
-2. **Repository-Specific Content**: Base all content on actual source code analysis
-3. **Comprehensive Coverage**: Each sub-topic should be substantial and detailed with technical depth
-4. **Source File Attribution**: Reference specific files with line numbers where applicable
-5. **Mermaid Diagrams**: Add architecture and flow diagrams for complex systems
-6. **Progressive Technical Narrative**: Build understanding from basic to advanced concepts
+1. **Repository Understanding First**: Analyze what this repository actually DOES and WHY it exists
+2. **Comprehensive English Explanations**: Write detailed explanations in natural language about:
+   - What problem this repository solves
+   - How the system architecture works
+   - Why specific design decisions were made
+   - How different components interact with each other
+3. **Code Context, Not Just Code**: For every code snippet, explain:
+   - What this code accomplishes in business terms
+   - How it fits into the larger system
+   - Why this particular implementation approach was chosen
+4. **User Journey Focus**: Help readers understand:
+   - How a user would interact with this system
+   - What happens behind the scenes during typical operations
+   - What the key workflows and data flows are
+5. **Technical Depth with Clarity**: Provide deep technical insights while maintaining readability
+6. **Source File Attribution**: Reference specific files with line numbers where applicable
 
 **OUTPUT FORMAT (DeepWiki Standard):**
 For each main topic, create a separate numbered chapter with this structure:
@@ -238,34 +254,56 @@ For each main topic, create a separate numbered chapter with this structure:
 ```markdown
 # 1 - Getting Started
 
+## What This Repository Does
+
+[2-3 paragraphs explaining in plain English what this software accomplishes, what problem it solves, and who would use it. Think of this as explaining to a smart colleague who has never seen this code before.]
+
+## System Overview
+
+[Explain the high-level architecture and main components. Use business language first, then get technical.]
+
 ## Relevant Source Files
 - `[file_path]:[line_range]` - [Brief description of what this file contains]
 - `[file_path]:[line_range]` - [Brief description of what this file contains]
 
-[Detailed content for Getting Started...]
+## Installation and Setup
+
+[Step-by-step explanation with reasoning for each step]
 
 # 2 - Core Concepts
 
-## Relevant Source Files
-- `[file_path]:[line_range]` - [Brief description of what this file contains]
-
-[Detailed content for Core Concepts...]
-
 ## System Architecture
-[Architecture explanation with diagrams]
+
+[Detailed explanation of how the system works from a user perspective, then diving into technical implementation]
+
+```mermaid
+graph TD
+    A[User Request] --> B[Component Name]
+    B --> C[Business Logic]
+    C --> D[Data Storage]
+```
+
+[Explain what this diagram shows and WHY the system is designed this way]
+
+## Key Design Patterns and Principles
+
+[Explain the architectural decisions and patterns used, with reasoning]
 
 ### Implementation Details
+
+[For each code example, provide context:]
+
 ```[language]
+// This code handles X functionality which is crucial because...
 [Relevant code snippet from source files]
 ```
 
-## Key Components
-- **[Component Name]**: [Description and file reference]
-- **[Component Name]**: [Description and file reference]
+**What this code does**: [Explain in business terms]
+**Why it's implemented this way**: [Explain the reasoning]
+**How it fits in the larger system**: [Explain the connections]
 
 ## Sources
 1. `[file_path]:[line_numbers]` - [Description of what these lines contain]
-2. `[file_path]:[line_numbers]` - [Description of what these lines contain]
 ```
 
 **CRITICAL FORMATTING REQUIREMENTS:**
@@ -298,26 +336,22 @@ For each main topic, create a separate numbered chapter with this structure:
 
 Generate a comprehensive hierarchical wiki following the DeepWiki format standards. 
 
-**EXPECTED OUTPUT STRUCTURE:**
-Generate exactly 6 numbered chapters following this pattern:
+**DYNAMIC CHAPTER STRUCTURE:**
+Based on the wiki structure analysis provided, generate numbered chapters that match the repository's actual content and purpose. Use the topics and sub-topics identified in the {wiki_structure} to create relevant, repository-specific chapters.
 
-# 1 - Getting Started
-[Chapter content with ## sections]
+**CONTENT DEPTH REQUIREMENTS:**
+For each chapter, provide:
+1. **Contextual Introduction**: Explain what this aspect of the system does and why it matters
+2. **Detailed Technical Explanation**: How it works, with code examples that are explained in context
+3. **System Integration**: How this component connects to and supports other parts of the system
+4. **User Impact**: How this affects the end user experience or developer workflow
+5. **Design Rationale**: Why the system was built this way, what problems it solves
 
-# 2 - Core Concepts  
-[Chapter content with ## sections]
+**EXAMPLE DYNAMIC STRUCTURE:**
+- If the repository structure indicates it's a **web application**: Focus on frontend/backend separation, user flows, API design
+- If it's a **CLI tool**: Focus on command structure, argument parsing, output formatting  
+- If it's a **library/framework**: Focus on public APIs, extension points, integration patterns
+- If it's a **data processing system**: Focus on pipelines, transformations, storage patterns
 
-# 3 - API Development
-[Chapter content with ## sections]
-
-# 4 - Infrastructure and Configuration
-[Chapter content with ## sections]
-
-# 5 - Testing and Debugging
-[Chapter content with ## sections]
-
-# 6 - Utilities and Helpers
-[Chapter content with ## sections]
-
-Ensure every topic and sub-topic specified in the wiki structure gets substantial, code-based content with proper formatting. Each chapter should be self-contained with relevant source files, implementation details, and technical depth.
+Generate chapters that tell the story of THIS specific codebase, not generic software development topics. Each chapter should help a reader understand how to work with, extend, or maintain THIS particular system.
 """

@@ -168,8 +168,8 @@ class RAG(adal.Component):
             tuple: A tuple containing the list of retrieved documents and an empty list.
         """
         if not self.retriever:
-            logger.warning("Retriever is not prepared. Returning empty result.")
-            return ([], [])
+            logger.error("❌ RAG CRITICAL ERROR: Retriever is not prepared. Cannot perform retrieval.")
+            raise RuntimeError("RAG retriever not initialized. Call prepare_retriever() first.")
             
         try:
             # To ensure the query vector is generated in the exact same way as the
@@ -238,28 +238,28 @@ class RAG(adal.Component):
 
             # Enhanced error handling for retrieval results
             if not isinstance(retrieved_results, list) or len(retrieved_results) == 0:
-                logger.warning(f"Invalid retriever results format: {type(retrieved_results)}")
-                return ([], [])
+                logger.error(f"❌ RAG CRITICAL ERROR: Invalid retriever results format: {type(retrieved_results)}")
+                raise RuntimeError(f"RAG retriever returned invalid results: {type(retrieved_results)}")
                 
             first_result = retrieved_results[0]
             if first_result is None:
-                logger.warning("First retrieval result is None")
-                return ([], [])
+                logger.error("❌ RAG CRITICAL ERROR: First retrieval result is None")
+                raise RuntimeError("RAG retriever returned None as first result")
                 
             if not hasattr(first_result, 'documents'):
-                logger.warning(f"Retrieval result missing 'documents' attribute: {type(first_result)}")
-                return ([], [])
+                logger.error(f"❌ RAG CRITICAL ERROR: Retrieval result missing 'documents' attribute: {type(first_result)}")
+                raise RuntimeError(f"RAG retriever result invalid structure: {type(first_result)}")
 
             # The actual documents are in the 'documents' attribute of the first result item
             retrieved_documents = first_result.documents
             
             if retrieved_documents is None:
-                logger.warning("Retrieved documents is None")
-                return ([], [])
+                logger.error("❌ RAG CRITICAL ERROR: Retrieved documents is None - retriever malfunction")
+                raise RuntimeError("RAG retriever returned None documents - system malfunction")
                 
             if not isinstance(retrieved_documents, list):
-                logger.warning(f"Retrieved documents is not a list: {type(retrieved_documents)}")
-                return ([], [])
+                logger.error(f"❌ RAG CRITICAL ERROR: Retrieved documents is not a list: {type(retrieved_documents)}")
+                raise RuntimeError(f"RAG retriever returned invalid type: {type(retrieved_documents)}")
             
             logger.debug(f"Successfully retrieved {len(retrieved_documents)} documents")
             return retrieved_documents, []

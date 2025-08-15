@@ -835,6 +835,12 @@ async def stream_response(
                         logger.warning(f"Error processing document: {doc_error}")
                         continue
                         
+            except RuntimeError as runtime_error:
+                # These are critical RAG errors that should not be ignored
+                logger.error(f"❌ RAG CRITICAL ERROR during query '{broad_query[:30]}...': {runtime_error}")
+                logger.error("This is a critical RAG system failure - cannot continue with empty context")
+                yield json.dumps({"error": f"RAG system failure: {runtime_error}. Please check your configuration."})
+                return
             except Exception as query_error:
                 logger.warning(f"Failed to retrieve docs for query '{broad_query[:30]}...': {query_error}")
                 logger.debug(f"Query exception details: {type(query_error).__name__}: {str(query_error)}")
@@ -907,10 +913,11 @@ async def stream_response(
         except Exception as e:
             logger.warning(f"Direct document access failed: {e}")
     
-    # Final fallback check
-    if len(all_retrieved_docs) < 3:
-        logger.warning(f"⚠️  Still insufficient content after all attempts (only {len(all_retrieved_docs)} docs)")
-        logger.info("🔄 Making final attempt with very broad retrieval...")
+    # Critical content validation - ensure we have meaningful context
+    if len(all_retrieved_docs) < 5:
+        logger.error(f"❌ INSUFFICIENT CONTENT: Only {len(all_retrieved_docs)} documents retrieved")
+        logger.error("This will result in poor wiki quality with generic content")
+        logger.info("🔄 Making aggressive retrieval attempt to get comprehensive context...")
         
         try:
             # Last resort: get any available documents
@@ -930,7 +937,16 @@ async def stream_response(
     
     logger.info(f"📊 Wiki generation final stats: {len(all_retrieved_docs)} documents from {len(seen_sources)} unique sources")
     logger.info(f"📝 Total context length: {len(context_text)} characters")
-    yield json.dumps({"status": "context_ready", "message": f"Retrieved {len(context_text)} characters of context from {len(seen_sources)} files"})
+    
+    # Content quality warning
+    if len(all_retrieved_docs) < 5:
+        logger.warning(f"⚠️  LOW CONTENT WARNING: Only {len(all_retrieved_docs)} docs retrieved - wiki quality may be poor")
+        yield json.dumps({"status": "context_warning", "message": f"Warning: Limited context retrieved ({len(seen_sources)} files). Wiki may lack repository-specific details."})
+    elif len(context_text) < 10000:
+        logger.warning(f"⚠️  SHORT CONTENT WARNING: Only {len(context_text)} chars - wiki may lack depth")
+        yield json.dumps({"status": "context_warning", "message": f"Warning: Limited context content ({len(context_text)} chars). Wiki may lack detailed explanations."})
+    else:
+        yield json.dumps({"status": "context_ready", "message": f"Retrieved {len(context_text)} characters of context from {len(seen_sources)} files"})
     
     # Enhanced logging for debugging and content validation
     if len(seen_sources) > 0:
@@ -1617,8 +1633,8 @@ async def generate_wiki_structure(structure_prompt: str, model_config: dict, req
                 # Fallback to sync call wrapped in async
                 response = await asyncio.to_thread(client.call, api_kwargs=api_kwargs, model_type=ModelType.LLM)
         except TypeError as te:
-            logger.warning(f"Async call failed with TypeError: {te}")
-            logger.warning("This typically means the client returned a non-awaitable object")
+            logger.error(f"❌ LLM CLIENT CRITICAL ERROR: Async call failed with TypeError: {te}")
+            logger.error("This indicates a serious async/await handling problem in the LLM client")
             
             # Check if we got a ChatCompletions object that's already the response
             if "can't be used in 'await' expression" in str(te):
