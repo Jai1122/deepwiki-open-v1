@@ -1007,14 +1007,24 @@ async def stream_response(
         system_prompt = query.replace("[CLEAN_WIKI_PREFORMATTED_PROMPT]\n", "")
         logger.info(f"✅ Using pre-formatted prompt: {len(system_prompt)} characters")
         
-        # Allocate more tokens for comprehensive 6-chapter wiki generation
-        estimated_wiki_tokens = 15000  # Need substantial tokens for 6 complete chapters
-        wiki_max_tokens = min(estimated_wiki_tokens, context_window - count_tokens(system_prompt) - 500)
+        # Calculate safe token allocation for comprehensive 6-chapter wiki generation
+        prompt_tokens = count_tokens(system_prompt)
+        safety_buffer = 1000  # Increased safety buffer for token variations
+        available_for_completion = context_window - prompt_tokens - safety_buffer
         
-        if wiki_max_tokens > max_completion_tokens:
-            logger.info(f"🔧 Increasing completion tokens for comprehensive wiki: {max_completion_tokens} → {wiki_max_tokens}")
-            max_completion_tokens = wiki_max_tokens
-            model_kwargs["max_tokens"] = wiki_max_tokens
+        # Cap completion tokens to what's actually available and reasonable
+        max_wiki_tokens = min(8000, available_for_completion)  # Reduced from 15000 to 8000 for safety
+        
+        logger.info(f"🔢 Token allocation: Context={context_window}, Prompt={prompt_tokens}, Available={available_for_completion}, Using={max_wiki_tokens}")
+        
+        if max_wiki_tokens > max_completion_tokens:
+            logger.info(f"🔧 Increasing completion tokens for comprehensive wiki: {max_completion_tokens} → {max_wiki_tokens}")
+            max_completion_tokens = max_wiki_tokens
+            model_kwargs["max_tokens"] = max_wiki_tokens
+        elif max_wiki_tokens < 2000:
+            logger.warning(f"⚠️ Very limited tokens available for completion: {max_wiki_tokens}. Consider using a model with larger context window.")
+            max_completion_tokens = max(max_wiki_tokens, 1000)  # Minimum viable completion
+            model_kwargs["max_tokens"] = max_completion_tokens
     else:
         # For content generation, use intelligently chosen prompts based on query type
         query_lower = query.lower()
@@ -1646,7 +1656,16 @@ async def generate_wiki_structure(structure_prompt: str, model_config: dict, req
         client = model_config["model_client"](**model_config.get("initialize_kwargs", {}))
         model_kwargs = model_config.get("model_kwargs", {}).copy()
         model_kwargs["stream"] = False  # Non-streaming for structure analysis
-        model_kwargs["max_tokens"] = min(model_kwargs.get("max_tokens", 4000), 8000)  # Reasonable limit
+        
+        # Calculate safe token allocation for structure generation
+        context_window = model_config.get("context_window", 40960)
+        prompt_tokens = count_tokens(structure_prompt)
+        safety_buffer = 1000
+        available_for_completion = context_window - prompt_tokens - safety_buffer
+        structure_max_tokens = min(4000, available_for_completion)  # Conservative limit for structure
+        
+        model_kwargs["max_tokens"] = max(1000, structure_max_tokens)  # Minimum 1000 tokens
+        logger.info(f"🔢 Structure generation tokens: Context={context_window}, Prompt={prompt_tokens}, Using={model_kwargs['max_tokens']}")
         
         # Make API call for structure generation
         api_kwargs = client.convert_inputs_to_api_kwargs(
@@ -1798,6 +1817,72 @@ def create_enhanced_wiki_prompt(file_tree: str, readme_content: str, repo_contex
         logger.warning(f"⚠️ Error processing wiki structure: {e}")
     
     # Use the new hierarchical prompt that properly handles dynamic sub-topics
+    # First, intelligently truncate large context components to fit within token limits
+    
+    # Estimate token budget for context components (leaving room for template + completion)
+    template_tokens = count_tokens(HIERARCHICAL_WIKI_GENERATION_PROMPT.replace("{wiki_structure}", "").replace("{context}", "").replace("{file_tree}", "").replace("{readme}", ""))
+    completion_tokens = 8000  # Expected completion tokens
+    safety_buffer = 2000  # Safety buffer for variations
+    
+    available_for_context = 40960 - template_tokens - completion_tokens - safety_buffer  # Using Qwen3-14B context window
+    
+    logger.info(f"🔢 Prompt token budget: Template={template_tokens}, Completion={completion_tokens}, Available={available_for_context}")
+    
+    # Intelligently truncate context components
+    context_budget = max(available_for_context // 4, 5000)  # Reserve 1/4 for each component, minimum 5000 tokens
+    
+    # Truncate repo_context if too large
+    repo_context_tokens = count_tokens(repo_context)
+    if repo_context_tokens > context_budget:
+        logger.warning(f"📝 Truncating repo context: {repo_context_tokens} → {context_budget} tokens")
+        # Keep the most important parts (beginning and end)
+        context_parts = repo_context.split('\n\n')
+        truncated_parts = []
+        current_tokens = 0
+        
+        # Add parts from beginning
+        for part in context_parts[:len(context_parts)//2]:
+            part_tokens = count_tokens(part)
+            if current_tokens + part_tokens < context_budget * 0.7:  # Use 70% of budget for first half
+                truncated_parts.append(part)
+                current_tokens += part_tokens
+            else:
+                break
+        
+        # Add truncation marker
+        truncated_parts.append("\n... [Repository context truncated for token limits] ...\n")
+        
+        # Add some parts from the end
+        remaining_budget = context_budget - current_tokens - count_tokens(truncated_parts[-1])
+        for part in reversed(context_parts[len(context_parts)//2:]):
+            part_tokens = count_tokens(part)
+            if remaining_budget > part_tokens:
+                truncated_parts.insert(-1, part)  # Insert before truncation marker
+                remaining_budget -= part_tokens
+            else:
+                break
+        
+        repo_context = '\n\n'.join(truncated_parts)
+        logger.info(f"📝 Repo context truncated to {count_tokens(repo_context)} tokens")
+    
+    # Truncate file_tree if too large
+    file_tree_tokens = count_tokens(file_tree)
+    if file_tree_tokens > context_budget // 2:  # File tree should be smaller
+        logger.warning(f"📁 Truncating file tree: {file_tree_tokens} → {context_budget // 2} tokens")
+        file_tree_lines = file_tree.split('\n')
+        truncated_lines = file_tree_lines[:context_budget // 8]  # Keep first portion
+        truncated_lines.append("... [File tree truncated for token limits] ...")
+        file_tree = '\n'.join(truncated_lines)
+    
+    # Truncate README if too large
+    readme_tokens = count_tokens(readme_content)
+    if readme_tokens > context_budget // 3:
+        logger.warning(f"📖 Truncating README: {readme_tokens} → {context_budget // 3} tokens")
+        readme_lines = readme_content.split('\n')
+        truncated_lines = readme_lines[:context_budget // 10]  # Keep beginning of README
+        truncated_lines.append("... [README truncated for token limits] ...")
+        readme_content = '\n'.join(truncated_lines)
+    
     enhanced_prompt = HIERARCHICAL_WIKI_GENERATION_PROMPT.format(
         wiki_structure=wiki_structure,
         context=repo_context,
@@ -1805,11 +1890,38 @@ def create_enhanced_wiki_prompt(file_tree: str, readme_content: str, repo_contex
         readme=readme_content
     )
     
+    # Final validation: ensure total prompt + completion doesn't exceed context window
+    final_prompt_tokens = count_tokens(enhanced_prompt)
+    total_tokens_needed = final_prompt_tokens + completion_tokens
+    
     logger.info(f"✅ Created hierarchical wiki prompt:")
     logger.info(f"   - Uses HIERARCHICAL_WIKI_GENERATION_PROMPT template")
     logger.info(f"   - Wiki structure length: {len(wiki_structure)} chars")
     logger.info(f"   - Repo context length: {len(repo_context)} chars")
     logger.info(f"   - Final prompt length: {len(enhanced_prompt)} chars")
+    logger.info(f"   - Final prompt tokens: {final_prompt_tokens}")
+    logger.info(f"   - Total tokens needed: {total_tokens_needed} (limit: 40960)")
+    
+    if total_tokens_needed > 40960:
+        logger.error(f"❌ CRITICAL: Total tokens ({total_tokens_needed}) exceeds context window (40960)")
+        logger.error("📋 Consider using a model with larger context window or reducing repository content")
+        # Emergency truncation of the entire prompt
+        max_prompt_tokens = 40960 - completion_tokens - 500  # Leave safety buffer
+        lines = enhanced_prompt.split('\n')
+        truncated_lines = []
+        current_tokens = 0
+        
+        for line in lines:
+            line_tokens = count_tokens(line + '\n')
+            if current_tokens + line_tokens < max_prompt_tokens:
+                truncated_lines.append(line)
+                current_tokens += line_tokens
+            else:
+                break
+        
+        truncated_lines.append("... [Prompt truncated due to context window limits] ...")
+        enhanced_prompt = '\n'.join(truncated_lines)
+        logger.warning(f"⚠️ Emergency prompt truncation: {final_prompt_tokens} → {count_tokens(enhanced_prompt)} tokens")
     
     return enhanced_prompt
 
