@@ -39,8 +39,8 @@
           "display_name": "Qwen3 14B FP8",
           "temperature": 0.7,
           "top_p": 0.8,
-          "context_window": 32768,
-          "max_completion_tokens": 8000
+          "context_window": 40960,
+          "max_completion_tokens": 4000
         },
         "/app/models/Devstral-Small-2505": {
           "api_url": "https://vllm.com/devstral-25b/v1",

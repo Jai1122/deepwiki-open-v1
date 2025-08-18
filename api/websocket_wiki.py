@@ -936,8 +936,21 @@ async def stream_response(
         except Exception as e:
             logger.error(f"Final fallback failed: {e}")
     
-    # Combine all retrieved content
-    context_text = "\n\n".join([doc.text for doc in all_retrieved_docs]) if all_retrieved_docs else ""
+    # Combine all retrieved content with token limit awareness
+    context_text_parts = []
+    total_context_tokens = 0
+    max_context_tokens = 15000  # Conservative limit for context to leave room for completion
+    
+    for doc in all_retrieved_docs:
+        doc_tokens = count_tokens(doc.text)
+        if total_context_tokens + doc_tokens > max_context_tokens:
+            logger.warning(f"Stopping context addition at {total_context_tokens} tokens to stay within limits")
+            break
+        context_text_parts.append(doc.text)
+        total_context_tokens += doc_tokens
+    
+    context_text = "\n\n".join(context_text_parts)
+    logger.info(f"📝 Final context: {total_context_tokens} tokens from {len(context_text_parts)} documents")
     
     logger.info(f"📊 Wiki generation final stats: {len(all_retrieved_docs)} documents from {len(seen_sources)} unique sources")
     logger.info(f"📝 Total context length: {len(context_text)} characters")
@@ -1037,14 +1050,16 @@ async def stream_response(
         # Final safety check for structure queries too
         prompt_tokens = count_tokens(prompt)
         total_tokens = prompt_tokens + max_completion_tokens
+        logger.info(f"🔍 Structure token check: prompt={prompt_tokens}, completion={max_completion_tokens}, total={total_tokens}, limit={context_window}")
+        
         if total_tokens > context_window:
             logger.warning(f"⚠️  Structure query prompt too large: {prompt_tokens} + {max_completion_tokens} = {total_tokens} > {context_window}")
-            # Emergency truncation for structure queries
-            max_prompt_tokens = context_window - max_completion_tokens - 200  # Extra safety buffer for complete responses
+            # Emergency truncation for structure queries with larger safety buffer
+            max_prompt_tokens = context_window - max_completion_tokens - 500  # Larger safety buffer
             if max_prompt_tokens > 0:
                 truncation_ratio = max_prompt_tokens / prompt_tokens
                 if truncation_ratio < 1:
-                    truncated_length = int(len(prompt) * truncation_ratio * 0.9)  # 0.9 for safety
+                    truncated_length = int(len(prompt) * truncation_ratio * 0.85)  # More conservative
                     prompt = prompt[:truncated_length] + "\n\n[Content truncated due to length]"
                     logger.warning(f"Applied emergency truncation to structure query: {len(prompt)} characters")
             else:
@@ -1063,15 +1078,17 @@ async def stream_response(
         # Final safety check: ensure prompt + completion doesn't exceed context window
         prompt_tokens = count_tokens(prompt)
         total_tokens = prompt_tokens + max_completion_tokens
+        logger.info(f"🔍 Token check: prompt={prompt_tokens}, completion={max_completion_tokens}, total={total_tokens}, limit={context_window}")
+        
         if total_tokens > context_window:
             logger.warning(f"⚠️  Final prompt still too large: {prompt_tokens} + {max_completion_tokens} = {total_tokens} > {context_window}")
-            # Emergency truncation: cut the prompt to fit
-            max_prompt_tokens = context_window - max_completion_tokens - 200  # Extra safety buffer for complete responses
+            # Emergency truncation: cut the prompt to fit with larger safety buffer
+            max_prompt_tokens = context_window - max_completion_tokens - 500  # Larger safety buffer
             if max_prompt_tokens > 0:
                 # Simple truncation - keep the beginning (system prompt) and end (query)
                 truncation_ratio = max_prompt_tokens / prompt_tokens
                 if truncation_ratio < 1:
-                    truncated_length = int(len(prompt) * truncation_ratio * 0.9)  # 0.9 for safety
+                    truncated_length = int(len(prompt) * truncation_ratio * 0.85)  # More conservative
                     prompt = prompt[:truncated_length] + "\n\n[Content truncated due to length]\n\nQuery: " + query
                     logger.warning(f"Applied emergency truncation: {len(prompt)} characters")
             else:
