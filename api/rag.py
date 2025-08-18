@@ -219,7 +219,7 @@ class RAG(adal.Component):
             # 2. Validate query length to prevent token limit errors
             from .utils import count_tokens
             query_tokens = count_tokens(query)
-            max_query_tokens = 8000  # Increased limit for better context understanding
+            max_query_tokens = 7500  # Safe limit for jina-embeddings-v3 (8194 token context window)
             
             if query_tokens > max_query_tokens:
                 logger.warning(f"Query is too long ({query_tokens} tokens), truncating to {max_query_tokens} tokens")

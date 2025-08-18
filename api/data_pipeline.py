@@ -280,7 +280,14 @@ def read_all_documents(
     # Use token-based chunking to ensure embedding limits are respected
     # Get max tokens from embedding config to ensure chunks fit within limits
     max_embedding_tokens = splitter_config.get("max_tokens_per_chunk", 4000)
+    
+    # CRITICAL: Hard limit for jina-embeddings-v3 (8194 token context window)
+    # Leave significant safety margin for embedding processing overhead
+    EMBEDDING_MODEL_HARD_LIMIT = 7000
+    max_embedding_tokens = min(max_embedding_tokens, EMBEDDING_MODEL_HARD_LIMIT)
+    
     safe_chunk_size = min(max_embedding_tokens // 2, 2000)  # Use half the limit for safety
+    logger.info(f"🔢 Embedding chunking: Max={max_embedding_tokens}, Safe={safe_chunk_size} tokens")
     chunk_overlap = min(splitter_config.get("chunk_overlap", 200), safe_chunk_size // 4)
     
     text_splitter = TextSplitter(
@@ -584,6 +591,7 @@ def read_all_documents(
             
             # Get max tokens from config for embedding safety
             max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 4000)
+            max_embedding_tokens = min(max_embedding_tokens, 7000)  # Hard limit for jina-embeddings-v3
             
             safe_chunks = []
             for chunk in chunks:
@@ -711,6 +719,7 @@ def read_all_documents(
                     if content.strip():
                         chunks = text_splitter.split_text(content)
                         max_embedding_tokens = configs.get("text_splitter", {}).get("max_tokens_per_chunk", 4000)
+                        max_embedding_tokens = min(max_embedding_tokens, 7000)  # Hard limit for jina-embeddings-v3
                         
                         safe_chunks = []
                         for chunk in chunks:
