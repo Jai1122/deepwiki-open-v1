@@ -936,16 +936,30 @@ async def stream_response(
         except Exception as e:
             logger.error(f"Final fallback failed: {e}")
     
-    # Combine all retrieved content with token limit awareness
+    # Combine all retrieved content with smart token management
     context_text_parts = []
     total_context_tokens = 0
-    max_context_tokens = 15000  # Conservative limit for context to leave room for completion
+    max_context_tokens = 20000  # Increased limit for better content quality
     
-    for doc in all_retrieved_docs:
+    # Sort documents by relevance/importance if available
+    sorted_docs = all_retrieved_docs
+    
+    for doc in sorted_docs:
         doc_tokens = count_tokens(doc.text)
+        
+        # If adding this doc would exceed limit, try to truncate it instead of skipping
         if total_context_tokens + doc_tokens > max_context_tokens:
-            logger.warning(f"Stopping context addition at {total_context_tokens} tokens to stay within limits")
+            remaining_tokens = max_context_tokens - total_context_tokens
+            if remaining_tokens > 500:  # Only if we have meaningful space left
+                # Smart truncation - keep beginning of document
+                truncate_ratio = remaining_tokens / doc_tokens
+                truncated_length = int(len(doc.text) * truncate_ratio * 0.9)
+                truncated_text = doc.text[:truncated_length] + "\n[Document truncated...]"
+                context_text_parts.append(truncated_text)
+                total_context_tokens += count_tokens(truncated_text)
+                logger.info(f"Truncated document to fit: {doc_tokens} -> {count_tokens(truncated_text)} tokens")
             break
+        
         context_text_parts.append(doc.text)
         total_context_tokens += doc_tokens
     
@@ -989,9 +1003,18 @@ async def stream_response(
         system_prompt = query  # The query already contains the proper structure prompt
     elif query.startswith("[CLEAN_WIKI_PREFORMATTED_PROMPT]"):
         # For clean wiki generation, use the pre-formatted prompt directly
-        logger.info("🎯 Processing clean wiki with pre-formatted ARCHITECTURE_OVERVIEW_PROMPT")
+        logger.info("🎯 Processing clean wiki with pre-formatted HIERARCHICAL_WIKI_GENERATION_PROMPT")
         system_prompt = query.replace("[CLEAN_WIKI_PREFORMATTED_PROMPT]\n", "")
         logger.info(f"✅ Using pre-formatted prompt: {len(system_prompt)} characters")
+        
+        # Allocate more tokens for comprehensive 6-chapter wiki generation
+        estimated_wiki_tokens = 15000  # Need substantial tokens for 6 complete chapters
+        wiki_max_tokens = min(estimated_wiki_tokens, context_window - count_tokens(system_prompt) - 500)
+        
+        if wiki_max_tokens > max_completion_tokens:
+            logger.info(f"🔧 Increasing completion tokens for comprehensive wiki: {max_completion_tokens} → {wiki_max_tokens}")
+            max_completion_tokens = wiki_max_tokens
+            model_kwargs["max_tokens"] = wiki_max_tokens
     else:
         # For content generation, use intelligently chosen prompts based on query type
         query_lower = query.lower()

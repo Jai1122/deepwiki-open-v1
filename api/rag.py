@@ -219,14 +219,18 @@ class RAG(adal.Component):
             # 2. Validate query length to prevent token limit errors
             from .utils import count_tokens
             query_tokens = count_tokens(query)
-            max_query_tokens = 4000  # Conservative limit for queries
+            max_query_tokens = 8000  # Increased limit for better context understanding
             
             if query_tokens > max_query_tokens:
                 logger.warning(f"Query is too long ({query_tokens} tokens), truncating to {max_query_tokens} tokens")
-                # Truncate query to fit within limits
+                # Truncate query more intelligently - keep beginning and end
                 ratio = max_query_tokens / query_tokens
-                query = query[:int(len(query) * ratio * 0.9)]  # 0.9 for safety margin
-                logger.info(f"Truncated query to {count_tokens(query)} tokens")
+                if ratio < 0.8:  # Only truncate if significantly over limit
+                    mid_point = len(query) // 2
+                    keep_start = int(len(query) * ratio * 0.4)  # Keep 40% from start
+                    keep_end = int(len(query) * ratio * 0.4)    # Keep 40% from end
+                    query = query[:keep_start] + "\n...[content truncated]...\n" + query[-keep_end:]
+                    logger.info(f"Intelligently truncated query to {count_tokens(query)} tokens")
             
             # 3. Wrap the query string in a Document object
             query_document = Document(text=query)

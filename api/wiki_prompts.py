@@ -336,8 +336,29 @@ graph TD
 
 Generate a comprehensive hierarchical wiki following the DeepWiki format standards. 
 
-**DYNAMIC CHAPTER STRUCTURE:**
-Based on the wiki structure analysis provided, generate numbered chapters that match the repository's actual content and purpose. Use the topics and sub-topics identified in the {wiki_structure} to create relevant, repository-specific chapters.
+**MANDATORY CHAPTER GENERATION:**
+You MUST generate exactly 6 numbered chapters based on the wiki structure provided. Extract the main topics from the {wiki_structure} and create one chapter for each:
+
+**REQUIRED OUTPUT FORMAT:**
+Generate all 6 chapters in this exact sequence:
+
+# 1 - [First Topic from wiki_structure]
+[Complete chapter content with all sections]
+
+# 2 - [Second Topic from wiki_structure]  
+[Complete chapter content with all sections]
+
+# 3 - [Third Topic from wiki_structure]
+[Complete chapter content with all sections]
+
+# 4 - [Fourth Topic from wiki_structure]
+[Complete chapter content with all sections]
+
+# 5 - [Fifth Topic from wiki_structure]
+[Complete chapter content with all sections]
+
+# 6 - [Sixth Topic from wiki_structure]
+[Complete chapter content with all sections]
 
 **CONTENT DEPTH REQUIREMENTS:**
 For each chapter, provide:
@@ -347,11 +368,6 @@ For each chapter, provide:
 4. **User Impact**: How this affects the end user experience or developer workflow
 5. **Design Rationale**: Why the system was built this way, what problems it solves
 
-**EXAMPLE DYNAMIC STRUCTURE:**
-- If the repository structure indicates it's a **web application**: Focus on frontend/backend separation, user flows, API design
-- If it's a **CLI tool**: Focus on command structure, argument parsing, output formatting  
-- If it's a **library/framework**: Focus on public APIs, extension points, integration patterns
-- If it's a **data processing system**: Focus on pipelines, transformations, storage patterns
-
-Generate chapters that tell the story of THIS specific codebase, not generic software development topics. Each chapter should help a reader understand how to work with, extend, or maintain THIS particular system.
+**CRITICAL INSTRUCTION:** 
+Generate ALL 6 chapters in a single response. Do not stop after 1 or 2 chapters. Each chapter should be substantial with multiple ## subsections and detailed content.
 """
