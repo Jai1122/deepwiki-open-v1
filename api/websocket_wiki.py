@@ -1226,10 +1226,7 @@ async def summarize_oversized_query(query: str, model_config: dict, model_kwargs
         api_kwargs = client.convert_inputs_to_api_kwargs(input=summary_prompt, model_kwargs=summary_kwargs, model_type=ModelType.LLM)
         summary_response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
         
-        summary_text = ""
-        if isinstance(summary_response, str): summary_text = summary_response
-        elif hasattr(summary_response, "text"): summary_text = summary_response.text
-        elif hasattr(summary_response, "choices") and summary_response.choices: summary_text = summary_response.choices[0].message.content
+        summary_text = client.chat_completion_parser(summary_response)
         summaries.append(summary_text)
 
     combined_summary = " ".join(summaries)
@@ -1237,13 +1234,7 @@ async def summarize_oversized_query(query: str, model_config: dict, model_kwargs
     api_kwargs = client.convert_inputs_to_api_kwargs(input=final_summary_prompt, model_kwargs=summary_kwargs, model_type=ModelType.LLM)
     final_summary_response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
 
-    final_summary = ""
-    if isinstance(final_summary_response, str):
-        final_summary = final_summary_response
-    elif hasattr(final_summary_response, "text"):
-        final_summary = final_summary_response.text
-    elif hasattr(final_summary_response, "choices") and final_summary_response.choices:
-        final_summary = final_summary_response.choices[0].message.content
+    final_summary = client.chat_completion_parser(final_summary_response)
     
     logger.info(f"Original query summarized to {count_tokens(final_summary)} tokens.")
     return final_summary
@@ -1666,77 +1657,17 @@ async def generate_wiki_structure(structure_prompt: str, model_config: dict, req
         
         logger.info(f"🔧 Making API call for structure generation with kwargs: {list(api_kwargs.keys())}")
         
-        # Handle both sync and async client calls
-        try:
-            # Try async call first
-            if hasattr(client, 'acall') and callable(getattr(client, 'acall')):
-                logger.info("🔄 Using async acall method")
-                response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-            else:
-                logger.info("🔄 Client doesn't have acall, using sync call wrapped in thread")
-                # Fallback to sync call wrapped in async
-                response = await asyncio.to_thread(client.call, api_kwargs=api_kwargs, model_type=ModelType.LLM)
-        except TypeError as te:
-            logger.error(f"❌ LLM CLIENT CRITICAL ERROR: Async call failed with TypeError: {te}")
-            logger.error("This indicates a serious async/await handling problem in the LLM client")
-            
-            # Check if we got a ChatCompletions object that's already the response
-            if "can't be used in 'await' expression" in str(te):
-                logger.info("🔧 Detected non-awaitable response, calling acall without await")
-                try:
-                    # The method might be returning the result directly instead of a coroutine
-                    response = client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    logger.info(f"Got response without await: {response.__class__}")
-                    
-                    # If it's still a coroutine, we need to await it properly
-                    if hasattr(response, '__await__'):
-                        logger.info("Response is still a coroutine, awaiting it now")
-                        response = await response
-                        logger.info(f"After awaiting coroutine: {response.__class__}")
-                        
-                except Exception as direct_error:
-                    logger.warning(f"Direct call also failed: {direct_error}, trying sync approach")
-                    # Fallback to sync call
-                    response = await asyncio.to_thread(client.call, api_kwargs=api_kwargs, model_type=ModelType.LLM)
-            else:
-                # Other TypeError, try sync approach
-                try:
-                    logger.info("🔄 Trying sync call method")
-                    response = await asyncio.to_thread(client.call, api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                except Exception as sync_error:
-                    logger.error(f"Sync call also failed: {sync_error}")
-                    raise
+        # Make API call for structure generation (OpenAI client now properly handles async)
+        logger.info("🔄 Making async API call for structure generation")
+        response = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
         
-        # Extract structure text from response
-        structure_text = ""
+        # Extract structure text from response using the client's parser
         logger.info(f"📋 Processing response of type: {type(response)}")
         
-        # Handle coroutine response that wasn't properly awaited
-        if hasattr(response, '__await__'):
-            logger.warning("Response is still a coroutine, awaiting it now")
-            response = await response
-            logger.info(f"After awaiting: {type(response)}")
+        # Use the client's built-in chat completion parser
+        structure_text = client.chat_completion_parser(response)
         
-        if isinstance(response, str):
-            structure_text = response
-            logger.info("✅ Response is string")
-        elif hasattr(response, "text"):
-            structure_text = response.text
-            logger.info("✅ Extracted from response.text")
-        elif hasattr(response, "choices") and response.choices:
-            if len(response.choices) > 0 and hasattr(response.choices[0], "message"):
-                structure_text = response.choices[0].message.content or ""
-                logger.info("✅ Extracted from response.choices[0].message.content")
-            elif len(response.choices) > 0 and hasattr(response.choices[0], "text"):
-                structure_text = response.choices[0].text or ""
-                logger.info("✅ Extracted from response.choices[0].text")
-            else:
-                logger.warning("Response has choices but unexpected format")
-                structure_text = str(response.choices[0]) if response.choices else ""
-        elif hasattr(response, "content"):
-            structure_text = response.content
-            logger.info("✅ Extracted from response.content")
-        else:
+        if not structure_text:
             # Try to extract from response object
             logger.warning(f"Unexpected response format: {type(response)}")
             logger.warning(f"Response attributes: {dir(response)}")
