@@ -1663,7 +1663,14 @@ async def generate_wiki_structure(structure_prompt: str, model_config: dict, req
                 try:
                     # The method might be returning the result directly instead of a coroutine
                     response = client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    logger.info(f"✅ Got response without await: {type(response)}")
+                    logger.info(f"Got response without await: {response.__class__}")
+                    
+                    # If it's still a coroutine, we need to await it properly
+                    if hasattr(response, '__await__'):
+                        logger.info("Response is still a coroutine, awaiting it now")
+                        response = await response
+                        logger.info(f"After awaiting coroutine: {response.__class__}")
+                        
                 except Exception as direct_error:
                     logger.warning(f"Direct call also failed: {direct_error}, trying sync approach")
                     # Fallback to sync call
@@ -1680,6 +1687,12 @@ async def generate_wiki_structure(structure_prompt: str, model_config: dict, req
         # Extract structure text from response
         structure_text = ""
         logger.info(f"📋 Processing response of type: {type(response)}")
+        
+        # Handle coroutine response that wasn't properly awaited
+        if hasattr(response, '__await__'):
+            logger.warning("Response is still a coroutine, awaiting it now")
+            response = await response
+            logger.info(f"After awaiting: {type(response)}")
         
         if isinstance(response, str):
             structure_text = response
