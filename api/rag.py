@@ -323,43 +323,51 @@ class RAG(adal.Component):
                 logger.error(f"Available attributes: {dir(first_result)}")
                 raise RuntimeError(f"RAG retriever result invalid structure: {first_result.__class__.__name__}")
 
-            # Debug the first result structure more thoroughly
-            logger.info(f"🔍 DEEP DEBUG: first_result has attributes: {[attr for attr in dir(first_result) if not attr.startswith('_')]}")
+            # ✅ FIXED: The retriever returns doc_indices, we need to reconstruct documents from indices
+            logger.info(f"🔍 FAISS result structure: {first_result}")
             
-            # Try different ways to access documents based on FAISS retriever API
             retrieved_documents = None
-            if hasattr(first_result, 'documents'):
+            
+            # Check if we have doc_indices (which we do according to the log)
+            if hasattr(first_result, 'doc_indices') and first_result.doc_indices is not None:
+                doc_indices = first_result.doc_indices
+                logger.info(f"📍 Found {len(doc_indices)} document indices: {doc_indices[:5]}...")
+                
+                # Reconstruct documents from indices using our original transformed_docs
+                retrieved_documents = []
+                for idx in doc_indices:
+                    if 0 <= idx < len(self.transformed_docs):
+                        retrieved_documents.append(self.transformed_docs[idx])
+                    else:
+                        logger.warning(f"Invalid document index {idx}, max is {len(self.transformed_docs)-1}")
+                
+                logger.info(f"✅ Successfully reconstructed {len(retrieved_documents)} documents from indices")
+                
+            elif hasattr(first_result, 'documents') and first_result.documents is not None:
+                # Fallback to direct documents if available
                 retrieved_documents = first_result.documents
-                logger.info(f"📄 Retrieved via .documents: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
-            elif hasattr(first_result, 'data'):
-                retrieved_documents = first_result.data
-                logger.info(f"📄 Retrieved via .data: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
-            elif hasattr(first_result, 'content'):
-                retrieved_documents = first_result.content
-                logger.info(f"📄 Retrieved via .content: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
+                logger.info(f"📄 Retrieved via .documents: {len(retrieved_documents)} items")
+                
             else:
-                # Maybe first_result IS the documents list
-                if isinstance(first_result, list):
-                    retrieved_documents = first_result
-                    logger.info(f"📄 first_result IS the documents list: {len(retrieved_documents)} items")
-                else:
-                    logger.error(f"❌ Unknown retriever result structure: {first_result}")
-                    logger.error(f"❌ Result value: {first_result}")
+                logger.error(f"❌ Cannot extract documents from result: {first_result}")
+                logger.error(f"❌ Available attributes: {[attr for attr in dir(first_result) if not attr.startswith('_')]}")
+                raise RuntimeError("Cannot extract documents from FAISS retriever result")
             
-            logger.info(f"📄 Final retrieved documents type: {retrieved_documents.__class__.__name__ if retrieved_documents else 'None'}")
-            logger.info(f"📄 Final retrieved documents length: {len(retrieved_documents) if retrieved_documents else 'None'}")
+            logger.info(f"📄 Final retrieved documents: {len(retrieved_documents)} items")
             
-            if retrieved_documents is None:
-                logger.error("❌ RAG CRITICAL ERROR: Retrieved documents is None after all access attempts")
-                logger.error(f"❌ Original first_result: {first_result}")
-                logger.error(f"❌ Available attributes: {dir(first_result)}")
-                raise RuntimeError("RAG retriever returned None documents - system malfunction")
+            if not retrieved_documents:
+                logger.warning("No documents retrieved - this may indicate index issues or no matching content")
+                return ([], [])
                 
             if not isinstance(retrieved_documents, list):
                 logger.error(f"❌ RAG CRITICAL ERROR: Retrieved documents is not a list: {retrieved_documents.__class__.__name__}")
                 raise RuntimeError(f"RAG retriever returned invalid type: {retrieved_documents.__class__.__name__}")
             
-            logger.info(f"✅ Successfully retrieved {len(retrieved_documents)} documents")
+            logger.info(f"✅ Successfully retrieved {len(retrieved_documents)} documents with relevance scores")
+            if hasattr(first_result, 'doc_scores'):
+                avg_score = sum(first_result.doc_scores) / len(first_result.doc_scores) if first_result.doc_scores else 0
+                logger.info(f"📊 Average relevance score: {avg_score:.3f}")
+            
             return retrieved_documents, []
         except RuntimeError as e:
             # Re-raise RuntimeErrors (our critical errors) instead of masking them
