@@ -3,7 +3,9 @@ OpenAI-compatible client for vLLM integration.
 This client provides compatibility with vLLM's OpenAI-compatible API.
 """
 
+import asyncio
 from openai import OpenAI
+from adalflow.core.types import ModelType
 
 
 class OpenAIClient:
@@ -112,6 +114,53 @@ class OpenAIClient:
         # Check if this is a streaming request
         is_streaming = api_kwargs.get("stream", False)
         
+        # The sync OpenAI client doesn't return coroutines, so we need to run in executor
+        def _make_sync_call():
+            if "messages" in api_kwargs:
+                # Chat completions
+                if is_streaming:
+                    # For streaming, create and return a stream wrapper
+                    stream = self.client.chat.completions.create(**api_kwargs)
+                    return AsyncStreamWrapper(stream)
+                else:
+                    # For non-streaming, make sync call
+                    return self.client.chat.completions.create(**api_kwargs)
+            elif "input" in api_kwargs:
+                # Embeddings (embeddings don't support streaming)
+                return self.client.embeddings.create(**api_kwargs)
+            else:
+                # Default to chat completions
+                if is_streaming:
+                    stream = self.client.chat.completions.create(**api_kwargs)
+                    return AsyncStreamWrapper(stream)
+                else:
+                    return self.client.chat.completions.create(**api_kwargs)
+        
+        # Run the sync call in an executor to make it async
+        if is_streaming:
+            # For streaming, we return the wrapper directly (already handles async)
+            return _make_sync_call()
+        else:
+            # For non-streaming, run in executor
+            return await asyncio.get_event_loop().run_in_executor(None, _make_sync_call)
+    
+    def call(self, api_kwargs=None, model_type=None):
+        """
+        Make a sync call to the OpenAI API.
+        
+        Args:
+            api_kwargs: API arguments dictionary
+            model_type: Type of model (used for determining endpoint)
+        
+        Returns:
+            OpenAI API response
+        """
+        if api_kwargs is None:
+            api_kwargs = {}
+        
+        # Check if this is a streaming request
+        is_streaming = api_kwargs.get("stream", False)
+        
         # Determine which endpoint to call based on the presence of messages or input
         if "messages" in api_kwargs:
             # Chat completions
@@ -120,18 +169,36 @@ class OpenAIClient:
                 stream = self.client.chat.completions.create(**api_kwargs)
                 return AsyncStreamWrapper(stream)
             else:
-                # For non-streaming, await the response
-                return await self.client.chat.completions.create(**api_kwargs)
+                # For non-streaming, make sync call
+                return self.client.chat.completions.create(**api_kwargs)
         elif "input" in api_kwargs:
             # Embeddings (embeddings don't support streaming)
-            return await self.client.embeddings.create(**api_kwargs)
+            return self.client.embeddings.create(**api_kwargs)
         else:
             # Default to chat completions
             if is_streaming:
                 stream = self.client.chat.completions.create(**api_kwargs)
                 return AsyncStreamWrapper(stream)
             else:
-                return await self.client.chat.completions.create(**api_kwargs)
+                return self.client.chat.completions.create(**api_kwargs)
+    
+    def chat_completion_parser(self, response):
+        """
+        Parse chat completion response to extract content.
+        
+        Args:
+            response: OpenAI chat completion response
+            
+        Returns:
+            str: The content of the response
+        """
+        if hasattr(response, 'choices') and response.choices:
+            choice = response.choices[0]
+            if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
+                return choice.message.content
+            elif hasattr(choice, 'delta') and hasattr(choice.delta, 'content'):
+                return choice.delta.content
+        return ""
 
 
 class AsyncStreamWrapper:
